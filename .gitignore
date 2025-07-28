@@ -1,0 +1,208 @@
+# Schoppmann Time Tracking - Complete .gitignore
+
+# ============================================
+# Dependencies
+# ============================================
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+
+# ============================================
+# Frontend (Next.js)
+# ============================================
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.turbo/
+frontend/.vercel/
+
+# Next.js build outputs
+.next/
+out/
+build/
+
+# ============================================
+# Backend (Express.js)
+# ============================================
+backend/dist/
+backend/build/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ============================================
+# Database Files
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+backend/database/*.db
+backend/database/*.sqlite
+backend/database/*.sqlite3
+!backend/database/.gitkeep
+
+# ============================================
+# Environment Variables
+# ============================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Frontend specific env files
+frontend/.env*
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# Backend specific env files
+backend/.env*
+backend/.env.local
+backend/.env.development
+backend/.env.production
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+.tsbuildinfo
+next-env.d.ts
+
+# ============================================
+# Testing
+# ============================================
+coverage/
+*.lcov
+.nyc_output/
+jest-coverage/
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ============================================
+# Runtime data
+# ============================================
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# ============================================
+# IDE and Editor Files
+# ============================================
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# JetBrains IDEs
+.idea/
+*.swp
+*.swo
+*~
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================
+# Operating System Files
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.nfs*
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+*.cache
+.cache/
+
+# ============================================
+# Package Managers
+# ============================================
+# npm
+package-lock.json
+npm-shrinkwrap.json
+
+# yarn
+yarn.lock
+.yarn/
+.yarnrc.yml
+
+# pnpm
+pnpm-lock.yaml
+.pnpm-store/
+
+# ============================================
+# Build Tools & Bundlers
+# ============================================
+.webpack/
+.rollup.cache/
+.parcel-cache/
+.turbo/
+
+# ============================================
+# Documentation
+# ============================================
+docs/build/
+docs/dist/
+
+# ============================================
+# Security & Certificates
+# ============================================
+*.pem
+*.key
+*.crt
+*.cert
+
+# ============================================
+# Backup Files
+# ============================================
+*.bak
+*.backup
+*.old
+
+# ============================================
+# Time Tracking Specific
+# ============================================
+# Exported data (if any)
+exports/
+backups/
+*.csv
+*.xlsx
+*.pdf
+
+# Development database dumps
+*.sql
+*.dump
