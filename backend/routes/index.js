@@ -2,13 +2,9 @@ const express = require('express');
 const config = require('../config');
 
 // ✅ Middleware importieren
-const {
-  loginAPI,
-  registrationAPI,
-  authenticatedAPI,
-  adminAPI,
-  rateLimit
-} = require('../middleware');
+const { authenticatedAPI, adminAPI } = require('../middleware');
+const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
+const { validateContentType } = require('../middleware/security');
 
 // ✅ Route-Module importieren
 const authRoutes = require('./auth');

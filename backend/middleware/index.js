@@ -1,142 +1,115 @@
 // ✅ Middleware Index - Zentrale Stelle für alle Middleware
 
-// Authentication & Authorization
-const {
-  authenticateToken,
-  requireAdmin,
-  requireEmployee,
-  extractTokenInfo,
-  debugAuth
-} = require('./auth');
-
-// Input Validation
-const {
-  validateRegistration,
-  validateLogin,
-  validateUserUpdate,
-  validateUserSettings,
-  validateMinijobSetting,
-  handleValidationErrors,
-  customValidations,
-  sanitizeInput
-} = require('./validation');
-
-// Rate Limiting
-const {
-  generalLimiter,
-  loginLimiter,
-  apiLimiter,
-  adminLimiter,
-  registrationLimiter,
-  developmentLimiter,
-  rateLimitStatus
-} = require('./rateLimiting');
-
-// Security
-const {
-  corsMiddleware,
-  helmetMiddleware,
-  requestId,
-  ipWhitelist,
-  validateContentType,
-  requestSizeLimit,
-  securityHeaders,
-  developmentSecurity,
-  corsOptions
-} = require('./security');
+//Direkte Imports statt destructuring um zirkuläre Imports zu vermeiden
+const authMiddleware = require('./auth');
+const validationMiddleware = require('./validation');
+const rateLimitingMiddleware = require('./rateLimiting');
+const securityMiddleware = require('./security');
 
 // ✅ Middleware-Gruppen für einfache Nutzung
 
 // Basic Security Stack
 const basicSecurity = [
-  helmetMiddleware,
-  corsMiddleware,
-  securityHeaders,
-  requestId
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  securityMiddleware.requestId
 ];
 
 // Auth Stack
 const authStack = {
-  token: authenticateToken,
-  admin: requireAdmin,
-  employee: requireEmployee,
-  extract: extractTokenInfo,
-  debug: debugAuth
+  token: authMiddleware.authenticateToken,
+  admin: authMiddleware.requireAdmin,
+  employee: authMiddleware.requireEmployee,
+  extract: authMiddleware.extractTokenInfo,
+  debug: authMiddleware.debugAuth
 };
 
 // Validation Stack
 const validationStack = {
-  registration: [...validateRegistration, handleValidationErrors],
-  login: [...validateLogin, handleValidationErrors],
-  userUpdate: [...validateUserUpdate, handleValidationErrors],
-  userSettings: [...validateUserSettings, handleValidationErrors],
-  minijobSetting: [...validateMinijobSetting, handleValidationErrors],
-  sanitize: sanitizeInput,
-  errors: handleValidationErrors
+  registration: [...validationMiddleware.validateRegistration, validationMiddleware.handleValidationErrors],
+  login: [...validationMiddleware.validateLogin, validationMiddleware.handleValidationErrors],
+  userUpdate: [...validationMiddleware.validateUserUpdate, validationMiddleware.handleValidationErrors],
+  userSettings: [...validationMiddleware.validateUserSettings, validationMiddleware.handleValidationErrors],
+  minijobSetting: [...validationMiddleware.validateMinijobSetting, validationMiddleware.handleValidationErrors],
+  sanitize: validationMiddleware.sanitizeInput,
+  errors: validationMiddleware.handleValidationErrors
 };
 
 // Rate Limiting Stack
 const rateLimitStack = {
-  general: generalLimiter,
-  login: loginLimiter,
-  api: apiLimiter,
-  admin: adminLimiter,
-  registration: registrationLimiter,
-  development: developmentLimiter,
-  status: rateLimitStatus
+  general: rateLimitingMiddleware.generalLimiter,
+  login: rateLimitingMiddleware.loginLimiter,
+  api: rateLimitingMiddleware.apiLimiter,
+  admin: rateLimitingMiddleware.adminLimiter,
+  registration: rateLimitingMiddleware.registrationLimiter,
+  development: rateLimitingMiddleware.developmentLimiter,
+  status: rateLimitingMiddleware.rateLimitStatus
 };
 
 // Security Stack
 const securityStack = {
-  cors: corsMiddleware,
-  helmet: helmetMiddleware,
-  headers: securityHeaders,
-  requestId: requestId,
-  contentType: validateContentType,
-  sizeLimit: requestSizeLimit(),
-  development: developmentSecurity,
-  ipWhitelist: ipWhitelist
+  cors: securityMiddleware.corsMiddleware,
+  helmet: securityMiddleware.helmetMiddleware,
+  headers: securityMiddleware.securityHeaders,
+  requestId: securityMiddleware.requestId,
+  contentType: securityMiddleware.validateContentType,
+  sizeLimit: securityMiddleware.requestSizeLimit(),
+  development: securityMiddleware.developmentSecurity,
+  ipWhitelist: securityMiddleware.ipWhitelist
 };
 
 // ✅ Vordefinierte Middleware-Kombinationen
 
 // Öffentliche API Routes (ohne Auth)
 const publicAPI = [
-  ...basicSecurity,
-  rateLimitStack.general,
-  validateContentType
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  rateLimitingMiddleware.generalLimiter,
+  securityMiddleware.validateContentType
 ];
 
 // Authentifizierte API Routes
 const authenticatedAPI = [
-  ...basicSecurity,
-  rateLimitStack.api,
-  validateContentType,
-  authStack.token
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  rateLimitingMiddleware.apiLimiter,
+  securityMiddleware.validateContentType,
+  authMiddleware.authenticateToken
 ];
 
 // Admin-only API Routes
 const adminAPI = [
-  ...basicSecurity,
-  rateLimitStack.admin,
-  validateContentType,
-  authStack.admin
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  rateLimitingMiddleware.adminLimiter,
+  securityMiddleware.validateContentType,
+  authMiddleware.requireAdmin
 ];
 
 // Login-spezifische Middleware
 const loginAPI = [
-  ...basicSecurity,
-  rateLimitStack.login,
-  validateContentType,
-  ...validationStack.login
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  rateLimitingMiddleware.loginLimiter,
+  securityMiddleware.validateContentType,
+  ...validationMiddleware.validateLogin,
+  validationMiddleware.handleValidationErrors
 ];
 
 // Registrierung-spezifische Middleware
 const registrationAPI = [
-  ...basicSecurity,
-  rateLimitStack.registration,
-  validateContentType,
-  ...validationStack.registration
+  securityMiddleware.helmetMiddleware,
+  securityMiddleware.corsMiddleware,
+  securityMiddleware.securityHeaders,
+  rateLimitingMiddleware.registrationLimiter,
+  securityMiddleware.validateContentType,
+  ...validationMiddleware.validateRegistration,
+  validationMiddleware.handleValidationErrors
 ];
 
 module.exports = {
@@ -145,26 +118,26 @@ module.exports = {
   validation: validationStack,
   rateLimit: rateLimitStack,
   security: securityStack,
-  
+
   // Middleware-Gruppen
   basicSecurity,
-  
+
   // Vordefinierte Kombinationen
   publicAPI,
   authenticatedAPI,
   adminAPI,
   loginAPI,
   registrationAPI,
-  
+
   // Legacy-Support (einzelne Exporte)
-  authenticateToken,
-  requireAdmin,
-  requireEmployee,
-  validateRegistration,
-  validateLogin,
-  handleValidationErrors,
-  generalLimiter,
-  loginLimiter,
-  corsMiddleware,
-  helmetMiddleware
+  authenticateToken: authMiddleware.authenticateToken,
+  requireAdmin: authMiddleware.requireAdmin,
+  requireEmployee: authMiddleware.requireEmployee,
+  validateRegistration: validationMiddleware.validateRegistration,
+  validateLogin: validationMiddleware.validateLogin,
+  handleValidationErrors: validationMiddleware.handleValidationErrors,
+  generalLimiter: rateLimitingMiddleware.generalLimiter,
+  loginLimiter: rateLimitingMiddleware.loginLimiter,
+  corsMiddleware: securityMiddleware.corsMiddleware,
+  helmetMiddleware: securityMiddleware.helmetMiddleware
 };

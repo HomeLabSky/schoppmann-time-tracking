@@ -95,7 +95,7 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ 
     message: '✅ Schoppmann Time Tracking Server läuft!', 
-    timestamp: new Date().ToISOString(),
+    timestamp: new Date().toISOString(),
     status: 'OK',
     environment: config.nodeEnv,
     uptime: Math.floor(process.uptime()),

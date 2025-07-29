@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { sequelize } = require('../config/database');
+const { sequelize } = require('../config/database'); // KORRIGIERT: Korrekte Import-Pfad
 
-// User Model Definition
+// ✅ KORRIGIERT: User Model Definition mit korrekter sequelize Integration
 const User = sequelize.define('User', {
   email: {
     type: DataTypes.STRING,
@@ -63,40 +63,126 @@ const User = sequelize.define('User', {
     },
     comment: 'E-Mail-Adresse für Lohnzettel-Versand'
   }
+}, {
+  // KORRIGIERT: Model-Optionen hinzugefügt
+  tableName: 'Users',
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['email']
+    },
+    {
+      fields: ['role']
+    },
+    {
+      fields: ['isActive']
+    }
+  ]
 });
 
-// Passwort hashen vor dem Speichern (Hook aus Ihrer database.js)
-User.beforeCreate(async (user) => {
-  if (user.password) {
-    user.password = await bcrypt.hash(user.password, 10);
+// ✅ KORRIGIERT: Hooks mit Error Handling
+User.beforeCreate(async (user, options) => {
+  try {
+    if (user.password) {
+      user.password = await bcrypt.hash(user.password, 10);
+    }
+  } catch (error) {
+    throw new Error(`Passwort-Hashing fehlgeschlagen: ${error.message}`);
   }
 });
 
-// Passwort hashen vor dem Update (falls Passwort geändert wird)
-User.beforeUpdate(async (user) => {
-  if (user.changed('password') && user.password) {
-    user.password = await bcrypt.hash(user.password, 10);
+User.beforeUpdate(async (user, options) => {
+  try {
+    if (user.changed('password') && user.password) {
+      user.password = await bcrypt.hash(user.password, 10);
+    }
+  } catch (error) {
+    throw new Error(`Passwort-Update fehlgeschlagen: ${error.message}`);
   }
 });
 
-// Instance Methods für bessere Nutzbarkeit
+// ✅ KORRIGIERT: Instance Methods mit Error Handling
 User.prototype.comparePassword = async function(candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw new Error(`Passwort-Vergleich fehlgeschlagen: ${error.message}`);
+  }
 };
 
 User.prototype.toSafeJSON = function() {
-  const values = Object.assign({}, this.get());
-  delete values.password; // Passwort aus JSON-Output entfernen
-  return values;
+  try {
+    const values = Object.assign({}, this.get());
+    delete values.password; // Passwort aus JSON-Output entfernen
+    return values;
+  } catch (error) {
+    throw new Error(`JSON-Konvertierung fehlgeschlagen: ${error.message}`);
+  }
 };
 
-// Static Methods
+// ✅ KORRIGIERT: Static Methods mit Error Handling
 User.findByEmail = function(email) {
-  return this.findOne({ where: { email } });
+  try {
+    if (!email) {
+      throw new Error('Email ist erforderlich');
+    }
+    return this.findOne({ where: { email } });
+  } catch (error) {
+    throw new Error(`Benutzer-Suche per Email fehlgeschlagen: ${error.message}`);
+  }
 };
 
 User.findActiveUsers = function() {
-  return this.findAll({ where: { isActive: true } });
+  try {
+    return this.findAll({ 
+      where: { isActive: true },
+      attributes: { exclude: ['password'] }
+    });
+  } catch (error) {
+    throw new Error(`Aktive Benutzer-Suche fehlgeschlagen: ${error.message}`);
+  }
+};
+
+// ✅ KORRIGIERT: Validation Helper
+User.validateUserData = function(userData, operation = 'create') {
+  const errors = [];
+
+  if (operation === 'create') {
+    if (!userData.email) errors.push('Email ist erforderlich');
+    if (!userData.password) errors.push('Passwort ist erforderlich');
+    if (!userData.name) errors.push('Name ist erforderlich');
+  }
+
+  // Email Format prüfen
+  if (userData.email) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(userData.email)) {
+      errors.push('Ungültiges Email-Format');
+    }
+  }
+
+  // Name prüfen
+  if (userData.name) {
+    if (userData.name.length < 2 || userData.name.length > 50) {
+      errors.push('Name muss zwischen 2 und 50 Zeichen haben');
+    }
+  }
+
+  // Passwort prüfen
+  if (userData.password && (operation === 'create' || userData.password.length > 0)) {
+    if (userData.password.length < 8) {
+      errors.push('Passwort muss mindestens 8 Zeichen haben');
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(userData.password)) {
+      errors.push('Passwort muss Groß-, Kleinbuchstaben und eine Zahl enthalten');
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 };
 
 module.exports = User;
