@@ -3,10 +3,10 @@ const express = require('express');
 const config = require('./config');
 const { initDatabase } = require('./models');
 
-// ✅ Middleware importieren
+// ✅ Middleware importieren (KORRIGIERT)
 const {
   basicSecurity,
-  rateLimit
+  generalLimiter
 } = require('./middleware');
 
 // ✅ API Routes importieren
@@ -21,7 +21,7 @@ app.use(basicSecurity);
 app.use(express.json({ limit: '10mb' }));
 
 // ✅ General Rate Limiting
-app.use(rateLimit.general);
+app.use(generalLimiter);
 
 // Development Info
 if (config.nodeEnv === 'development') {

@@ -94,8 +94,8 @@ router.get('/', (req, res) => {
 
 // ✅ AUTH ROUTES
 // Login und Registration haben spezielle Rate Limits
-router.use('/auth/login', rateLimit.login);
-router.use('/auth/register', rateLimit.registration);
+router.use('/auth/login', loginLimiter);
+router.use('/auth/register', registrationLimiter);
 router.use('/auth', authRoutes);
 
 // ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
