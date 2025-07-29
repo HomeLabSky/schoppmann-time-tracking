@@ -3,13 +3,14 @@ const express = require('express');
 const config = require('./config');
 const { initDatabase } = require('./models');
 
-// ✅ Neue Middleware importieren
+// ✅ Middleware importieren
 const {
   basicSecurity,
-  rateLimit, // ✅ Korrigierter Import-Name
-  auth,
-  validation
+  rateLimit
 } = require('./middleware');
+
+// ✅ API Routes importieren
+const apiRoutes = require('./routes');
 
 const app = express();
 
@@ -49,14 +50,61 @@ const initializeDatabaseAndModels = async () => {
   }
 };
 
-// ✅ Health Check mit erweiterten Middleware-Infos
-app.get('/api/health', (req, res) => {
+// ✅ API Routes verwenden
+app.use('/api', apiRoutes);
+
+// ✅ Root Route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '🚀 Schoppmann Time Tracking Server',
+    version: '2.0.0',
+    environment: config.nodeEnv,
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    database: {
+      connected: dbConnected,
+      dialect: config.database.dialect,
+      models: dbConnected ? ['User', 'MinijobSetting'] : []
+    },
+    api: {
+      version: '2.0.0',
+      baseUrl: '/api',
+      documentation: '/api/',
+      endpoints: {
+        auth: '/api/auth/*',
+        employee: '/api/employee/*',
+        admin: '/api/admin/*',
+        minijob: '/api/admin/minijob/*'
+      }
+    },
+    middleware: {
+      security: 'active',
+      auth: 'ready',
+      validation: 'ready',
+      rateLimit: 'active'
+    },
+    links: {
+      api: '/api/',
+      health: '/api/status',
+      version: '/api/version'
+    }
+  });
+});
+
+// ✅ Health Check Route
+app.get('/health', (req, res) => {
   res.json({ 
     message: '✅ Schoppmann Time Tracking Server läuft!', 
-    timestamp: new Date().toISOString(),
+    timestamp: new Date().ToISOString(),
     status: 'OK',
     environment: config.nodeEnv,
+    uptime: Math.floor(process.uptime()),
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100,
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100
+    },
     version: {
+      api: '2.0.0',
       express: require('express/package.json').version,
       node: process.version
     },
@@ -71,124 +119,31 @@ app.get('/api/health', (req, res) => {
       corsOrigins: config.cors.origin.length,
       helmet: true,
       rateLimiting: true
-    },
-    middleware: {
-      loaded: ['auth', 'validation', 'rateLimit', 'security'],
-      version: '2.0.0'
     }
   });
 });
 
-// ✅ Auth Test Route (Development only)
-if (config.nodeEnv === 'development') {
-  app.get('/api/auth-test', auth.token, (req, res) => {
-    res.json({
-      message: '🔐 Auth Test erfolgreich',
-      user: {
-        id: req.user.userId,
-        email: req.user.email,
-        role: req.user.role,
-        name: req.user.name
-      },
-      timestamp: new Date().toISOString()
-    });
-  });
-
-  app.get('/api/admin-test', auth.admin, (req, res) => {
-    res.json({
-      message: '👑 Admin Test erfolgreich',
-      admin: {
-        id: req.user.userId,
-        email: req.user.email,
-        name: req.user.name
-      },
-      timestamp: new Date().toISOString()
-    });
-  });
-}
-
-// Config Test Route (nur Development)
-if (config.nodeEnv === 'development') {
-  app.get('/api/config', (req, res) => {
-    res.json({
-      message: '🔧 Development Config (ohne Secrets)',
-      config: {
-        nodeEnv: config.nodeEnv,
-        port: config.port,
-        database: {
-          dialect: config.database.dialect,
-          storage: config.database.storage,
-          connected: dbConnected,
-          modelsLoaded: dbConnected
-        },
-        cors: config.cors,
-        rateLimit: config.rateLimit,
-        jwt: {
-          secretLength: config.jwt.secret.length,
-          refreshSecretLength: config.jwt.refreshSecret.length,
-          expiresIn: config.jwt.expiresIn
-        }
-      },
-      middleware: {
-        auth: 'loaded',
-        validation: 'loaded',
-        rateLimit: 'active',
-        security: 'active'
-      }
-    });
-  });
-}
-
-// ✅ Validation Test Route (Development only)
-if (config.nodeEnv === 'development') {
-  app.post('/api/validation-test', 
-    validation.sanitize,
-    ...validation.registration,
-    (req, res) => {
-      res.json({
-        message: '✅ Validation Test erfolgreich',
-        data: req.body,
-        timestamp: new Date().toISOString()
-      });
-    }
-  );
-}
-
-// Root Route
-app.get('/', (req, res) => {
-  res.json({ 
-    message: '🚀 Schoppmann Time Tracking API',
-    version: '2.0.0',
-    environment: config.nodeEnv,
-    database: {
-      connected: dbConnected,
-      dialect: config.database.dialect,
-      models: dbConnected ? ['User', 'MinijobSetting'] : []
-    },
-    middleware: {
-      security: 'active',
-      auth: 'ready',
-      validation: 'ready',
-      rateLimit: 'active'
-    },
-    endpoints: {
-      health: '/api/health',
-      config: config.nodeEnv === 'development' ? '/api/config' : 'disabled',
-      authTest: config.nodeEnv === 'development' ? '/api/auth-test' : 'disabled',
-      adminTest: config.nodeEnv === 'development' ? '/api/admin-test' : 'disabled'
-    }
-  });
-});
-
-// 404 Handler
+// ✅ 404 Handler für alle anderen Routen
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
     error: 'Route nicht gefunden',
+    code: 'ROUTE_NOT_FOUND',
     path: req.originalUrl,
     method: req.method,
-    available: ['/', '/api/health', '/api/config'],
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    availableRoutes: {
+      root: '/',
+      health: '/health',
+      api: '/api/',
+      endpoints: {
+        auth: '/api/auth/*',
+        employee: '/api/employee/*',
+        admin: '/api/admin/*',
+        minijob: '/api/admin/minijob/*'
+      }
+    },
+    suggestion: 'Überprüfen Sie die verfügbaren Endpunkte unter /api/'
   });
 });
 
@@ -202,6 +157,7 @@ app.use((error, req, res, next) => {
       success: false,
       error: 'Rate Limit überschritten',
       code: 'RATE_LIMIT_EXCEEDED',
+      retryAfter: error.retryAfter,
       timestamp: new Date().toISOString()
     });
   }
@@ -226,6 +182,17 @@ app.use((error, req, res, next) => {
       timestamp: new Date().toISOString()
     });
   }
+
+  // Database Errors
+  if (error.name === 'SequelizeError') {
+    return res.status(500).json({
+      success: false,
+      error: 'Datenbankfehler',
+      code: 'DATABASE_ERROR',
+      message: config.nodeEnv === 'development' ? error.message : 'Kontaktieren Sie den Administrator',
+      timestamp: new Date().toISOString()
+    });
+  }
   
   // Generic Error
   res.status(500).json({
@@ -238,9 +205,9 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Server starten mit Datenbank- und Models-Initialisierung
+// ✅ Server starten mit Datenbank- und Models-Initialisierung
 const startServer = async () => {
-  // ✅ Datenbank und Models zuerst initialisieren
+  // Datenbank und Models zuerst initialisieren
   await initializeDatabaseAndModels();
   
   // Server starten
@@ -250,31 +217,61 @@ const startServer = async () => {
     console.log('   Schoppmann Time Tracking Server');
     console.log('🚀 ===================================');
     console.log(`📡 Server: http://localhost:${config.port}`);
-    console.log(`📊 Health: http://localhost:${config.port}/api/health`);
+    console.log(`📊 Health: http://localhost:${config.port}/health`);
+    console.log(`🔌 API: http://localhost:${config.port}/api/`);
     if (config.nodeEnv === 'development') {
-      console.log(`🔧 Config: http://localhost:${config.port}/api/config`);
-      console.log(`🔐 Auth Test: http://localhost:${config.port}/api/auth-test`);
-      console.log(`👑 Admin Test: http://localhost:${config.port}/api/admin-test`);
+      console.log(`🔧 API Routes: http://localhost:${config.port}/api/dev/routes`);
+      console.log(`🔧 Middleware: http://localhost:${config.port}/api/dev/middleware`);
     }
     console.log(`🔒 Environment: ${config.nodeEnv}`);
     console.log(`📊 Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}`);
-    console.log(`📦 Models: ${dbConnected ? '✅ Loaded' : '❌ Not Loaded'}`);
+    console.log(`📦 Models: ${dbConnected ? '✅ Loaded (User, MinijobSetting)' : '❌ Not Loaded'}`);
     console.log(`🛡️ Security: ✅ Active (Helmet, CORS, Rate Limiting)`);
-    console.log(`🔐 Auth: ✅ Ready`);
-    console.log(`✅ Validation: ✅ Active`);
+    console.log(`🔐 Auth: ✅ JWT Ready`);
+    console.log(`✅ Validation: ✅ express-validator Active`);
+    console.log(`📍 API Endpoints:`);
+    console.log(`   • Auth: /api/auth/*`);
+    console.log(`   • Employee: /api/employee/*`);
+    console.log(`   • Admin: /api/admin/*`);
+    console.log(`   • Minijob: /api/admin/minijob/*`);
     console.log('🚀 ===================================');
     console.log('');
+    
+    // Erste Admin-Erstellung Hinweis
+    if (config.nodeEnv === 'development') {
+      console.log('💡 TIPP: Ersten Admin erstellen mit:');
+      console.log(`   GET http://localhost:${config.port}/api/admin/create-first-admin`);
+      console.log('');
+    }
   });
 
   // Graceful Shutdown
   process.on('SIGTERM', () => {
     console.log('🛑 Server wird heruntergefahren...');
-    server.close(() => process.exit(0));
+    server.close(() => {
+      console.log('✅ Server sauber beendet');
+      process.exit(0);
+    });
   });
 
   process.on('SIGINT', () => {
     console.log('🛑 Server wird heruntergefahren...');
-    server.close(() => process.exit(0));
+    server.close(() => {
+      console.log('✅ Server sauber beendet');
+      process.exit(0);
+    });
+  });
+
+  // Unhandled Promise Rejections
+  process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Promise Rejection:', reason);
+    server.close(() => process.exit(1));
+  });
+
+  // Uncaught Exceptions
+  process.on('uncaughtException', (error) => {
+    console.error('❌ Uncaught Exception:', error);
+    server.close(() => process.exit(1));
   });
 };
 
