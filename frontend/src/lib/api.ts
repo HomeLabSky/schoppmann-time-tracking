@@ -1,3 +1,5 @@
+// frontend/src/lib/api.ts - KORRIGIERTE VERSION
+
 import type { 
   ApiResponse, 
   ApiError, 
@@ -166,7 +168,7 @@ class ApiClient {
     }
 
     try {
-      const response = await fetch(`${this.baseURL}/api/refresh`, {
+      const response = await fetch(`${this.baseURL}/api/auth/refresh`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken })
@@ -174,9 +176,9 @@ class ApiClient {
 
       const data = await response.json()
 
-      if (response.ok) {
-        TokenManager.setTokens(data.accessToken, data.refreshToken)
-        TokenManager.setUser(data.user)
+      if (response.ok && data.success) {
+        TokenManager.setTokens(data.data.accessToken, data.data.refreshToken)
+        TokenManager.setUser(data.data.user)
         return true
       } else {
         TokenManager.clearTokens()
@@ -213,72 +215,124 @@ class ApiClient {
 // Create API client instance
 const apiClient = new ApiClient(API_BASE_URL)
 
-// ===== AUTH API =====
+// ===== AUTH API - KORRIGIERTE ENDPUNKTE =====
 
 export const authApi = {
   login: (credentials: LoginCredentials): Promise<AuthResponse> =>
-    apiClient.post('/api/login', credentials, false),
+    apiClient.post('/api/auth/login', credentials, false),
 
   register: (data: RegisterData): Promise<AuthResponse> =>
-    apiClient.post('/api/register', data, false),
+    apiClient.post('/api/auth/register', data, false),
 
   refresh: (refreshToken: string): Promise<AuthResponse> =>
-    apiClient.post('/api/refresh', { refreshToken }, false),
+    apiClient.post('/api/auth/refresh', { refreshToken }, false),
 
-  getProfile: (): Promise<User> =>
-    apiClient.get('/api/profile'),
+  getProfile: (): Promise<{ success: boolean, data: { user: User }, message: string }> =>
+    apiClient.get('/api/auth/profile'),
+
+  changePassword: (data: { currentPassword: string, newPassword: string }): Promise<{ success: boolean, message: string }> =>
+    apiClient.put('/api/auth/change-password', data),
+
+  updateProfile: (data: { name?: string, email?: string }): Promise<{ success: boolean, data: { user: User }, message: string }> =>
+    apiClient.put('/api/auth/profile', data),
+
+  logout: (): Promise<{ success: boolean, message: string }> =>
+    apiClient.post('/api/auth/logout'),
 }
 
-// ===== ADMIN API =====
+// ===== ADMIN API - KORRIGIERTE ENDPUNKTE =====
 
 export const adminApi = {
   // User Management
-  getUsers: (): Promise<{ users: User[], total: number }> =>
-    apiClient.get('/api/admin/users'),
+  getUsers: (params?: { page?: number, limit?: number, search?: string, role?: string }): Promise<{ success: boolean, data: { users: User[], pagination: any }, message: string }> =>
+    apiClient.get(`/api/admin/users${params ? '?' + new URLSearchParams(params as any).toString() : ''}`),
 
-  createUser: (userData: NewUser): Promise<{ message: string, user: User }> =>
+  getUser: (userId: number): Promise<{ success: boolean, data: { user: User }, message: string }> =>
+    apiClient.get(`/api/admin/users/${userId}`),
+
+  createUser: (userData: NewUser): Promise<{ success: boolean, data: { user: User }, message: string }> =>
     apiClient.post('/api/admin/users', userData),
 
-  updateUser: (userId: number, userData: Partial<EditUser>): Promise<{ message: string, user: User }> =>
+  updateUser: (userId: number, userData: Partial<EditUser>): Promise<{ success: boolean, data: { user: User }, message: string }> =>
     apiClient.put(`/api/admin/users/${userId}`, userData),
 
-  updateUserSettings: (userId: number, settings: Partial<UserSettings>): Promise<{ message: string, user: User }> =>
+  updateUserSettings: (userId: number, settings: Partial<UserSettings>): Promise<{ success: boolean, data: { user: User }, message: string }> =>
     apiClient.put(`/api/admin/users/${userId}/settings`, settings),
 
-  toggleUserStatus: (userId: number): Promise<{ message: string, user: User }> =>
+  toggleUserStatus: (userId: number): Promise<{ success: boolean, data: { user: User }, message: string }> =>
     apiClient.patch(`/api/admin/users/${userId}/toggle-status`),
 
+  deleteUser: (userId: number): Promise<{ success: boolean, message: string }> =>
+    apiClient.delete(`/api/admin/users/${userId}`),
+
+  getUserStats: (): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.get('/api/admin/stats/users'),
+
   // Minijob Settings
-  getMinijobSettings: (): Promise<{ settings: MinijobSetting[], total: number }> =>
-    apiClient.get('/api/admin/minijob-settings'),
+  getMinijobSettings: (params?: { page?: number, limit?: number, status?: string }): Promise<{ success: boolean, data: { settings: MinijobSetting[], pagination: any }, message: string }> =>
+    apiClient.get(`/api/admin/minijob/settings${params ? '?' + new URLSearchParams(params as any).toString() : ''}`),
 
-  getCurrentMinijobSetting: (): Promise<{ setting: MinijobSetting }> =>
-    apiClient.get('/api/admin/minijob-settings/current'),
+  getCurrentMinijobSetting: (): Promise<{ success: boolean, data: { setting: MinijobSetting }, message: string }> =>
+    apiClient.get('/api/admin/minijob/settings/current'),
 
-  createMinijobSetting: (data: NewMinijobSetting): Promise<{ message: string, setting: MinijobSetting, autoAdjustedSettings?: any[] }> =>
-    apiClient.post('/api/admin/minijob-settings', data),
+  createMinijobSetting: (data: NewMinijobSetting): Promise<{ success: boolean, data: { setting: MinijobSetting, autoAdjustedSettings?: any[] }, message: string }> =>
+    apiClient.post('/api/admin/minijob/settings', data),
 
-  updateMinijobSetting: (settingId: number, data: NewMinijobSetting): Promise<{ message: string, setting: MinijobSetting }> =>
-    apiClient.put(`/api/admin/minijob-settings/${settingId}`, data),
+  updateMinijobSetting: (settingId: number, data: NewMinijobSetting): Promise<{ success: boolean, data: { setting: MinijobSetting }, message: string }> =>
+    apiClient.put(`/api/admin/minijob/settings/${settingId}`, data),
 
-  deleteMinijobSetting: (settingId: number): Promise<{ message: string, adjustedSettings?: any[] }> =>
-    apiClient.delete(`/api/admin/minijob-settings/${settingId}`),
+  deleteMinijobSetting: (settingId: number): Promise<{ success: boolean, data: { adjustedSettings?: any[] }, message: string }> =>
+    apiClient.delete(`/api/admin/minijob/settings/${settingId}`),
 
-  recalculateMinijobPeriods: (): Promise<{ message: string, adjustments?: any[] }> =>
-    apiClient.post('/api/admin/minijob-settings/recalculate-periods'),
+  recalculateMinijobPeriods: (): Promise<{ success: boolean, data: { adjustedCount: number, adjustments?: any[] }, message: string }> =>
+    apiClient.post('/api/admin/minijob/settings/recalculate-periods'),
 
-  refreshMinijobStatus: (): Promise<{ message: string, currentSetting?: MinijobSetting }> =>
-    apiClient.post('/api/admin/minijob-settings/refresh-status'),
+  refreshMinijobStatus: (): Promise<{ success: boolean, data: { currentSetting?: MinijobSetting }, message: string }> =>
+    apiClient.post('/api/admin/minijob/settings/refresh-status'),
+
+  getMinijobStats: (): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.get('/api/admin/minijob/stats'),
+
+  // System
+  createFirstAdmin: (): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.get('/api/admin/create-first-admin'),
+
+  resetDatabase: (): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.post('/api/admin/reset-database'),
+
+  resetDatabaseConfirm: (confirmation: string): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.post('/api/admin/reset-database-confirm', { confirmation }),
 }
 
-// ===== EMPLOYEE API =====
+// ===== EMPLOYEE API - KORRIGIERTE ENDPUNKTE =====
 
 export const employeeApi = {
-  getDashboard: (): Promise<any> =>
+  getProfile: (): Promise<{ success: boolean, data: { user: User }, message: string }> =>
+    apiClient.get('/api/employee/profile'),
+
+  updateProfile: (data: { name?: string, email?: string }): Promise<{ success: boolean, data: { user: User }, message: string }> =>
+    apiClient.put('/api/employee/profile', data),
+
+  changePassword: (data: { currentPassword: string, newPassword: string, confirmPassword: string }): Promise<{ success: boolean, message: string }> =>
+    apiClient.put('/api/employee/change-password', data),
+
+  getSettings: (): Promise<{ success: boolean, data: { settings: UserSettings, userInfo: any }, message: string }> =>
+    apiClient.get('/api/employee/settings'),
+
+  updateSettings: (settings: Partial<UserSettings>): Promise<{ success: boolean, data: { settings: UserSettings }, message: string }> =>
+    apiClient.put('/api/employee/settings', settings),
+
+  getCurrentMinijobSetting: (): Promise<{ success: boolean, data: { setting: MinijobSetting }, message: string }> =>
+    apiClient.get('/api/employee/minijob/current'),
+
+  getDashboard: (): Promise<{ success: boolean, data: any, message: string }> =>
     apiClient.get('/api/employee/dashboard'),
 
-  updateSettings: (settings: Partial<UserSettings>): Promise<{ message: string }> =>
-    apiClient.put('/api/employee/settings', settings),
+  getAccountStatus: (): Promise<{ success: boolean, data: any, message: string }> =>
+    apiClient.get('/api/employee/account-status'),
+
+  logout: (): Promise<{ success: boolean, message: string }> =>
+    apiClient.post('/api/employee/logout'),
 }
 
 // Export the main client and token manager
