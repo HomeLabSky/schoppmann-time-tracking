@@ -57,7 +57,6 @@ const MinijobSetting = sequelize.define('MinijobSetting', {
     comment: 'ID des Admins, der diese Einstellung erstellt hat'
   }
 }, {
-  // KORRIGIERT: Model-Optionen hinzugefügt
   tableName: 'MinijobSettings',
   timestamps: true,
   indexes: [
@@ -75,7 +74,6 @@ const MinijobSetting = sequelize.define('MinijobSetting', {
     }
   ],
   validate: {
-    // KORRIGIERT: Model-Level Validation für Datumslogik
     validDateRange() {
       if (this.validUntil && this.validFrom >= this.validUntil) {
         throw new Error('Enddatum muss nach dem Startdatum liegen');
@@ -84,7 +82,7 @@ const MinijobSetting = sequelize.define('MinijobSetting', {
   }
 });
 
-// Static Methods (aus Ihrer bestehenden database.js)
+// ✅ Static Methods
 
 // Helper-Funktion: Aktuelle Minijob-Einstellung ermitteln
 MinijobSetting.getCurrentSetting = async function () {
@@ -101,15 +99,11 @@ MinijobSetting.getCurrentSetting = async function () {
           { validUntil: { [Op.gte]: today } }
         ]
       },
-      order: [['validFrom', 'DESC']],
-      include: [{
-        model: sequelize.models.User,
-        as: 'Creator',
-        attributes: ['name', 'email']
-      }]
+      order: [['validFrom', 'DESC']]
     });
   } catch (error) {
-    throw new Error(`Aktuelle Minijob-Einstellung konnte nicht geladen werden: ${error.message}`);
+    console.warn('getCurrentSetting Fehler:', error.message);
+    return null;
   }
 };
 
@@ -150,10 +144,12 @@ MinijobSetting.updateActiveStatus = async function () {
     return currentSetting;
   } catch (error) {
     await transaction.rollback();
-    throw new Error(`Aktiver Status konnte nicht aktualisiert werden: ${error.message}`);
+    console.warn('updateActiveStatus Fehler:', error.message);
+    return null;
   }
 };
 
+// ✅ Instance Methods
 MinijobSetting.prototype.isCurrentlyActive = function () {
   const today = new Date().toISOString().split('T')[0];
   return this.validFrom <= today &&
@@ -176,46 +172,7 @@ MinijobSetting.prototype.getFormattedPeriod = function () {
   return `${start} - ${end}`;
 };
 
-// Helper-Funktion: Alle Zeiträume validieren und korrigieren
-MinijobSetting.validateAndFixPeriods = async function () {
-  const transaction = await sequelize.transaction();
-
-  try {
-    const allSettings = await this.findAll({
-      order: [['validFrom', 'ASC']],
-      transaction
-    });
-
-    let adjustedCount = 0;
-
-    for (let i = 0; i < allSettings.length; i++) {
-      const currentSetting = allSettings[i];
-      const nextSetting = allSettings[i + 1];
-
-      let newValidUntil = null;
-
-      if (nextSetting) {
-        // Sichere Datums-Berechnung (einen Tag vor dem nächsten Setting)
-        const nextDate = new Date(nextSetting.validFrom + 'T00:00:00.000Z');
-        nextDate.setUTCDate(nextDate.getUTCDate() - 1);
-        newValidUntil = nextDate.toISOString().split('T')[0];
-      }
-
-      if (currentSetting.validUntil !== newValidUntil) {
-        await currentSetting.update({ validUntil: newValidUntil }, { transaction });
-        adjustedCount++;
-      }
-    }
-
-    await transaction.commit();
-    console.log(`✅ MinijobSetting Zeiträume validiert: ${adjustedCount} Anpassungen`);
-    return adjustedCount;
-  } catch (error) {
-    await transaction.rollback();
-    throw new Error(`Zeitraum-Validierung fehlgeschlagen: ${error.message}`);
-  }
-};
-
+// ✅ Validation Helper
 MinijobSetting.validateSettingData = function (settingData) {
   const errors = [];
 

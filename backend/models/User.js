@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
-const { sequelize } = require('../config/database'); // KORRIGIERT: Korrekte Import-Pfad
+const { sequelize } = require('../config/database');
 
-// ✅ KORRIGIERT: User Model Definition mit korrekter sequelize Integration
+// ✅ User Model Definition
 const User = sequelize.define('User', {
   email: {
     type: DataTypes.STRING,
@@ -64,7 +64,6 @@ const User = sequelize.define('User', {
     comment: 'E-Mail-Adresse für Lohnzettel-Versand'
   }
 }, {
-  // KORRIGIERT: Model-Optionen hinzugefügt
   tableName: 'Users',
   timestamps: true,
   indexes: [
@@ -81,7 +80,7 @@ const User = sequelize.define('User', {
   ]
 });
 
-// ✅ KORRIGIERT: Hooks mit Error Handling
+// ✅ Hooks für Passwort-Hashing
 User.beforeCreate(async (user, options) => {
   try {
     if (user.password) {
@@ -102,7 +101,7 @@ User.beforeUpdate(async (user, options) => {
   }
 });
 
-// ✅ KORRIGIERT: Instance Methods mit Error Handling
+// ✅ Instance Methods
 User.prototype.comparePassword = async function(candidatePassword) {
   try {
     return await bcrypt.compare(candidatePassword, this.password);
@@ -121,7 +120,7 @@ User.prototype.toSafeJSON = function() {
   }
 };
 
-// ✅ KORRIGIERT: Static Methods mit Error Handling
+// ✅ Static Methods
 User.findByEmail = function(email) {
   try {
     if (!email) {
@@ -144,7 +143,7 @@ User.findActiveUsers = function() {
   }
 };
 
-// ✅ KORRIGIERT: Validation Helper
+// ✅ Validation Helper
 User.validateUserData = function(userData, operation = 'create') {
   const errors = [];
 

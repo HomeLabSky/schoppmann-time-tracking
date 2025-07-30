@@ -10,6 +10,7 @@ const authRoutes = require('./auth');
 const adminRoutes = require('./admin');
 const employeeRoutes = require('./employee');
 const minijobRoutes = require('./minijob');
+const setupRoutes = require('./setup');
 
 const router = express.Router();
 
@@ -96,6 +97,9 @@ router.get('/', (req, res) => {
 router.use('/auth/login', loginLimiter);
 router.use('/auth/register', registrationLimiter);
 router.use('/auth', authRoutes);
+
+// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung)
+router.use('/setup', publicAPI, setupRoutes);
 
 // ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
 router.use('/employee', authenticatedAPI, employeeRoutes);
