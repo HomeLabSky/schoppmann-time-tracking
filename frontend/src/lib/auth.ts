@@ -1,9 +1,8 @@
 'use client'
 
-import { useState, useEffect, useContext, createContext, ReactNode } from 'react'
+import React, { useState, useEffect, useContext, createContext, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { authApi, TokenManager } from './api'
-import type { User, LoginCredentials, RegisterData, ApiError } from '@/types/api'
+import type { User, LoginCredentials, RegisterData, ApiError, AuthResponse } from '@/types/api'
 
 // ===== AUTH CONTEXT TYPES =====
 
@@ -21,13 +20,195 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// ===== TOKEN MANAGER =====
+
+class TokenManager {
+  static getAccessToken(): string | null {
+    if (typeof window === 'undefined') return null
+    return localStorage.getItem('accessToken')
+  }
+
+  static getRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null
+    return localStorage.getItem('refreshToken')
+  }
+
+  static setTokens(accessToken: string, refreshToken: string): void {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('accessToken', accessToken)
+    localStorage.setItem('refreshToken', refreshToken)
+  }
+
+  static clearTokens(): void {
+    if (typeof window === 'undefined') return
+    localStorage.removeItem('accessToken')
+    localStorage.removeItem('refreshToken')
+    localStorage.removeItem('user')
+  }
+
+  static setUser(user: User): void {
+    if (typeof window === 'undefined') return
+    localStorage.setItem('user', JSON.stringify(user))
+  }
+
+  static getUser(): User | null {
+    if (typeof window === 'undefined') return null
+    const userData = localStorage.getItem('user')
+    return userData ? JSON.parse(userData) : null
+  }
+}
+
+// ===== API CLIENT =====
+
+class ApiClient {
+  private baseURL: string = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+  private refreshPromise: Promise<boolean> | null = null
+
+  async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {},
+    requireAuth: boolean = true
+  ): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`
+    
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...options.headers as Record<string, string>
+    }
+
+    if (requireAuth) {
+      const token = TokenManager.getAccessToken()
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+    }
+
+    try {
+      let response = await fetch(url, {
+        ...options,
+        headers
+      })
+
+      // Handle token refresh on 401/403
+      if ((response.status === 401 || response.status === 403) && requireAuth) {
+        const refreshSuccess = await this.refreshTokens()
+        
+        if (refreshSuccess) {
+          const newToken = TokenManager.getAccessToken()
+          if (newToken) {
+            headers['Authorization'] = `Bearer ${newToken}`
+            response = await fetch(url, {
+              ...options,
+              headers
+            })
+          }
+        } else {
+          TokenManager.clearTokens()
+          throw new Error('SESSION_EXPIRED')
+        }
+      }
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw {
+          error: data.error || 'Request failed',
+          details: data.details,
+          status: response.status
+        } as ApiError
+      }
+
+      return data
+    } catch (error) {
+      if (error instanceof TypeError) {
+        throw {
+          error: 'Verbindungsfehler - Server nicht erreichbar',
+          status: 0
+        } as ApiError
+      }
+      throw error
+    }
+  }
+
+  private async refreshTokens(): Promise<boolean> {
+    if (this.refreshPromise) {
+      return this.refreshPromise
+    }
+
+    this.refreshPromise = this.performRefresh()
+    const result = await this.refreshPromise
+    this.refreshPromise = null
+    return result
+  }
+
+  private async performRefresh(): Promise<boolean> {
+    const refreshToken = TokenManager.getRefreshToken()
+    
+    if (!refreshToken) {
+      return false
+    }
+
+    try {
+      const response = await fetch(`${this.baseURL}/api/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        TokenManager.setTokens(data.data.accessToken, data.data.refreshToken)
+        TokenManager.setUser(data.data.user)
+        return true
+      } else {
+        TokenManager.clearTokens()
+        return false
+      }
+    } catch (error) {
+      TokenManager.clearTokens()
+      return false
+    }
+  }
+
+  // Auth API Methods
+  async login(credentials: LoginCredentials): Promise<AuthResponse> {
+    return this.request('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(credentials)
+    }, false)
+  }
+
+  async register(data: RegisterData): Promise<AuthResponse> {
+    return this.request('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false)
+  }
+
+  async getProfile(): Promise<{ success: boolean, data: { user: User }, message?: string }> {
+    return this.request('/api/auth/profile', {
+      method: 'GET'
+    }, true)
+  }
+
+  async refreshAuth(refreshToken: string): Promise<AuthResponse> {
+    return this.request('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refreshToken })
+    }, false)
+  }
+}
+
+const apiClient = new ApiClient()
+
 // ===== AUTH PROVIDER =====
 
 interface AuthProviderProps {
   children: ReactNode
 }
 
-export function AuthProvider({ children }: AuthProviderProps) {
+export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
@@ -37,34 +218,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
     initializeAuth()
   }, [])
 
-  const initializeAuth = async () => {
+  const initializeAuth = async (): Promise<void> => {
     try {
       const storedUser = TokenManager.getUser()
       const accessToken = TokenManager.getAccessToken()
 
       if (storedUser && accessToken) {
-        // Verify token is still valid by getting profile
         try {
-          const response = await authApi.getProfile()
+          const response = await apiClient.getProfile()
           
-          // FIX: Prüfe ob response die erwartete Struktur hat
-          if (response && typeof response === 'object' && 'success' in response) {
-            // API Response Format: { success: boolean, data: { user: User }, message?: string }
-            if (response.success && response.data?.user) {
-              setUser(response.data.user)
-            } else {
-              // Token invalid oder API-Fehler
-              TokenManager.clearTokens()
-              setUser(null)
-            }
+          if (response.success && response.data?.user) {
+            setUser(response.data.user)
+            TokenManager.setUser(response.data.user)
           } else {
-            // Fallback: Direkter User-Response (alte API-Version)
-            if (response && 'id' in response && 'email' in response) {
-              setUser(response as User)
-            } else {
-              TokenManager.clearTokens()
-              setUser(null)
-            }
+            TokenManager.clearTokens()
+            setUser(null)
           }
         } catch (error) {
           console.error('Token validation failed:', error)
@@ -84,10 +252,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const login = async (email: string, password: string): Promise<{ success: boolean, message?: string, error?: string }> => {
     try {
       const credentials: LoginCredentials = { email, password }
-      const response = await authApi.login(credentials)
+      const response = await apiClient.login(credentials)
       
-      if (response.success) {
-        // Store tokens and user
+      if (response.success && response.data) {
         TokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
         TokenManager.setUser(response.data.user)
         setUser(response.data.user)
@@ -120,10 +287,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   const register = async (data: RegisterData): Promise<{ success: boolean, message?: string, error?: string }> => {
     try {
-      const response = await authApi.register(data)
+      const response = await apiClient.register(data)
       
-      if (response.success) {
-        // Store tokens and user
+      if (response.success && response.data) {
         TokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
         TokenManager.setUser(response.data.user)
         setUser(response.data.user)
@@ -154,35 +320,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  const logout = () => {
+  const logout = (): void => {
     TokenManager.clearTokens()
     setUser(null)
     router.push('/login')
   }
 
-  const handleSessionExpired = () => {
+  const handleSessionExpired = (): void => {
     console.warn('Session expired - redirecting to login')
     TokenManager.clearTokens()
     setUser(null)
     router.push('/login')
   }
 
-  const refreshUser = async () => {
+  const refreshUser = async (): Promise<void> => {
     try {
       if (user) {
-        const response = await authApi.getProfile()
+        const response = await apiClient.getProfile()
         
-        // FIX: Gleiche Prüfung wie in initializeAuth
-        if (response && typeof response === 'object' && 'success' in response) {
-          if (response.success && response.data?.user) {
-            setUser(response.data.user)
-            TokenManager.setUser(response.data.user)
-          }
-        } else if (response && 'id' in response && 'email' in response) {
-          // Fallback für direkten User-Response
-          const userResponse = response as User
-          setUser(userResponse)
-          TokenManager.setUser(userResponse)
+        if (response.success && response.data?.user) {
+          setUser(response.data.user)
+          TokenManager.setUser(response.data.user)
         }
       }
     } catch (error) {
@@ -201,10 +359,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
     handleSessionExpired
   }
 
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
+  return React.createElement(
+    AuthContext.Provider,
+    { value: contextValue },
+    children
   )
 }
 
@@ -223,33 +381,27 @@ export function useAuth(): AuthContextType {
 // ===== AUTH UTILITIES =====
 
 export const authUtils = {
-  // Check if user is authenticated
   isAuthenticated: (): boolean => {
     return !!TokenManager.getAccessToken() && !!TokenManager.getUser()
   },
 
-  // Check if user has specific role
   hasRole: (role: 'admin' | 'mitarbeiter'): boolean => {
     const user = TokenManager.getUser()
     return user?.role === role
   },
 
-  // Check if user is admin
   isAdmin: (): boolean => {
     return authUtils.hasRole('admin')
   },
 
-  // Check if user is employee
   isEmployee: (): boolean => {
     return authUtils.hasRole('mitarbeiter')
   },
 
-  // Get current user
   getCurrentUser: (): User | null => {
     return TokenManager.getUser()
   },
 
-  // Get redirect path based on user role
   getRedirectPath: (user: User): string => {
     switch (user.role) {
       case 'admin':
@@ -276,13 +428,11 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
 
   useEffect(() => {
     if (!loading) {
-      // Not authenticated
       if (!user) {
         router.push(redirectTo)
         return
       }
 
-      // Role check
       if (requiredRole && user.role !== requiredRole) {
         const correctPath = authUtils.getRedirectPath(user)
         router.push(correctPath)
@@ -292,37 +442,6 @@ export function useRequireAuth(options: UseRequireAuthOptions = {}) {
   }, [user, loading, router, redirectTo, requiredRole])
 
   return { user, loading }
-}
-
-// ===== SESSION MANAGEMENT =====
-
-export const sessionManager = {
-  // Clear session and redirect to login
-  clearSession: () => {
-    TokenManager.clearTokens()
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login'
-    }
-  },
-
-  // Handle session expired
-  handleSessionExpired: () => {
-    console.warn('Session expired - redirecting to login')
-    sessionManager.clearSession()
-  },
-
-  // Check if session is valid
-  isSessionValid: (): boolean => {
-    const token = TokenManager.getAccessToken()
-    const user = TokenManager.getUser()
-    
-    if (!token || !user) {
-      return false
-    }
-
-    // You could add token expiry check here
-    return true
-  }
 }
 
 // ===== AUTH MANAGER CLASS (für Backward Compatibility) =====
@@ -340,7 +459,6 @@ class AuthManager {
     return AuthManager.instance
   }
 
-  // Token aus localStorage laden
   getTokens(): { accessToken: string | null, refreshToken: string | null } {
     return {
       accessToken: TokenManager.getAccessToken(),
@@ -348,25 +466,20 @@ class AuthManager {
     }
   }
 
-  // User aus localStorage laden
   getUser(): User | null {
     return TokenManager.getUser()
   }
 
-  // Tokens speichern
   setTokens(tokens: { accessToken: string, refreshToken: string, user: User }): void {
     TokenManager.setTokens(tokens.accessToken, tokens.refreshToken)
     TokenManager.setUser(tokens.user)
   }
 
-  // Alle Auth-Daten löschen
   clearAuth(): void {
     TokenManager.clearTokens()
   }
 
-  // Token automatisch erneuern
   async refreshTokens(): Promise<boolean> {
-    // Wenn bereits ein Refresh läuft, warten
     if (this.refreshPromise) {
       return this.refreshPromise
     }
@@ -388,9 +501,9 @@ class AuthManager {
     try {
       console.log('🔄 Erneuere Token...')
       
-      const response = await authApi.refresh(refreshToken)
+      const response = await apiClient.refreshAuth(refreshToken)
 
-      if (response.success) {
+      if (response.success && response.data) {
         console.log('✅ Token erfolgreich erneuert')
         TokenManager.setTokens(response.data.accessToken, response.data.refreshToken)
         TokenManager.setUser(response.data.user)
@@ -407,37 +520,34 @@ class AuthManager {
     }
   }
 
-  // API-Call mit automatischem Token Refresh
   async authenticatedFetch(url: string, options: RequestInit = {}): Promise<Response> {
     const accessToken = TokenManager.getAccessToken()
     
-    // Ersten Versuch mit aktuellem Token
     const response = await fetch(url, {
       ...options,
       headers: {
         ...options.headers,
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json'
       }
     })
 
-    // Wenn 401/403, versuche Token zu erneuern
     if (response.status === 401 || response.status === 403) {
       console.log('🔄 Token abgelaufen, versuche Refresh...')
       
       const refreshSuccess = await this.refreshTokens()
       
       if (refreshSuccess) {
-        // Retry mit neuem Token
         const newToken = TokenManager.getAccessToken()
         return fetch(url, {
           ...options,
           headers: {
             ...options.headers,
-            'Authorization': `Bearer ${newToken}`
+            'Authorization': `Bearer ${newToken}`,
+            'Content-Type': 'application/json'
           }
         })
       } else {
-        // Refresh fehlgeschlagen - User muss sich neu einloggen
         throw new Error('SESSION_EXPIRED')
       }
     }
@@ -447,5 +557,8 @@ class AuthManager {
 }
 
 export const authManager = AuthManager.getInstance()
+
+// Export Token Manager für direkte Nutzung
+export { TokenManager }
 
 export default useAuth
