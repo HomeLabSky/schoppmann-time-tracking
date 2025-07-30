@@ -1,8 +1,8 @@
 const express = require('express');
 const config = require('../config');
 
-// ✅ Middleware importieren (validateContentType entfernt)
-const { authenticatedAPI, adminAPI } = require('../middleware');
+// ✅ Middleware importieren (KORRIGIERT - publicAPI hinzugefügt)
+const { publicAPI, authenticatedAPI, adminAPI } = require('../middleware');
 const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
 
 // ✅ Route-Module importieren
@@ -98,7 +98,7 @@ router.use('/auth/login', loginLimiter);
 router.use('/auth/register', registrationLimiter);
 router.use('/auth', authRoutes);
 
-// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung)
+// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung) - KORRIGIERT
 router.use('/setup', publicAPI, setupRoutes);
 
 // ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
