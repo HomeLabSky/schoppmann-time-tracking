@@ -105,7 +105,7 @@ export default function MinijobSettingsPage() {
       const data = await response.json()
 
       if (response.ok) {
-        setCurrentSetting(data.setting)
+        setCurrentSetting(data.data.setting)
       } else if (response.status === 404) {
         setCurrentSetting(null)
       }

@@ -4,12 +4,36 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authManager, useAuth } from '@/lib/auth'
+import type { 
+  User, 
+  MinijobSetting, 
+  UsersResponse, 
+  CurrentMinijobSettingResponse 
+} from '@/types/api'
+
+// Lokale Interfaces für Dashboard-spezifische Daten
+interface DashboardStats {
+  totalUsers: number
+  activeUsers: number
+  adminUsers: number
+  employeeUsers: number
+  currentMinijobLimit: number | null
+  systemStatus: string
+}
+
+interface Activity {
+  id: number
+  action: string
+  target: string
+  time: string
+  type: 'user' | 'minijob' | 'system'
+}
 
 export default function AdminDashboard() {
   const router = useRouter()
   const { logout, handleSessionExpired } = useAuth()
-  const [currentUser, setCurrentUser] = useState(null)
-  const [dashboardStats, setDashboardStats] = useState({
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalUsers: 0,
     activeUsers: 0,
     adminUsers: 0,
@@ -17,42 +41,49 @@ export default function AdminDashboard() {
     currentMinijobLimit: null,
     systemStatus: 'online'
   })
-  const [recentActivities, setRecentActivities] = useState([])
-  const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [recentActivities, setRecentActivities] = useState<Activity[]>([])
+  const [message, setMessage] = useState<string>('')
+  const [loading, setLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user') || '{}')
-    setCurrentUser(user)
+    const userString = localStorage.getItem('user')
+    if (userString) {
+      try {
+        const user = JSON.parse(userString) as User
+        setCurrentUser(user)
+      } catch (error) {
+        console.error('Error parsing user from localStorage:', error)
+      }
+    }
     loadDashboardData()
   }, [])
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = async (): Promise<void> => {
     try {
       // Load user stats
       const usersResponse = await authManager.authenticatedFetch('http://localhost:5000/api/admin/users')
-      const usersData = await usersResponse.json()
+      const usersData = await usersResponse.json() as UsersResponse
       
-      if (usersResponse.ok && usersData.users) {
-        const users = usersData.users
+      if (usersResponse.ok && usersData.data?.users) {
+        const users = usersData.data.users
         setDashboardStats(prev => ({
           ...prev,
           totalUsers: users.length,
-          activeUsers: users.filter(u => u.isActive).length,
-          adminUsers: users.filter(u => u.role === 'admin').length,
-          employeeUsers: users.filter(u => u.role === 'mitarbeiter').length
+          activeUsers: users.filter((u: User) => u.isActive).length,
+          adminUsers: users.filter((u: User) => u.role === 'admin').length,
+          employeeUsers: users.filter((u: User) => u.role === 'mitarbeiter').length
         }))
       }
 
       // Load current minijob setting
       try {
-        const minijobResponse = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob-settings/current')
-        const minijobData = await minijobResponse.json()
+        const minijobResponse = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/current')
+        const minijobData = await minijobResponse.json() as CurrentMinijobSettingResponse
         
-        if (minijobResponse.ok && minijobData.setting) {
+        if (minijobResponse.ok && minijobData.data?.setting) {
           setDashboardStats(prev => ({
             ...prev,
-            currentMinijobLimit: minijobData.setting.monthlyLimit
+            currentMinijobLimit: minijobData.data.setting!.monthlyLimit
           }))
         }
       } catch (error) {
@@ -61,36 +92,42 @@ export default function AdminDashboard() {
       }
 
       // Mock recent activities (in real app, this would come from audit logs)
-      setRecentActivities([
+      const mockActivities: Activity[] = [
         { id: 1, action: 'Benutzer erstellt', target: 'Max Mustermann', time: '2 Stunden', type: 'user' },
         { id: 2, action: 'Minijob-Limit aktualisiert', target: '600€', time: '1 Tag', type: 'minijob' },
         { id: 3, action: 'Benutzer deaktiviert', target: 'test@example.com', time: '3 Tage', type: 'user' },
         { id: 4, action: 'System-Backup erstellt', target: 'Vollständig', time: '1 Woche', type: 'system' }
-      ])
+      ]
+      setRecentActivities(mockActivities)
 
-    } catch (error) {
-      if (error.message === 'SESSION_EXPIRED') {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      
+      if (errorMessage === 'SESSION_EXPIRED') {
         handleSessionExpired()
       } else {
         console.error('Fehler beim Laden der Dashboard-Daten:', error)
+        setMessage('❌ Fehler beim Laden der Dashboard-Daten')
       }
     } finally {
       setLoading(false)
     }
   }
 
-  const testProtectedRoute = async () => {
+  const testProtectedRoute = async (): Promise<void> => {
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/profile')
+      const response = await authManager.authenticatedFetch('http://localhost:5000/api/auth/profile')
       const data = await response.json()
 
       if (response.ok) {
-        setMessage(`✅ System-Test erfolgreich: API-Verbindung funktioniert einwandfrei`)
+        setMessage('✅ System-Test erfolgreich: API-Verbindung funktioniert einwandfrei')
       } else {
-        setMessage(`❌ System-Test fehlgeschlagen: ${data.error}`)
+        setMessage(`❌ System-Test fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`)
       }
-    } catch (error) {
-      if (error.message === 'SESSION_EXPIRED') {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      
+      if (errorMessage === 'SESSION_EXPIRED') {
         setMessage('⏰ Sitzung abgelaufen - Sie werden ausgeloggt...')
         setTimeout(handleSessionExpired, 2000)
       } else {
@@ -99,14 +136,14 @@ export default function AdminDashboard() {
     }
   }
 
-  const formatCurrency = (amount) => {
+  const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat('de-DE', {
       style: 'currency',
       currency: 'EUR'
     }).format(amount)
   }
 
-  const getActivityIcon = (type) => {
+  const getActivityIcon = (type: Activity['type']) => {
     switch (type) {
       case 'user':
         return (
@@ -157,7 +194,7 @@ export default function AdminDashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Willkommen zurück, {currentUser?.name}
+            Willkommen zurück, {currentUser?.name || 'Administrator'}
           </h2>
           <p className="text-gray-600">
             Hier ist eine Übersicht über Ihr System und die neuesten Aktivitäten.
