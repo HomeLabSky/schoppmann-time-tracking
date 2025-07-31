@@ -68,17 +68,19 @@ export default function MinijobSettingsPage() {
   }, [])
 
   // Alle Minijob-Einstellungen laden
+  // Alle Minijob-Einstellungen laden
   const loadMinijobSettings = async () => {
     setLoadingSettings(true)
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob-settings')
+      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings')
       const data = await response.json()
 
       if (response.ok) {
-        setSettings(data.settings || [])
-        setMessage(`✅ ${data.total || 0} Minijob-Einstellungen geladen`)
+        // ✅ KORRIGIERT: Richtige Pfade zu den Daten
+        setSettings(data.data.settings || [])
+        setMessage(`✅ ${data.data.pagination.total || 0} Minijob-Einstellungen geladen`)
         setTimeout(() => setMessage(''), 3000)
       } else {
         setMessage(`❌ ${data.error}`)
@@ -99,7 +101,7 @@ export default function MinijobSettingsPage() {
   // Aktuelle Minijob-Einstellung laden
   const loadCurrentSetting = async () => {
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob-settings/current')
+      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/current')
       const data = await response.json()
 
       if (response.ok) {
@@ -127,7 +129,7 @@ export default function MinijobSettingsPage() {
         ...(newSettingForm.validUntil && { validUntil: newSettingForm.validUntil })
       }
 
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob-settings', {
+      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -197,7 +199,7 @@ export default function MinijobSettingsPage() {
         ...(newSettingForm.validUntil && { validUntil: newSettingForm.validUntil })
       }
 
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob-settings/${editingSetting.id}`, {
+      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob/settings/${editingSetting.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -237,7 +239,7 @@ export default function MinijobSettingsPage() {
     setAutoAdjustmentInfo([])
 
     try {
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob-settings/${settingId}`, {
+      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob/settings/${settingId}`, {
         method: 'DELETE'
       })
 
@@ -280,7 +282,7 @@ export default function MinijobSettingsPage() {
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob-settings/recalculate-periods', {
+      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/recalculate-periods', {
         method: 'POST'
       })
 
@@ -410,8 +412,8 @@ export default function MinijobSettingsPage() {
             </svg>
             <h4 className="text-lg font-medium text-yellow-800 mb-2">Keine aktuelle Einstellung gefunden</h4>
             <p className="text-yellow-700 mb-4">Bitte erstellen Sie eine neue Minijob-Einstellung</p>
-            <button 
-              onClick={() => setShowCreateModal(true)} 
+            <button
+              onClick={() => setShowCreateModal(true)}
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
             >
               Neue Einstellung erstellen
@@ -511,9 +513,9 @@ export default function MinijobSettingsPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
-                        <button 
-                          onClick={() => openEditSetting(setting)} 
-                          className="text-blue-600 hover:text-blue-900 p-1.5 hover:bg-blue-50 rounded transition-colors" 
+                        <button
+                          onClick={() => openEditSetting(setting)}
+                          className="text-blue-600 hover:text-blue-900 p-1.5 hover:bg-blue-50 rounded transition-colors"
                           title="Bearbeiten"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -521,10 +523,10 @@ export default function MinijobSettingsPage() {
                           </svg>
                         </button>
                         {!setting.isActive && setting.validFrom > new Date().toISOString().split('T')[0] && (
-                          <button 
-                            onClick={() => deleteSetting(setting.id)} 
-                            className="text-red-600 hover:text-red-900 p-1.5 hover:bg-red-50 rounded transition-colors" 
-                            title="Löschen" 
+                          <button
+                            onClick={() => deleteSetting(setting.id)}
+                            className="text-red-600 hover:text-red-900 p-1.5 hover:bg-red-50 rounded transition-colors"
+                            title="Löschen"
                             disabled={loadingAction}
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -751,7 +753,7 @@ export default function MinijobSettingsPage() {
         <div className={`fixed bottom-4 right-4 p-4 rounded-lg shadow-lg max-w-md border z-50 ${message.includes('✅')
           ? 'bg-green-50 border-green-200 text-green-800'
           : 'bg-red-50 border-red-200 text-red-800'
-        }`}>
+          }`}>
           {message}
         </div>
       )}
