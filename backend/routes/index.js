@@ -1,7 +1,7 @@
 const express = require('express');
 const config = require('../config');
 
-// ✅ Middleware importieren (KORRIGIERT - publicAPI hinzugefügt)
+// ✅ Middleware importieren
 const { publicAPI, authenticatedAPI, adminAPI } = require('../middleware');
 const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
 
@@ -11,6 +11,7 @@ const adminRoutes = require('./admin');
 const employeeRoutes = require('./employee');
 const minijobRoutes = require('./minijob');
 const setupRoutes = require('./setup');
+const timeTrackingRoutes = require('./timtracking'); // ✅ HINZUGEFÜGT!
 
 const router = express.Router();
 
@@ -32,6 +33,19 @@ router.get('/', (req, res) => {
           'PUT /api/auth/profile',
           'PUT /api/auth/change-password',
           'POST /api/auth/logout'
+        ]
+      },
+      timeTracking: { // ✅ HINZUGEFÜGT!
+        base: '/api/timetracking',
+        description: 'Zeiterfassungs-API für alle authentifizierten Benutzer',
+        routes: [
+          'GET /api/timetracking?month=YYYY-MM',
+          'GET /api/timetracking/periods',
+          'GET /api/timetracking/:id',
+          'POST /api/timetracking',
+          'PUT /api/timetracking/:id',
+          'DELETE /api/timetracking/:id',
+          'GET /api/timetracking/stats/multi-month'
         ]
       },
       employee: {
@@ -98,8 +112,11 @@ router.use('/auth/login', loginLimiter);
 router.use('/auth/register', registrationLimiter);
 router.use('/auth', authRoutes);
 
-// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung) - KORRIGIERT
+// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung)
 router.use('/setup', publicAPI, setupRoutes);
+
+// ✅ ZEITERFASSUNG ROUTES (Authentifizierung erforderlich) - ✅ HINZUGEFÜGT!
+router.use('/timetracking', authenticatedAPI, timeTrackingRoutes);
 
 // ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
 router.use('/employee', authenticatedAPI, employeeRoutes);
@@ -203,6 +220,7 @@ router.get('/version', (req, res) => {
       'Role-based Access Control',
       'Rate Limiting', 
       'Input Validation',
+      'Time Tracking', // ✅ HINZUGEFÜGT!
       'Minijob Management',
       'User Management',
       'Security Headers'
@@ -227,6 +245,7 @@ router.use('*', (req, res) => {
     timestamp: new Date().toISOString(),
     availableEndpoints: {
       auth: '/api/auth/*',
+      timetracking: '/api/timetracking/*', // ✅ HINZUGEFÜGT!
       employee: '/api/employee/*',
       admin: '/api/admin/*',
       minijob: '/api/admin/minijob/*',
