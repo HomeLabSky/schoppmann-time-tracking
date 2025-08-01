@@ -1,15 +1,15 @@
-// frontend/src/lib/timetracking.ts - Korrekte TimeTrackingService Implementierung
+// frontend/src/lib/timetracking.ts - Reparierter TimeTrackingService mit funktionierendem Übertrag
 
 import { apiClient } from './api'
 
-// ✅ TypeScript Interfaces
+// ✅ TypeScript Interfaces - Mit funktionierendem Übertrag-System
 export interface TimeRecord {
   id: number
   userId: number
   date: string
   startTime: string
   endTime: string
-  breakMinutes: number
+  breakMinutes: number // Für Kompatibilität beibehalten, aber auf 0 gesetzt
   description?: string
   totalHours: number
   workTime: string // Formatierte Arbeitszeit (z.B. "8:30")
@@ -20,10 +20,10 @@ export interface TimeRecord {
 
 export interface TimeRecordSummary {
   totalHours: number
-  totalEarnings: number
-  actualEarnings: number
-  carryIn: number
-  carryOut: number
+  totalEarnings: number // Verdienst nur dieser Periode
+  actualEarnings: number // Verdienst inkl. Übertrag aus Vormonat
+  carryIn: number // Übertrag aus Vormonat
+  carryOut: number // Übertrag für nächsten Monat
   paidThisMonth: number
   minijobLimit: number
   hourlyRate: number
@@ -58,227 +58,195 @@ export interface CreateTimeRecordRequest {
   date: string
   startTime: string
   endTime: string
-  breakMinutes: number
+  breakMinutes: number // Wird im Service auf 0 gesetzt
   description?: string
 }
 
 export interface UpdateTimeRecordRequest {
   startTime: string
   endTime: string
-  breakMinutes: number
+  breakMinutes: number // Wird im Service auf 0 gesetzt
   description?: string
 }
 
-export interface ValidationResult {
-  isValid: boolean
-  errors: string[]
-}
-
-// ✅ TimeTrackingService Klasse
+// ✅ TimeTrackingService Class
 class TimeTrackingService {
   
-  // ===== DATUM HILFSMETHODEN =====
-  
   /**
-   * Gibt den aktuellen Monat im Format YYYY-MM zurück
+   * Holt monatliche Zeiteinträge für einen Benutzer
+   * @param userId - Benutzer-ID
+   * @param year - Jahr
+   * @param month - Monat (1-12)
+   * @returns Promise mit monatlichen Zeitdaten
    */
-  static getCurrentMonth(): string {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = (now.getMonth() + 1).toString().padStart(2, '0')
-    return `${year}-${month}`
-  }
-
-  /**
-   * Gibt den vorherigen Monat zurück
-   */
-  static getPreviousMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month - 2) // month - 1 - 1 (da month-1 für JS Date, dann -1 für vorherigen Monat)
-    const newYear = date.getFullYear()
-    const newMonth = (date.getMonth() + 1).toString().padStart(2, '0')
-    return `${newYear}-${newMonth}`
-  }
-
-  /**
-   * Gibt den nächsten Monat zurück
-   */
-  static getNextMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month) // month - 1 + 1 = month
-    const newYear = date.getFullYear()
-    const newMonth = (date.getMonth() + 1).toString().padStart(2, '0')
-    return `${newYear}-${newMonth}`
-  }
-
-  /**
-   * Formatiert einen Monat für die Anzeige
-   */
-  static formatMonthForDisplay(monthString: string): string {
-    const [year, month] = monthString.split('-').map(Number)
-    const monthNames = [
-      'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
-      'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
-    ]
-    return `${monthNames[month - 1]} ${year}`
-  }
-
-  // ===== API METHODEN =====
-
-  /**
-   * Lädt Zeiteinträge für einen bestimmten Monat
-   */
-  static async getMonthlyTimeRecords(month: string): Promise<MonthlyTimeRecords> {
+  static async getMonthlyTimeRecords(userId: number, year: number, month: number): Promise<MonthlyTimeRecords> {
     try {
-      const response = await apiClient.get(`/api/timetracking?month=${month}`)
-      return response.data
+      const response = await apiClient.get(`/api/time-records/monthly/${userId}/${year}/${month}`)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Laden der Zeitdaten')
+      }
+
+      return response.data.data
     } catch (error: any) {
       console.error('Fehler beim Laden der monatlichen Zeitdaten:', error)
-      throw new Error(error.message || 'Fehler beim Laden der Zeitdaten')
-    }
-  }
-
-  /**
-   * Lädt verfügbare Abrechnungsperioden
-   */
-  static async getBillingPeriods(): Promise<{ periods: BillingPeriod[] }> {
-    try {
-      const response = await apiClient.get('/api/timetracking/periods')
-      return response.data
-    } catch (error: any) {
-      console.error('Fehler beim Laden der Abrechnungsperioden:', error)
-      throw new Error(error.message || 'Fehler beim Laden der Abrechnungsperioden')
-    }
-  }
-
-  /**
-   * Lädt einen einzelnen Zeiteintrag
-   */
-  static async getTimeRecord(id: number): Promise<TimeRecord> {
-    try {
-      const response = await apiClient.get(`/api/timetracking/${id}`)
-      return response.data.record
-    } catch (error: any) {
-      console.error('Fehler beim Laden des Zeiteintrags:', error)
-      throw new Error(error.message || 'Fehler beim Laden des Zeiteintrags')
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Zeitdaten konnten nicht geladen werden')
     }
   }
 
   /**
    * Erstellt einen neuen Zeiteintrag
+   * ANGEPASST: Pausenzeit wird automatisch auf 0 gesetzt
+   * @param timeRecord - Zeiteintrag-Daten
+   * @returns Promise mit dem erstellten Zeiteintrag
    */
-  static async createTimeRecord(data: CreateTimeRecordRequest): Promise<TimeRecord> {
+  static async createTimeRecord(timeRecord: CreateTimeRecordRequest): Promise<TimeRecord> {
     try {
-      const response = await apiClient.post('/api/timetracking', data)
-      return response.data.record
+      // Pausenzeit automatisch auf 0 setzen
+      const processedRecord = {
+        ...timeRecord,
+        breakMinutes: 0
+      }
+
+      const response = await apiClient.post('/api/time-records', processedRecord)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Erstellen des Zeiteintrags')
+      }
+
+      return response.data.data
     } catch (error: any) {
       console.error('Fehler beim Erstellen des Zeiteintrags:', error)
-      throw new Error(error.message || 'Fehler beim Erstellen des Zeiteintrags')
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Zeiteintrag konnte nicht erstellt werden')
     }
   }
 
   /**
-   * Aktualisiert einen bestehenden Zeiteintrag
+   * Aktualisiert einen Zeiteintrag
+   * ANGEPASST: Pausenzeit wird automatisch auf 0 gesetzt
+   * @param id - Zeiteintrag-ID
+   * @param updateData - Aktualisierungsdaten
+   * @returns Promise mit dem aktualisierten Zeiteintrag
    */
-  static async updateTimeRecord(id: number, data: UpdateTimeRecordRequest): Promise<TimeRecord> {
+  static async updateTimeRecord(id: number, updateData: UpdateTimeRecordRequest): Promise<TimeRecord> {
     try {
-      const response = await apiClient.put(`/api/timetracking/${id}`, data)
-      return response.data.record
+      // Pausenzeit automatisch auf 0 setzen
+      const processedData = {
+        ...updateData,
+        breakMinutes: 0
+      }
+
+      const response = await apiClient.put(`/api/time-records/${id}`, processedData)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Aktualisieren des Zeiteintrags')
+      }
+
+      return response.data.data
     } catch (error: any) {
       console.error('Fehler beim Aktualisieren des Zeiteintrags:', error)
-      throw new Error(error.message || 'Fehler beim Aktualisieren des Zeiteintrags')
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Zeiteintrag konnte nicht aktualisiert werden')
     }
   }
 
   /**
    * Löscht einen Zeiteintrag
+   * @param id - Zeiteintrag-ID
+   * @returns Promise<boolean>
    */
-  static async deleteTimeRecord(id: number): Promise<void> {
+  static async deleteTimeRecord(id: number): Promise<boolean> {
     try {
-      await apiClient.delete(`/api/timetracking/${id}`)
+      const response = await apiClient.delete(`/api/time-records/${id}`)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Löschen des Zeiteintrags')
+      }
+
+      return true
     } catch (error: any) {
       console.error('Fehler beim Löschen des Zeiteintrags:', error)
-      throw new Error(error.message || 'Fehler beim Löschen des Zeiteintrags')
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Zeiteintrag konnte nicht gelöscht werden')
     }
   }
 
   /**
-   * Lädt Multi-Monats-Statistiken
+   * Validiert Zeiteintrag-Daten
+   * ANGEPASST: Pausenzeit-Validierung entfernt
+   * @param entryData - Zu validierende Daten
+   * @returns Validierungsergebnis
    */
-  static async getMultiMonthStats(months: string[]): Promise<any> {
-    try {
-      const monthsQuery = months.join(',')
-      const response = await apiClient.get(`/api/timetracking/stats/multi-month?months=${monthsQuery}`)
-      return response.data
-    } catch (error: any) {
-      console.error('Fehler beim Laden der Multi-Monats-Statistiken:', error)
-      throw new Error(error.message || 'Fehler beim Laden der Statistiken')
-    }
-  }
-
-  // ===== VALIDIERUNGSMETHODEN =====
-
-  /**
-   * Validiert einen Zeiteintrag
-   */
-  static validateTimeRecord(data: CreateTimeRecordRequest): ValidationResult {
+  static validateTimeEntry(entryData: CreateTimeRecordRequest): { isValid: boolean; errors: string[] } {
     const errors: string[] = []
 
-    // Datum validieren
-    if (!data.date) {
+    // Basis-Validierungen
+    if (!entryData.date) {
       errors.push('Datum ist erforderlich')
-    } else {
-      const dateRegex = /^\d{4}-\d{2}-\d{2}$/
-      if (!dateRegex.test(data.date)) {
-        errors.push('Datum muss im Format YYYY-MM-DD sein')
-      }
     }
 
-    // Startzeit validieren
-    if (!data.startTime) {
+    if (!entryData.startTime) {
       errors.push('Startzeit ist erforderlich')
-    } else {
-      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
-      if (!timeRegex.test(data.startTime)) {
-        errors.push('Startzeit muss im Format HH:MM sein')
-      }
     }
 
-    // Endzeit validieren
-    if (!data.endTime) {
+    if (!entryData.endTime) {
       errors.push('Endzeit ist erforderlich')
-    } else {
-      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
-      if (!timeRegex.test(data.endTime)) {
-        errors.push('Endzeit muss im Format HH:MM sein')
-      }
     }
 
-    // Zeitlogik validieren
-    if (data.startTime && data.endTime) {
-      const [startHour, startMin] = data.startTime.split(':').map(Number)
-      const [endHour, endMin] = data.endTime.split(':').map(Number)
+    // Zeit-Validierungen
+    if (entryData.startTime && entryData.endTime) {
+      const startTime = new Date(`2000-01-01T${entryData.startTime}`)
+      const endTime = new Date(`2000-01-01T${entryData.endTime}`)
       
-      const startMinutes = startHour * 60 + startMin
-      const endMinutes = endHour * 60 + endMin
-      
-      if (endMinutes <= startMinutes) {
+      if (endTime <= startTime) {
         errors.push('Endzeit muss nach der Startzeit liegen')
       }
+
+      const totalMinutes = Math.floor((endTime.getTime() - startTime.getTime()) / (1000 * 60))
+      
+      if (totalMinutes > 12 * 60) {
+        errors.push('Arbeitszeit darf 12 Stunden nicht überschreiten')
+      }
+
+      if (totalMinutes < 15) {
+        errors.push('Arbeitszeit muss mindestens 15 Minuten betragen')
+      }
     }
 
-    // Pausenzeit validieren
-    if (data.breakMinutes < 0) {
-      errors.push('Pausenzeit kann nicht negativ sein')
-    }
+    // ENTFERNT: Pausenzeit-Validierung da deaktiviert
 
-    if (data.breakMinutes > 480) { // Mehr als 8 Stunden Pause
-      errors.push('Pausenzeit scheint unrealistisch hoch zu sein')
-    }
+    // Datums-Validierung
+    if (entryData.date) {
+      const entryDate = new Date(entryData.date)
+      const today = new Date()
+      const oneMonthAgo = new Date()
+      oneMonthAgo.setMonth(today.getMonth() - 1)
 
-    // Beschreibung validieren (optional)
-    if (data.description && data.description.length > 500) {
-      errors.push('Beschreibung darf maximal 500 Zeichen lang sein')
+      if (entryDate > today) {
+        errors.push('Datum darf nicht in der Zukunft liegen')
+      }
+
+      if (entryDate < oneMonthAgo) {
+        errors.push('Datum darf nicht mehr als einen Monat zurückliegen')
+      }
     }
 
     return {
@@ -287,79 +255,101 @@ class TimeTrackingService {
     }
   }
 
-  // ===== BERECHNUNGSMETHODEN =====
-
   /**
-   * Berechnet die Arbeitsstunden basierend auf Start-/Endzeit und Pause
+   * Berechnet Arbeitszeit in Stunden
+   * ANGEPASST: Ohne Pausenzeit-Berücksichtigung
+   * @param startTime - Startzeit (HH:MM)
+   * @param endTime - Endzeit (HH:MM)
+   * @returns Arbeitszeit in Stunden
    */
-  static calculateWorkingHours(startTime: string, endTime: string, breakMinutes: number): number {
-    const [startHour, startMin] = startTime.split(':').map(Number)
-    const [endHour, endMin] = endTime.split(':').map(Number)
+  static calculateWorkHours(startTime: string, endTime: string): number {
+    const start = new Date(`2000-01-01T${startTime}`)
+    const end = new Date(`2000-01-01T${endTime}`)
     
-    const startMinutes = startHour * 60 + startMin
-    const endMinutes = endHour * 60 + endMin
+    if (end <= start) return 0
     
-    const totalMinutes = endMinutes - startMinutes
-    const workingMinutes = totalMinutes - breakMinutes
+    const totalMinutes = Math.floor((end.getTime() - start.getTime()) / (1000 * 60))
     
-    return Math.max(0, workingMinutes / 60) // Stunden
-  }
-
-  /**
-   * Formatiert Stunden für die Anzeige
-   */
-  static formatHours(hours: number): string {
-    if (hours === 0) return '0:00'
+    // GEÄNDERT: Keine Pausenzeit abziehen
+    const workMinutes = totalMinutes
     
-    const wholeHours = Math.floor(hours)
-    const minutes = Math.round((hours - wholeHours) * 60)
+    return Math.round((workMinutes / 60) * 100) / 100
+  }
+
+  /**
+   * Formatiert Arbeitszeit für Anzeige
+   * @param minutes - Arbeitszeit in Minuten
+   * @returns Formatierte Zeit (z.B. "8:30")
+   */
+  static formatWorkTime(minutes: number): string {
+    const hours = Math.floor(minutes / 60)
+    const remainingMinutes = minutes % 60
+    return `${hours}:${remainingMinutes.toString().padStart(2, '0')}`
+  }
+
+  /**
+   * Formatiert Verdienst für Anzeige
+   * @param earnings - Verdienst in Euro
+   * @returns Formatierter Verdienst (z.B. "102,00 €")
+   */
+  static formatEarnings(earnings: number): string {
+    return `${earnings.toFixed(2).replace('.', ',')} €`
+  }
+
+  /**
+   * Hilfsmethode: Vorherigen Monat berechnen
+   * @param currentMonth - Aktueller Monat (YYYY-MM)
+   * @returns Vorheriger Monat
+   */
+  static getPreviousMonth(currentMonth: string): string {
+    const [year, month] = currentMonth.split('-').map(Number)
+    const date = new Date(year, month - 1, 1)
+    date.setMonth(date.getMonth() - 1)
     
-    return `${wholeHours}:${minutes.toString().padStart(2, '0')}`
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
   }
 
   /**
-   * Formatiert Datum für die Anzeige
+   * Hilfsmethode: Nächsten Monat berechnen
+   * @param currentMonth - Aktueller Monat (YYYY-MM)
+   * @returns Nächster Monat
    */
-  static formatDateForDisplay(dateString: string): string {
-    const date = new Date(dateString + 'T00:00:00')
-    return date.toLocaleDateString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    })
+  static getNextMonth(currentMonth: string): string {
+    const [year, month] = currentMonth.split('-').map(Number)
+    const date = new Date(year, month - 1, 1)
+    date.setMonth(date.getMonth() + 1)
+    
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
   }
 
   /**
-   * Formatiert Datum für die Anzeige (Kurzform für Dashboard)
+   * Generiert verfügbare Abrechnungsperioden (letzte 6 Monate)
+   * @returns Array von Abrechnungsperioden
    */
-  static formatDate(dateString: string): string {
-    return this.formatDateForDisplay(dateString)
-  }
-
-  /**
-   * Formatiert Zeit für die Anzeige
-   */
-  static formatTimeForDisplay(timeString: string): string {
-    return timeString
-  }
-
-  /**
-   * Formatiert Zeit für die Anzeige (Kurzform für Dashboard)
-   */
-  static formatTime(timeString: string): string {
-    return this.formatTimeForDisplay(timeString)
-  }
-
-  /**
-   * Formatiert Währung für die Anzeige
-   */
-  static formatCurrency(amount: number): string {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(amount)
+  static generateAvailablePeriods(): BillingPeriod[] {
+    const periods: BillingPeriod[] = []
+    const today = new Date()
+    
+    for (let i = 0; i < 6; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1
+      const monthName = date.toLocaleDateString('de-DE', { month: 'long' })
+      
+      periods.push({
+        value: `${year}-${String(month).padStart(2, '0')}`,
+        label: `${monthName} ${year}`,
+        year,
+        month,
+        monthName,
+        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+        endDate: new Date(year, month, 0).toISOString().split('T')[0],
+        isCurrent: i === 0
+      })
+    }
+    
+    return periods
   }
 }
 
-// ✅ Default Export
-export default TimeTrackingService
+export { TimeTrackingService }
