@@ -140,22 +140,105 @@ class DateService {
         let startDate, endDate;
 
         if (startDay <= endDay) {
-            // Periode innerhalb eines Monats (z.B. 1. - 15.)
-            // KORRIGIERT: UTC-Funktionen für Konsistenz verwenden
+            // Periode innerhalb eines Monats (z.B. 1. - 31.)
             startDate = new Date(Date.UTC(year, month, startDay));
-            endDate = new Date(Date.UTC(year, month, endDay));
+
+            // KORRIGIERT: Behandle Monate mit weniger als 31 Tagen korrekt
+            // Wenn endDay größer als die Anzahl Tage im Monat ist, nimm den letzten Tag des Monats
+            const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+            const actualEndDay = Math.min(endDay, lastDayOfMonth);
+
+            endDate = new Date(Date.UTC(year, month, actualEndDay));
+
+            console.log(`📅 Abrechnungsperiode ${startDay}-${endDay}: ${year}-${month + 1}, tatsächlich bis ${actualEndDay}. Tag (Monat hat ${lastDayOfMonth} Tage)`);
+
         } else {
             // Periode überschreitet Monatswechsel (z.B. 15. - 14. des Folgemonats)
-            // KORRIGIERT: Korrekte Monats-Berechnung
             startDate = new Date(Date.UTC(year, month, startDay));
-            endDate = new Date(Date.UTC(year, month + 1, endDay));
+
+            // KORRIGIERT: Behandle Monatsübergreifende Perioden korrekt
+            const nextMonth = month + 1;
+            const nextYear = nextMonth > 11 ? year + 1 : year;
+            const actualNextMonth = nextMonth > 11 ? 0 : nextMonth;
+
+            // Prüfe ob der endDay im Folgemonat existiert
+            const lastDayOfNextMonth = new Date(Date.UTC(nextYear, actualNextMonth + 1, 0)).getUTCDate();
+            const actualEndDay = Math.min(endDay, lastDayOfNextMonth);
+
+            endDate = new Date(Date.UTC(nextYear, actualNextMonth, actualEndDay));
+
+            console.log(`📅 Monatsübergreifende Abrechnungsperiode ${startDay}-${endDay}: ${year}-${month + 1} bis ${nextYear}-${actualNextMonth + 1}, tatsächlich bis ${actualEndDay}. Tag`);
         }
 
         return {
             startDate: startDate.toISOString().split('T')[0],
             endDate: endDate.toISOString().split('T')[0],
-            description: `${startDay}. - ${endDay}. ${startDay <= endDay ? 'des Monats' : 'des Folgemonats'}`
+            description: startDay <= endDay ?
+                `${startDay}. - ${endDay}. des Monats` :
+                `${startDay}. des Monats - ${endDay}. des Folgemonats`
         };
+    }
+
+    /**
+ * Validiert Abrechnungsperioden-Einstellungen
+ * @param {number} startDay - Start-Tag (1-31)
+ * @param {number} endDay - End-Tag (1-31)
+ * @returns {Object} { isValid: boolean, error?: string, warning?: string }
+ */
+    static validateBillingPeriod(startDay, endDay) {
+        // Grundvalidierung
+        if (startDay < 1 || startDay > 31) {
+            return {
+                isValid: false,
+                error: 'Abrechnungsstart muss zwischen 1 und 31 liegen'
+            };
+        }
+
+        if (endDay < 1 || endDay > 31) {
+            return {
+                isValid: false,
+                error: 'Abrechnungsende muss zwischen 1 und 31 liegen'
+            };
+        }
+
+        // Warnung für problematische Tage (29, 30, 31)
+        let warning = null;
+        if (startDay > 28 || endDay > 28) {
+            warning = 'Achtung: Tage 29-31 existieren nicht in allen Monaten. ' +
+                'Das System verwendet automatisch den letzten verfügbaren Tag des Monats.';
+        }
+
+        return {
+            isValid: true,
+            warning: warning
+        };
+    }
+
+    /**
+     * Testet die Abrechnungsperioden-Berechnung für verschiedene Szenarien
+     * @param {number} startDay - Start-Tag
+     * @param {number} endDay - End-Tag
+     * @returns {Array} Test-Ergebnisse für verschiedene Monate
+     */
+    static testBillingPeriodCalculation(startDay, endDay) {
+        const testMonths = [
+            '2024-01-15', // Januar (31 Tage)
+            '2024-02-15', // Februar (29 Tage, Schaltjahr)
+            '2024-04-15', // April (30 Tage)
+            '2024-07-15', // Juli (31 Tage) - User's problematic month
+            '2025-02-15'  // Februar (28 Tage, kein Schaltjahr)
+        ];
+
+        return testMonths.map(refDate => {
+            const period = this.createBillingPeriod(startDay, endDay, refDate);
+            const refMonth = refDate.substring(0, 7);
+
+            return {
+                referenceMonth: refMonth,
+                period: period,
+                dayCount: this.getDaysBetween(period.startDate, period.endDate) + 1
+            };
+        });
     }
 
     /**

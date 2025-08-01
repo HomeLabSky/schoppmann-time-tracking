@@ -7,40 +7,89 @@ const DateService = require('./dateService');
  * Enthält alle Zeiterfassungs-bezogenen Operationen und Minijob-Berechnungen
  */
 class TimeEntryService {
-  
+
   /**
-   * Holt alle Zeiteinträge für einen User und Monat mit Minijob-Berechnungen
-   * @param {number} userId - User ID
-   * @param {number} year - Jahr
-   * @param {number} month - Monat (1-12)
-   * @returns {Promise<Object>} Zeiteinträge mit Minijob-Übersicht
-   */
+  * Holt alle Zeiteinträge für einen User und Monat mit Minijob-Berechnungen
+  * GEÄNDERT: Berücksichtigt jetzt benutzerdefinierte Abrechnungsperioden
+  * @param {number} userId - User ID
+  * @param {number} year - Jahr
+  * @param {number} month - Monat (1-12)
+  * @returns {Promise<Object>} Zeiteinträge mit Minijob-Übersicht
+  */
   static async getMonthlyTimeRecords(userId, year, month) {
     try {
-      // User und aktuelle Minijob-Einstellung laden
-      const user = await User.findByPk(userId);
+      // GEÄNDERT: User mit Abrechnungseinstellungen laden
+      const user = await User.findByPk(userId, {
+        attributes: ['id', 'name', 'email', 'stundenlohn', 'abrechnungStart', 'abrechnungEnde']
+      });
+
       if (!user) {
         throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
       }
+
+      // GEÄNDERT: Abrechnungsperiode des Benutzers ermitteln (Default: 1-31)
+      const startDay = user.abrechnungStart || 1;
+      const endDay = user.abrechnungEnde || 31;
+
+      // GEÄNDERT: Prüfen ob benutzerdefinierte Abrechnungsperiode verwendet wird
+      const useCustomPeriod = (startDay !== 1 || endDay !== 31);
+
+      let entries, billingPeriod;
+
+      if (useCustomPeriod) {
+        // Benutzerdefinierte Abrechnungsperiode verwenden
+        const referenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
+        billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
+
+        console.log(`📅 Benutzerdefinierte Abrechnungsperiode für ${user.email}: ${billingPeriod.startDate} bis ${billingPeriod.endDate}`);
+
+        // Zeiteinträge für die Abrechnungsperiode laden
+        entries = await TimeEntry.findAll({
+          where: {
+            userId,
+            date: {
+              [Op.between]: [billingPeriod.startDate, billingPeriod.endDate]
+            }
+          },
+          include: [{
+            model: User,
+            as: 'User',
+            attributes: ['name', 'email', 'stundenlohn']
+          }],
+          order: [['date', 'ASC']]
+        });
+      } else {
+        // Standard-Kalendermonat verwenden (wie vorher)
+        const monthlyStats = await TimeEntry.calculateMonthlyStats(userId, year, month);
+        entries = monthlyStats.entries;
+
+        // Standard-Periode für Anzeige
+        billingPeriod = {
+          startDate: `${year}-${month.toString().padStart(2, '0')}-01`,
+          endDate: new Date(year, month, 0).toISOString().split('T')[0],
+          description: `${month}/${year} (Kalendermonat)`
+        };
+      }
+
+      // Statistiken berechnen (gleiche Logik wie vorher)
+      let totalMinutes = 0;
+      let totalEarnings = 0;
+
+      entries.forEach(entry => {
+        totalMinutes += entry.workMinutes;
+        totalEarnings += entry.earnings;
+      });
+
+      const totalHours = Math.round((totalMinutes / 60) * 100) / 100;
 
       const currentMinijobSetting = await MinijobSetting.getCurrentSetting();
       const minijobLimit = currentMinijobSetting ? currentMinijobSetting.monthlyLimit : 550.00;
       const hourlyRate = user.stundenlohn || 12.00;
 
-      // Zeiteinträge für den Monat laden
-      const monthlyStats = await TimeEntry.calculateMonthlyStats(userId, year, month);
-      const { entries, totalEarnings } = monthlyStats;
-
       // Übertrag aus Vormonat berechnen
       const carryIn = await this.calculateCarryIn(userId, year, month, minijobLimit);
-
-      // Tatsächlicher Verdienstanspruch = aktueller Monat + Übertrag
       const actualEarnings = totalEarnings + carryIn;
-
-      // Ausgezahlter Betrag (max. Minijob-Limit)
       const paidThisMonth = Math.min(actualEarnings, minijobLimit);
-
-      // Übertrag in Folgemonat
       const carryOut = Math.max(0, actualEarnings - minijobLimit);
 
       // Formatierte Einträge
@@ -49,7 +98,7 @@ class TimeEntryService {
       return {
         records: formattedEntries,
         summary: {
-          totalHours: monthlyStats.totalHours,
+          totalHours: totalHours,
           totalEarnings: Math.round(totalEarnings * 100) / 100,
           actualEarnings: Math.round(actualEarnings * 100) / 100,
           carryIn: Math.round(carryIn * 100) / 100,
@@ -60,12 +109,14 @@ class TimeEntryService {
           exceedsLimit: actualEarnings > minijobLimit,
           entryCount: formattedEntries.length
         },
+        // GEÄNDERT: Korrekte Periodeninformationen verwenden
         period: {
           year,
           month,
           monthName: this.getMonthName(month),
-          startDate: `${year}-${month.toString().padStart(2, '0')}-01`,
-          endDate: new Date(year, month, 0).toISOString().split('T')[0]
+          startDate: billingPeriod.startDate,
+          endDate: billingPeriod.endDate,
+          description: billingPeriod.description
         }
       };
     } catch (error) {
@@ -74,18 +125,28 @@ class TimeEntryService {
   }
 
   /**
-   * Berechnet den Übertrag aus dem Vormonat
-   * @param {number} userId - User ID
-   * @param {number} year - Jahr
-   * @param {number} month - Monat
-   * @param {number} minijobLimit - Aktuelle Minijob-Grenze
-   * @returns {Promise<number>} Übertrag aus Vormonat
-   */
+  * Berechnet den Übertrag aus dem Vormonat
+  * GEÄNDERT: Berücksichtigt jetzt benutzerdefinierte Abrechnungsperioden
+  * @param {number} userId - User ID
+  * @param {number} year - Jahr
+  * @param {number} month - Monat
+  * @param {number} minijobLimit - Aktuelle Minijob-Grenze
+  * @returns {Promise<number>} Übertrag aus Vormonat
+  */
   static async calculateCarryIn(userId, year, month, minijobLimit) {
     try {
-      // Alle vorherigen Monate seit Beginn der Zeiterfassung durchgehen
+      // GEÄNDERT: User-Abrechnungseinstellungen laden
+      const user = await User.findByPk(userId, {
+        attributes: ['abrechnungStart', 'abrechnungEnde']
+      });
+
+      if (!user) return 0;
+
+      const startDay = user.abrechnungStart || 1;
+      const endDay = user.abrechnungEnde || 31;
+
       let carryIn = 0;
-      
+
       // Startmonat der Zeiterfassung finden
       const firstEntry = await TimeEntry.findOne({
         where: { userId },
@@ -101,31 +162,42 @@ class TimeEntryService {
 
       // Bis zum gewünschten Monat durchgehen
       while (currentYear < year || (currentYear === year && currentMonth < month)) {
-        const monthStats = await TimeEntry.calculateMonthlyStats(userId, currentYear, currentMonth);
-        const monthlyEarnings = monthStats.totalEarnings;
 
-        // Übertrag akkumulieren
-        carryIn += monthlyEarnings;
-        
-        // Wenn der akkumulierte Betrag das Minijob-Limit übersteigt, 
-        // wird nur das Limit "ausgezahlt" und der Rest übertragen
-        if (carryIn > minijobLimit) {
-          carryIn = carryIn - minijobLimit;
-        } else {
-          carryIn = 0; // Komplett ausgezahlt, kein Übertrag
-        }
+        // GEÄNDERT: Korrekte Abrechnungsperiode für aktuellen Monat berechnen
+        const referenceDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-15`;
+        const billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
 
-        // Zum nächsten Monat
-        currentMonth++;
-        if (currentMonth > 12) {
-          currentMonth = 1;
+        // GEÄNDERT: Einträge für diese Abrechnungsperiode laden (nicht Kalendermonat!)
+        const entries = await TimeEntry.findAll({
+          where: {
+            userId,
+            date: {
+              [Op.between]: [billingPeriod.startDate, billingPeriod.endDate]
+            }
+          }
+        });
+
+        // Verdienst für diese Periode berechnen
+        const monthlyEarnings = entries.reduce((sum, entry) => sum + entry.earnings, 0);
+        const totalForPeriod = monthlyEarnings + carryIn;
+        const paidForPeriod = Math.min(totalForPeriod, minijobLimit);
+
+        carryIn = Math.max(0, totalForPeriod - minijobLimit);
+
+        console.log(`💰 Übertrag-Berechnung ${currentYear}-${currentMonth}: Verdienst=${monthlyEarnings.toFixed(2)}€, Übertrag=${carryIn.toFixed(2)}€`);
+
+        // Nächster Monat
+        if (currentMonth === 12) {
           currentYear++;
+          currentMonth = 1;
+        } else {
+          currentMonth++;
         }
       }
 
       return carryIn;
     } catch (error) {
-      console.warn('Übertrag-Berechnung fehlgeschlagen:', error.message);
+      console.error('Fehler beim Berechnen des Übertrags:', error);
       return 0;
     }
   }
@@ -306,7 +378,7 @@ class TimeEntryService {
     try {
       const stats = [];
       const currentDate = new Date();
-      
+
       for (let i = 0; i < monthsBack; i++) {
         const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
         const year = date.getFullYear();
@@ -341,21 +413,21 @@ class TimeEntryService {
    */
   static normalizeTime(timeString) {
     if (!timeString) return '00:00:00';
-    
+
     // Entferne Leerzeichen
     const cleaned = timeString.trim();
-    
+
     // Wenn bereits im HH:mm:ss Format
     if (/^\d{2}:\d{2}:\d{2}$/.test(cleaned)) {
       return cleaned;
     }
-    
+
     // Wenn im HH:mm Format
     if (/^\d{1,2}:\d{2}$/.test(cleaned)) {
       const [hours, minutes] = cleaned.split(':');
       return `${hours.padStart(2, '0')}:${minutes}:00`;
     }
-    
+
     throw new Error(`Ungültiges Zeitformat: ${timeString}`);
   }
 
@@ -373,30 +445,91 @@ class TimeEntryService {
   }
 
   /**
-   * Generiert Abrechnungsperioden für Dropdown
-   * @param {number} monthsBack - Monate in die Vergangenheit
-   * @param {number} monthsForward - Monate in die Zukunft
-   * @returns {Array} Array von Abrechnungsperioden
+ * Generiert Abrechnungsperioden für Dropdown
+ * GEÄNDERT: Berücksichtigt jetzt benutzerdefinierte Abrechnungsperioden
+ */
+  static async generateBillingPeriods(userId, monthsBack = 12, monthsForward = 3) {
+    try {
+      // GEÄNDERT: User-Abrechnungseinstellungen laden
+      const user = await User.findByPk(userId, {
+        attributes: ['abrechnungStart', 'abrechnungEnde']
+      });
+
+      // Fallback auf Standard-Perioden wenn User nicht gefunden
+      const startDay = user ? (user.abrechnungStart || 1) : 1;
+      const endDay = user ? (user.abrechnungEnde || 31) : 31;
+
+      const periods = [];
+      const currentDate = new Date();
+
+      // Vergangenheit
+      for (let i = monthsBack; i > 0; i--) {
+        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 15);
+        periods.push(await this.createPeriodObjectForUser(date, startDay, endDay));
+      }
+
+      // Aktueller Monat
+      periods.push(await this.createPeriodObjectForUser(currentDate, startDay, endDay));
+
+      // Zukunft
+      for (let i = 1; i <= monthsForward; i++) {
+        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 15);
+        periods.push(await this.createPeriodObjectForUser(date, startDay, endDay));
+      }
+
+      return periods;
+    } catch (error) {
+      console.error('Fehler beim Generieren der Abrechnungsperioden:', error);
+      // Fallback auf Standard-Kalendermonate bei Fehlern
+      return this.generateStandardBillingPeriods(monthsBack, monthsForward);
+    }
+  }
+
+  /**
+   * Erstellt benutzerspezifisches Perioden-Objekt
+   * NEUE HILFSMETHODE
    */
-  static generateBillingPeriods(monthsBack = 12, monthsForward = 3) {
+  static async createPeriodObjectForUser(date, startDay, endDay) {
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const monthName = this.getMonthName(month);
+
+    // Korrekte Abrechnungsperiode berechnen
+    const referenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
+    const billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
+
+    return {
+      value: `${year}-${month.toString().padStart(2, '0')}`,
+      label: `${monthName} ${year} (${DateService.formatDateForDisplay(billingPeriod.startDate)} – ${DateService.formatDateForDisplay(billingPeriod.endDate)})`,
+      year,
+      month,
+      monthName,
+      startDate: billingPeriod.startDate,
+      endDate: billingPeriod.endDate,
+      isCurrent: year === new Date().getFullYear() && month === new Date().getMonth() + 1
+    };
+  }
+
+  /**
+   * Fallback-Methode für Standard-Kalendermonate
+   * NEUE HILFSMETHODE
+   */
+  static generateStandardBillingPeriods(monthsBack = 12, monthsForward = 3) {
     const periods = [];
     const currentDate = new Date();
-    
-    // Vergangenheit
+
     for (let i = monthsBack; i > 0; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      periods.push(this.createPeriodObject(date));
+      periods.push(this.createPeriodObject(date)); // Alte Methode verwenden
     }
-    
-    // Aktueller Monat
+
     periods.push(this.createPeriodObject(currentDate));
-    
-    // Zukunft
+
     for (let i = 1; i <= monthsForward; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
       periods.push(this.createPeriodObject(date));
     }
-    
+
     return periods;
   }
 
@@ -409,10 +542,10 @@ class TimeEntryService {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
     const monthName = this.getMonthName(month);
-    
+
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
     const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-    
+
     return {
       value: `${year}-${month.toString().padStart(2, '0')}`,
       label: `${monthName} ${year} (${DateService.formatDateForDisplay(startDate)} – ${DateService.formatDateForDisplay(endDate)})`,
