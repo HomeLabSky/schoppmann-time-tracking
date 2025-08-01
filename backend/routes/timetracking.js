@@ -98,7 +98,7 @@ router.get('/periods',
   authenticateToken,
   async (req, res) => {
     try {
-      const periods = TimeEntryService.generateBillingPeriods(12, 3);
+      const periods = await TimeEntryService.generateBillingPeriods(req.user.userId, 12, 3);
 
       res.json({
         success: true,

@@ -445,12 +445,12 @@ class TimeEntryService {
   }
 
   /**
- * Generiert Abrechnungsperioden für Dropdown
- * GEÄNDERT: Berücksichtigt jetzt benutzerdefinierte Abrechnungsperioden
- */
+  * Generiert Abrechnungsperioden für Dropdown
+  * ✅ KORRIGIERT: Alle this-Referenzen und asynchrone Aufrufe behoben
+  */
   static async generateBillingPeriods(userId, monthsBack = 12, monthsForward = 3) {
     try {
-      // GEÄNDERT: User-Abrechnungseinstellungen laden
+      // User-Abrechnungseinstellungen laden
       const user = await User.findByPk(userId, {
         attributes: ['abrechnungStart', 'abrechnungEnde']
       });
@@ -465,54 +465,86 @@ class TimeEntryService {
       // Vergangenheit
       for (let i = monthsBack; i > 0; i--) {
         const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 15);
-        periods.push(await this.createPeriodObjectForUser(date, startDay, endDay));
+        periods.push(TimeEntryService.createPeriodObjectForUser(date, startDay, endDay));
       }
 
-      // Aktueller Monat
-      periods.push(await this.createPeriodObjectForUser(currentDate, startDay, endDay));
+      // Aktueller Monat  
+      periods.push(TimeEntryService.createPeriodObjectForUser(currentDate, startDay, endDay));
 
       // Zukunft
       for (let i = 1; i <= monthsForward; i++) {
         const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 15);
-        periods.push(await this.createPeriodObjectForUser(date, startDay, endDay));
+        periods.push(TimeEntryService.createPeriodObjectForUser(date, startDay, endDay));
       }
 
       return periods;
     } catch (error) {
       console.error('Fehler beim Generieren der Abrechnungsperioden:', error);
       // Fallback auf Standard-Kalendermonate bei Fehlern
-      return this.generateStandardBillingPeriods(monthsBack, monthsForward);
+      return TimeEntryService.generateStandardBillingPeriods(monthsBack, monthsForward);
     }
   }
 
   /**
-   * Erstellt benutzerspezifisches Perioden-Objekt
-   * NEUE HILFSMETHODE
-   */
-  static async createPeriodObjectForUser(date, startDay, endDay) {
+ * Erstellt benutzerspezifisches Perioden-Objekt
+ * ✅ KORRIGIERT: Periodenübergreifende Abrechnungen werden nach dem Endmonat benannt
+ * 
+ * Beispiele:
+ * - Periode 1.-31.: "Januar 2025" (nach Referenzmonat)
+ * - Periode 22.1.-21.2.: "Februar 2025" (nach Endmonat)
+ */
+  static createPeriodObjectForUser(date, startDay, endDay) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
-    const monthName = this.getMonthName(month);
 
     // Korrekte Abrechnungsperiode berechnen
     const referenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
     const billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
 
+    // ✅ INTELLIGENTE MONATSZUORDNUNG
+    let displayYear, displayMonth, displayMonthName;
+
+    if (startDay > endDay) {
+      // Periodenübergreifend: Benennung nach ENDmonat
+      // Beispiel: 22.1. - 21.2. → "Februar 2025"
+      const endDate = new Date(billingPeriod.endDate + 'T12:00:00.000Z');
+      displayYear = endDate.getUTCFullYear();
+      displayMonth = endDate.getUTCMonth() + 1;
+      displayMonthName = TimeEntryService.getMonthName(displayMonth);
+
+      console.log(`📅 Periodenübergreifend ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
+    } else {
+      // Monatsintern: Benennung nach REFERENZmonat
+      // Beispiel: 1. - 31. → "Januar 2025"
+      displayYear = year;
+      displayMonth = month;
+      displayMonthName = TimeEntryService.getMonthName(month);
+
+      console.log(`📅 Monatsintern ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
+    }
+
     return {
+      // ✅ Value bleibt Referenzmonat für interne API-Konsistenz
       value: `${year}-${month.toString().padStart(2, '0')}`,
-      label: `${monthName} ${year} (${DateService.formatDateForDisplay(billingPeriod.startDate)} – ${DateService.formatDateForDisplay(billingPeriod.endDate)})`,
-      year,
-      month,
-      monthName,
+
+      // ✅ Display-Werte verwenden den korrekten Monat (End- oder Referenzmonat)
+      label: `${displayMonthName} ${displayYear} (${DateService.formatDateForDisplay(billingPeriod.startDate)} – ${DateService.formatDateForDisplay(billingPeriod.endDate)})`,
+      year: displayYear,
+      month: displayMonth,
+      monthName: displayMonthName,
+
+      // Perioden-Daten
       startDate: billingPeriod.startDate,
       endDate: billingPeriod.endDate,
-      isCurrent: year === new Date().getFullYear() && month === new Date().getMonth() + 1
+
+      // ✅ isCurrent prüft gegen korrekten Display-Monat
+      isCurrent: displayYear === new Date().getFullYear() && displayMonth === new Date().getMonth() + 1
     };
   }
 
   /**
    * Fallback-Methode für Standard-Kalendermonate
-   * NEUE HILFSMETHODE
+   * ✅ KORRIGIERT: this.createPeriodObject() -> TimeEntryService.createPeriodObject()
    */
   static generateStandardBillingPeriods(monthsBack = 12, monthsForward = 3) {
     const periods = [];
@@ -520,28 +552,27 @@ class TimeEntryService {
 
     for (let i = monthsBack; i > 0; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      periods.push(this.createPeriodObject(date)); // Alte Methode verwenden
+      periods.push(TimeEntryService.createPeriodObject(date));
     }
 
-    periods.push(this.createPeriodObject(currentDate));
+    periods.push(TimeEntryService.createPeriodObject(currentDate));
 
     for (let i = 1; i <= monthsForward; i++) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 1);
-      periods.push(this.createPeriodObject(date));
+      periods.push(TimeEntryService.createPeriodObject(date));
     }
 
     return periods;
   }
 
   /**
-   * Erstellt Perioden-Objekt für Dropdown
-   * @param {Date} date - Datum
-   * @returns {Object} Perioden-Objekt
-   */
+ * Erstellt Perioden-Objekt für Dropdown (Standard-Kalendermonate)
+ * ✅ KORRIGIERT: this.getMonthName() -> TimeEntryService.getMonthName()
+ */
   static createPeriodObject(date) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
-    const monthName = this.getMonthName(month);
+    const monthName = TimeEntryService.getMonthName(month);
 
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
     const endDate = new Date(year, month, 0).toISOString().split('T')[0];
