@@ -44,14 +44,14 @@ export default function EmployeeDashboard() {
 
   // Load data on component mount and month change
   useEffect(() => {
-    if (user?.userId) {
+    if (user?.id) {
       loadMonthlyData()
       loadBillingPeriods()
     }
-  }, [currentMonth, user?.userId])
+  }, [currentMonth, user?.id])
 
   const loadMonthlyData = async () => {
-    if (!user?.userId) return
+    if (!user?.id) return
     
     try {
       setLoading(true)
@@ -62,7 +62,7 @@ export default function EmployeeDashboard() {
       const year = parseInt(yearStr)
       const month = parseInt(monthStr)
       
-      const data = await TimeTrackingService.getMonthlyTimeRecords(user.userId, year, month)
+      const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
       setMonthlyData(data)
     } catch (err: any) {
       setError(err.message || 'Fehler beim Laden der Zeitdaten')
