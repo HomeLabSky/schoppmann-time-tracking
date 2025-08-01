@@ -95,6 +95,13 @@ class TimeEntryService {
       // Formatierte Einträge
       const formattedEntries = entries.map(entry => entry.toSafeJSON());
 
+      // Korrekte Display-Werte berechnen
+      const periodInfo = TimeEntryService.createPeriodObjectForUser(
+        new Date(`${year}-${month.toString().padStart(2, '0')}-15`),
+        startDay,
+        endDay
+      );
+
       return {
         records: formattedEntries,
         summary: {
@@ -109,11 +116,12 @@ class TimeEntryService {
           exceedsLimit: actualEarnings > minijobLimit,
           entryCount: formattedEntries.length
         },
-        // GEÄNDERT: Korrekte Periodeninformationen verwenden
+
+        // KORRIGIERT: Korrekte Periodeninformationen verwenden
         period: {
-          year,
-          month,
-          monthName: this.getMonthName(month),
+          year: periodInfo.year,              // <- KORREKT: Display-Jahr
+          month: periodInfo.month,            // <- KORREKT: Display-Monat  
+          monthName: periodInfo.monthName,    // <- KORREKT: Display-Monatsname
           startDate: billingPeriod.startDate,
           endDate: billingPeriod.endDate,
           description: billingPeriod.description
