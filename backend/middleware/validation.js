@@ -94,14 +94,7 @@ const validateUserSettings = [
   body('abrechnungEnde')
     .optional()
     .isInt({ min: 1, max: 31 })
-    .withMessage('Abrechnungsende muss zwischen 1 und 31 liegen')
-    .custom((endDay, { req }) => {
-      const startDay = req.body.abrechnungStart;
-      if (startDay && endDay && startDay >= endDay) {
-        throw new Error('Abrechnungsende muss nach dem Abrechnungsstart liegen');
-      }
-      return true;
-    }),
+    .withMessage('Abrechnungsende muss zwischen 1 und 31 liegen'),
   body('lohnzettelEmail')
     .optional()
     .isEmail()
@@ -158,20 +151,20 @@ const validateMinijobSetting = [
 // ✅ Validation Error Handler mit verbessertem Logging
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
-  
+
   if (!errors.isEmpty()) {
     const errorMessages = errors.array().map(err => err.msg);
     const fieldErrors = errors.array().reduce((acc, err) => {
       acc[err.path] = err.msg;
       return acc;
     }, {});
-    
+
     // Development Logging
     if (config.nodeEnv === 'development') {
       console.log('❌ Validation errors:', errorMessages);
       console.log('🔍 Fields with errors:', Object.keys(fieldErrors));
     }
-    
+
     return res.status(400).json({
       success: false,
       error: 'Eingabefehler',
@@ -181,12 +174,12 @@ const handleValidationErrors = (req, res, next) => {
       timestamp: new Date().toISOString()
     });
   }
-  
+
   // Development Success Logging  
   if (config.nodeEnv === 'development') {
     console.log(`✅ Validation passed: ${req.method} ${req.path}`);
   }
-  
+
   next();
 };
 
@@ -200,7 +193,7 @@ const customValidations = {
     }
     return true;
   },
-  
+
   // Prüft ob End-Datum nach Start-Datum liegt
   isAfterStartDate: (endDate, { req }) => {
     if (req.body.validFrom && endDate <= req.body.validFrom) {
@@ -208,7 +201,7 @@ const customValidations = {
     }
     return true;
   },
-  
+
   // Email-Domain Validierung
   isDomainAllowed: (email, allowedDomains = []) => {
     if (allowedDomains.length === 0) return true;
@@ -231,8 +224,8 @@ const sanitizeInput = (req, res, next) => {
   next();
 };
 
-module.exports = { 
-  validateRegistration, 
+module.exports = {
+  validateRegistration,
   validateLogin,
   validateUserUpdate,
   validateUserSettings,
