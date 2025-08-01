@@ -1,315 +1,365 @@
-// backend/routes/index.js
-const express = require('express');
-const config = require('../config');
+// frontend/src/lib/timetracking.ts - Korrekte TimeTrackingService Implementierung
 
-// ✅ Middleware importieren
-const { publicAPI, authenticatedAPI, adminAPI } = require('../middleware');
-const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
+import { apiClient } from './api'
 
-// ✅ Route-Module importieren
-const authRoutes = require('./auth');
-const adminRoutes = require('./admin');
-const employeeRoutes = require('./employee');
-const minijobRoutes = require('./minijob');
-const setupRoutes = require('./setup');
-const timeTrackingRoutes = require('./timetracking'); // ✅ KORRIGIERT: 'timetracking' statt 'timtracking'
-
-const router = express.Router();
-
-// ✅ API Info Route
-router.get('/', (req, res) => {
-  res.json({
-    message: '🚀 Schoppmann Time Tracking API',
-    version: '2.0.0',
-    environment: config.nodeEnv,
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      auth: {
-        base: '/api/auth',
-        routes: [
-          'POST /api/auth/register',
-          'POST /api/auth/login', 
-          'POST /api/auth/refresh',
-          'GET /api/auth/profile',
-          'PUT /api/auth/profile',
-          'PUT /api/auth/change-password',
-          'POST /api/auth/logout'
-        ]
-      },
-      timeTracking: {
-        base: '/api/timetracking',
-        description: 'Zeiterfassungs-API für alle authentifizierten Benutzer',
-        routes: [
-          'GET /api/timetracking?month=YYYY-MM',
-          'GET /api/timetracking/periods',
-          'GET /api/timetracking/:id',
-          'POST /api/timetracking',
-          'PUT /api/timetracking/:id',
-          'DELETE /api/timetracking/:id',
-          'GET /api/timetracking/stats/multi-month'
-        ]
-      },
-      employee: {
-        base: '/api/employee',
-        description: 'Mitarbeiter-spezifische Routen',
-        routes: [
-          'GET /api/employee/profile',
-          'PUT /api/employee/profile',
-          'PUT /api/employee/change-password',
-          'GET /api/employee/settings',
-          'PUT /api/employee/settings',
-          'GET /api/employee/minijob/current',
-          'GET /api/employee/dashboard',
-          'GET /api/employee/account-status',
-          'POST /api/employee/logout'
-        ]
-      },
-      admin: {
-        base: '/api/admin',
-        description: 'Administrator-spezifische Routen (nur für Admins)',
-        routes: [
-          'GET /api/admin/users',
-          'GET /api/admin/users/:id',
-          'POST /api/admin/users',
-          'PUT /api/admin/users/:id',
-          'PUT /api/admin/users/:id/settings',
-          'PATCH /api/admin/users/:id/toggle-status',
-          'DELETE /api/admin/users/:id',
-          'GET /api/admin/stats/users',
-          'GET /api/admin/create-first-admin',
-          'POST /api/admin/reset-database',
-          'POST /api/admin/reset-database-confirm'
-        ]
-      },
-      minijob: {
-        base: '/api/admin/minijob',
-        description: 'Minijob-Verwaltung (nur für Admins)',
-        routes: [
-          'GET /api/admin/minijob/settings',
-          'GET /api/admin/minijob/settings/current',
-          'POST /api/admin/minijob/settings',
-          'PUT /api/admin/minijob/settings/:id',
-          'DELETE /api/admin/minijob/settings/:id',
-          'POST /api/admin/minijob/settings/recalculate-periods',
-          'POST /api/admin/minijob/settings/refresh-status',
-          'GET /api/admin/minijob/stats'
-        ]
-      }
-    },
-    security: {
-      authentication: 'JWT Bearer Token required',
-      rateLimit: {
-        general: `${config.rateLimit.general} requests per ${config.rateLimit.windowMs / 1000 / 60} minutes`,
-        login: `${config.rateLimit.login} attempts per ${config.rateLimit.windowMs / 1000 / 60} minutes`,
-        registration: '3 attempts per hour'
-      }
-    }
-  });
-});
-
-// ✅ AUTH ROUTES
-// Login und Registration haben spezielle Rate Limits
-router.use('/auth/login', loginLimiter);
-router.use('/auth/register', registrationLimiter);
-router.use('/auth', authRoutes);
-
-// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung)
-router.use('/setup', publicAPI, setupRoutes);
-
-// ✅ ZEITERFASSUNG ROUTES (Authentifizierung erforderlich)
-router.use('/timetracking', authenticatedAPI, timeTrackingRoutes); // ✅ HINZUGEFÜGT!
-
-// ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
-router.use('/employee', authenticatedAPI, employeeRoutes);
-
-// ✅ ADMIN ROUTES (Admin-Berechtigung erforderlich)
-router.use('/admin', adminAPI, adminRoutes);
-
-// ✅ MINIJOB ROUTES (Teil der Admin-Routes)
-router.use('/admin/minijob', adminAPI, minijobRoutes);
-
-// Development Routes (nur in Development verfügbar)
-if (config.nodeEnv === 'development') {
-  router.get('/dev/routes', (req, res) => {
-    res.json({
-      message: '🔧 Development: Verfügbare API-Routen',
-      environment: config.nodeEnv,
-      routes: {
-        public: [
-          'GET /api/',
-          'GET /api/status',
-          'GET /api/version',
-          'GET /api/setup/*'
-        ],
-        auth: [
-          'POST /api/auth/register',
-          'POST /api/auth/login',
-          'POST /api/auth/refresh',
-          'GET /api/auth/profile',
-          'PUT /api/auth/profile',
-          'PUT /api/auth/change-password',
-          'POST /api/auth/logout'
-        ],
-        timetracking: [  // ✅ HINZUGEFÜGT!
-          'GET /api/timetracking?month=YYYY-MM',
-          'GET /api/timetracking/periods',
-          'GET /api/timetracking/:id',
-          'POST /api/timetracking',
-          'PUT /api/timetracking/:id',
-          'DELETE /api/timetracking/:id',
-          'GET /api/timetracking/stats/multi-month'
-        ],
-        employee: [
-          'GET /api/employee/profile',
-          'PUT /api/employee/profile',
-          'PUT /api/employee/change-password',
-          'GET /api/employee/settings',
-          'PUT /api/employee/settings',
-          'GET /api/employee/minijob/current',
-          'GET /api/employee/dashboard',
-          'GET /api/employee/account-status',
-          'POST /api/employee/logout'
-        ],
-        admin: [
-          'GET /api/admin/users',
-          'GET /api/admin/users/:id',
-          'POST /api/admin/users',
-          'PUT /api/admin/users/:id',
-          'PUT /api/admin/users/:id/settings',
-          'PATCH /api/admin/users/:id/toggle-status',
-          'DELETE /api/admin/users/:id',
-          'GET /api/admin/stats/users',
-          'GET /api/admin/create-first-admin',
-          'POST /api/admin/reset-database',
-          'POST /api/admin/reset-database-confirm'
-        ],
-        minijob: [
-          'GET /api/admin/minijob/settings',
-          'GET /api/admin/minijob/settings/current',
-          'POST /api/admin/minijob/settings',
-          'PUT /api/admin/minijob/settings/:id',
-          'DELETE /api/admin/minijob/settings/:id',
-          'POST /api/admin/minijob/settings/recalculate-periods',
-          'POST /api/admin/minijob/settings/refresh-status',
-          'GET /api/admin/minijob/stats'
-        ]
-      },
-      middleware: {
-        publicAPI: 'Keine Authentifizierung erforderlich',
-        authenticatedAPI: 'JWT Token erforderlich', 
-        adminAPI: 'Admin-Rolle erforderlich'
-      }
-    });
-  });
-
-  router.get('/dev/middleware', (req, res) => {
-    res.json({
-      message: '🔧 Development: Middleware-Information',
-      middleware: {
-        security: [
-          'helmet (Security Headers)',
-          'cors (Cross-Origin)',
-          'express-rate-limit (Rate Limiting)'
-        ],
-        authentication: [
-          'JWT Verification',
-          'Token Refresh Handling',
-          'Role-based Access Control'
-        ],
-        validation: [
-          'express-validator',
-          'Request Body Validation',
-          'Parameter Validation'
-        ],
-        database: [
-          'Sequelize ORM',
-          'SQLite Database',
-          'Model Associations'
-        ]
-      },
-      config: {
-        jwtSecret: config.jwt.secret ? `${config.jwt.secret.length} chars` : 'not set',
-        refreshSecret: config.jwt.refreshSecret ? `${config.jwt.refreshSecret.length} chars` : 'not set',
-        corsOrigins: config.cors.origin.length,
-        rateLimit: {
-          windowMs: config.rateLimit.windowMs,
-          general: config.rateLimit.general,
-          login: config.rateLimit.login
-        }
-      },
-      middleware: {
-        security: 'helmet + cors + headers',
-        auth: 'JWT Bearer Token',
-        validation: 'express-validator',
-        rateLimit: 'express-rate-limit',
-        database: 'sequelize + sqlite'
-      }
-    });
-  });
+// ✅ TypeScript Interfaces
+export interface TimeRecord {
+  id: number
+  userId: number
+  date: string
+  startTime: string
+  endTime: string
+  breakMinutes: number
+  description?: string
+  totalHours: number
+  workTime: string // Formatierte Arbeitszeit (z.B. "8:30")
+  formattedEarnings: string // Formatierter Verdienst (z.B. "102,00 €")
+  createdAt: string
+  updatedAt: string
 }
 
-// ✅ API Status Route (für Health Checks)
-router.get('/status', (req, res) => {
-  res.json({
-    status: 'OK',
-    message: '✅ API ist online und bereit',
-    timestamp: new Date().toISOString(),
-    environment: config.nodeEnv,
-    version: '2.0.0',
-    services: {
-      database: 'connected',
-      auth: 'ready',
-      rateLimit: 'active'
-    }
-  });
-});
+export interface TimeRecordSummary {
+  totalHours: number
+  totalEarnings: number
+  actualEarnings: number
+  carryIn: number
+  carryOut: number
+  paidThisMonth: number
+  minijobLimit: number
+  hourlyRate: number
+  exceedsLimit: boolean
+  entryCount: number
+  totalDays?: number
+  averageHoursPerDay?: number
+  overtimeHours?: number
+}
 
-// ✅ API Version Info
-router.get('/version', (req, res) => {
-  res.json({
-    api: {
-      name: 'Schoppmann Time Tracking API',
-      version: '2.0.0',
-      releaseDate: '2024-12-19',
-      environment: config.nodeEnv
-    },
-    features: [
-      'JWT Authentication',
-      'Role-based Access Control',
-      'Rate Limiting', 
-      'Input Validation',
-      'Time Tracking',
-      'Minijob Management',
-      'User Management',
-      'Security Headers'
-    ],
-    dependencies: {
-      express: require('express/package.json').version,
-      sequelize: require('sequelize/package.json').version,
-      jsonwebtoken: require('jsonwebtoken/package.json').version,
-      bcryptjs: require('bcryptjs/package.json').version
-    }
-  });
-});
+export interface BillingPeriod {
+  value: string
+  label: string
+  year: number
+  month: number
+  monthName: string
+  startDate: string
+  endDate: string
+  isCurrent: boolean
+}
 
-// ✅ 404 Handler für API-Routen
-router.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'API-Endpoint nicht gefunden',
-    code: 'ENDPOINT_NOT_FOUND',
-    path: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-    availableEndpoints: {
-      auth: '/api/auth/*',
-      timetracking: '/api/timetracking/*',
-      employee: '/api/employee/*',
-      admin: '/api/admin/*',
-      minijob: '/api/admin/minijob/*',
-      setup: '/api/setup/*'
-    }
-  });
-});
+export interface MonthlyTimeRecords {
+  month: string
+  monthName: string
+  year: number
+  records: TimeRecord[]
+  summary: TimeRecordSummary
+  period: BillingPeriod // Dashboard erwartet "period" nicht "billingPeriod"
+}
 
-module.exports = router;
+export interface CreateTimeRecordRequest {
+  date: string
+  startTime: string
+  endTime: string
+  breakMinutes: number
+  description?: string
+}
+
+export interface UpdateTimeRecordRequest {
+  startTime: string
+  endTime: string
+  breakMinutes: number
+  description?: string
+}
+
+export interface ValidationResult {
+  isValid: boolean
+  errors: string[]
+}
+
+// ✅ TimeTrackingService Klasse
+class TimeTrackingService {
+  
+  // ===== DATUM HILFSMETHODEN =====
+  
+  /**
+   * Gibt den aktuellen Monat im Format YYYY-MM zurück
+   */
+  static getCurrentMonth(): string {
+    const now = new Date()
+    const year = now.getFullYear()
+    const month = (now.getMonth() + 1).toString().padStart(2, '0')
+    return `${year}-${month}`
+  }
+
+  /**
+   * Gibt den vorherigen Monat zurück
+   */
+  static getPreviousMonth(currentMonth: string): string {
+    const [year, month] = currentMonth.split('-').map(Number)
+    const date = new Date(year, month - 2) // month - 1 - 1 (da month-1 für JS Date, dann -1 für vorherigen Monat)
+    const newYear = date.getFullYear()
+    const newMonth = (date.getMonth() + 1).toString().padStart(2, '0')
+    return `${newYear}-${newMonth}`
+  }
+
+  /**
+   * Gibt den nächsten Monat zurück
+   */
+  static getNextMonth(currentMonth: string): string {
+    const [year, month] = currentMonth.split('-').map(Number)
+    const date = new Date(year, month) // month - 1 + 1 = month
+    const newYear = date.getFullYear()
+    const newMonth = (date.getMonth() + 1).toString().padStart(2, '0')
+    return `${newYear}-${newMonth}`
+  }
+
+  /**
+   * Formatiert einen Monat für die Anzeige
+   */
+  static formatMonthForDisplay(monthString: string): string {
+    const [year, month] = monthString.split('-').map(Number)
+    const monthNames = [
+      'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+      'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
+    ]
+    return `${monthNames[month - 1]} ${year}`
+  }
+
+  // ===== API METHODEN =====
+
+  /**
+   * Lädt Zeiteinträge für einen bestimmten Monat
+   */
+  static async getMonthlyTimeRecords(month: string): Promise<MonthlyTimeRecords> {
+    try {
+      const response = await apiClient.get(`/api/timetracking?month=${month}`)
+      return response.data
+    } catch (error: any) {
+      console.error('Fehler beim Laden der monatlichen Zeitdaten:', error)
+      throw new Error(error.message || 'Fehler beim Laden der Zeitdaten')
+    }
+  }
+
+  /**
+   * Lädt verfügbare Abrechnungsperioden
+   */
+  static async getBillingPeriods(): Promise<{ periods: BillingPeriod[] }> {
+    try {
+      const response = await apiClient.get('/api/timetracking/periods')
+      return response.data
+    } catch (error: any) {
+      console.error('Fehler beim Laden der Abrechnungsperioden:', error)
+      throw new Error(error.message || 'Fehler beim Laden der Abrechnungsperioden')
+    }
+  }
+
+  /**
+   * Lädt einen einzelnen Zeiteintrag
+   */
+  static async getTimeRecord(id: number): Promise<TimeRecord> {
+    try {
+      const response = await apiClient.get(`/api/timetracking/${id}`)
+      return response.data.record
+    } catch (error: any) {
+      console.error('Fehler beim Laden des Zeiteintrags:', error)
+      throw new Error(error.message || 'Fehler beim Laden des Zeiteintrags')
+    }
+  }
+
+  /**
+   * Erstellt einen neuen Zeiteintrag
+   */
+  static async createTimeRecord(data: CreateTimeRecordRequest): Promise<TimeRecord> {
+    try {
+      const response = await apiClient.post('/api/timetracking', data)
+      return response.data.record
+    } catch (error: any) {
+      console.error('Fehler beim Erstellen des Zeiteintrags:', error)
+      throw new Error(error.message || 'Fehler beim Erstellen des Zeiteintrags')
+    }
+  }
+
+  /**
+   * Aktualisiert einen bestehenden Zeiteintrag
+   */
+  static async updateTimeRecord(id: number, data: UpdateTimeRecordRequest): Promise<TimeRecord> {
+    try {
+      const response = await apiClient.put(`/api/timetracking/${id}`, data)
+      return response.data.record
+    } catch (error: any) {
+      console.error('Fehler beim Aktualisieren des Zeiteintrags:', error)
+      throw new Error(error.message || 'Fehler beim Aktualisieren des Zeiteintrags')
+    }
+  }
+
+  /**
+   * Löscht einen Zeiteintrag
+   */
+  static async deleteTimeRecord(id: number): Promise<void> {
+    try {
+      await apiClient.delete(`/api/timetracking/${id}`)
+    } catch (error: any) {
+      console.error('Fehler beim Löschen des Zeiteintrags:', error)
+      throw new Error(error.message || 'Fehler beim Löschen des Zeiteintrags')
+    }
+  }
+
+  /**
+   * Lädt Multi-Monats-Statistiken
+   */
+  static async getMultiMonthStats(months: string[]): Promise<any> {
+    try {
+      const monthsQuery = months.join(',')
+      const response = await apiClient.get(`/api/timetracking/stats/multi-month?months=${monthsQuery}`)
+      return response.data
+    } catch (error: any) {
+      console.error('Fehler beim Laden der Multi-Monats-Statistiken:', error)
+      throw new Error(error.message || 'Fehler beim Laden der Statistiken')
+    }
+  }
+
+  // ===== VALIDIERUNGSMETHODEN =====
+
+  /**
+   * Validiert einen Zeiteintrag
+   */
+  static validateTimeRecord(data: CreateTimeRecordRequest): ValidationResult {
+    const errors: string[] = []
+
+    // Datum validieren
+    if (!data.date) {
+      errors.push('Datum ist erforderlich')
+    } else {
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+      if (!dateRegex.test(data.date)) {
+        errors.push('Datum muss im Format YYYY-MM-DD sein')
+      }
+    }
+
+    // Startzeit validieren
+    if (!data.startTime) {
+      errors.push('Startzeit ist erforderlich')
+    } else {
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
+      if (!timeRegex.test(data.startTime)) {
+        errors.push('Startzeit muss im Format HH:MM sein')
+      }
+    }
+
+    // Endzeit validieren
+    if (!data.endTime) {
+      errors.push('Endzeit ist erforderlich')
+    } else {
+      const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/
+      if (!timeRegex.test(data.endTime)) {
+        errors.push('Endzeit muss im Format HH:MM sein')
+      }
+    }
+
+    // Zeitlogik validieren
+    if (data.startTime && data.endTime) {
+      const [startHour, startMin] = data.startTime.split(':').map(Number)
+      const [endHour, endMin] = data.endTime.split(':').map(Number)
+      
+      const startMinutes = startHour * 60 + startMin
+      const endMinutes = endHour * 60 + endMin
+      
+      if (endMinutes <= startMinutes) {
+        errors.push('Endzeit muss nach der Startzeit liegen')
+      }
+    }
+
+    // Pausenzeit validieren
+    if (data.breakMinutes < 0) {
+      errors.push('Pausenzeit kann nicht negativ sein')
+    }
+
+    if (data.breakMinutes > 480) { // Mehr als 8 Stunden Pause
+      errors.push('Pausenzeit scheint unrealistisch hoch zu sein')
+    }
+
+    // Beschreibung validieren (optional)
+    if (data.description && data.description.length > 500) {
+      errors.push('Beschreibung darf maximal 500 Zeichen lang sein')
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors
+    }
+  }
+
+  // ===== BERECHNUNGSMETHODEN =====
+
+  /**
+   * Berechnet die Arbeitsstunden basierend auf Start-/Endzeit und Pause
+   */
+  static calculateWorkingHours(startTime: string, endTime: string, breakMinutes: number): number {
+    const [startHour, startMin] = startTime.split(':').map(Number)
+    const [endHour, endMin] = endTime.split(':').map(Number)
+    
+    const startMinutes = startHour * 60 + startMin
+    const endMinutes = endHour * 60 + endMin
+    
+    const totalMinutes = endMinutes - startMinutes
+    const workingMinutes = totalMinutes - breakMinutes
+    
+    return Math.max(0, workingMinutes / 60) // Stunden
+  }
+
+  /**
+   * Formatiert Stunden für die Anzeige
+   */
+  static formatHours(hours: number): string {
+    if (hours === 0) return '0:00'
+    
+    const wholeHours = Math.floor(hours)
+    const minutes = Math.round((hours - wholeHours) * 60)
+    
+    return `${wholeHours}:${minutes.toString().padStart(2, '0')}`
+  }
+
+  /**
+   * Formatiert Datum für die Anzeige
+   */
+  static formatDateForDisplay(dateString: string): string {
+    const date = new Date(dateString + 'T00:00:00')
+    return date.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  }
+
+  /**
+   * Formatiert Datum für die Anzeige (Kurzform für Dashboard)
+   */
+  static formatDate(dateString: string): string {
+    return this.formatDateForDisplay(dateString)
+  }
+
+  /**
+   * Formatiert Zeit für die Anzeige
+   */
+  static formatTimeForDisplay(timeString: string): string {
+    return timeString
+  }
+
+  /**
+   * Formatiert Zeit für die Anzeige (Kurzform für Dashboard)
+   */
+  static formatTime(timeString: string): string {
+    return this.formatTimeForDisplay(timeString)
+  }
+
+  /**
+   * Formatiert Währung für die Anzeige
+   */
+  static formatCurrency(amount: number): string {
+    return new Intl.NumberFormat('de-DE', {
+      style: 'currency',
+      currency: 'EUR'
+    }).format(amount)
+  }
+}
+
+// ✅ Default Export
+export default TimeTrackingService

@@ -1,7 +1,7 @@
 const { sequelize } = require('../config/database');
 const User = require('./User');
 const MinijobSetting = require('./MinijobSetting');
-const TimeEntry = require('./TimeEntry');
+const TimeEntry = require('./TimeEntry'); // ✅ TimeEntry importieren
 
 // ✅ Beziehungen zwischen Models definieren
 User.hasMany(MinijobSetting, {
@@ -59,6 +59,7 @@ module.exports = {
   // Models
   User,
   MinijobSetting,
+  TimeEntry, // ✅ HINZUGEFÜGT: TimeEntry exportieren
 
   // Database
   sequelize,
@@ -67,6 +68,7 @@ module.exports = {
   // Helper (für backwards compatibility)
   models: {
     User,
-    MinijobSetting
+    MinijobSetting,
+    TimeEntry // ✅ HINZUGEFÜGT: TimeEntry auch hier exportieren
   }
 };
