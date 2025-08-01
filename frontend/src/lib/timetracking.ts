@@ -74,6 +74,7 @@ class TimeTrackingService {
   
   /**
    * Holt monatliche Zeiteinträge für einen Benutzer
+   * KORRIGIERT: Verwendet den korrekten Backend-Endpunkt
    * @param userId - Benutzer-ID
    * @param year - Jahr
    * @param month - Monat (1-12)
@@ -81,7 +82,9 @@ class TimeTrackingService {
    */
   static async getMonthlyTimeRecords(userId: number, year: number, month: number): Promise<MonthlyTimeRecords> {
     try {
-      const response = await apiClient.get(`/api/time-records/monthly/${userId}/${year}/${month}`)
+      // ✅ KORRIGIERT: /api/timetracking mit month Query-Parameter
+      const monthParam = `${year}-${String(month).padStart(2, '0')}`
+      const response = await apiClient.get(`/api/timetracking?month=${monthParam}`)
       
       if (!response.data.success) {
         throw new Error(response.data.error || 'Fehler beim Laden der Zeitdaten')
@@ -101,7 +104,7 @@ class TimeTrackingService {
 
   /**
    * Erstellt einen neuen Zeiteintrag
-   * ANGEPASST: Pausenzeit wird automatisch auf 0 gesetzt
+   * KORRIGIERT: Verwendet korrekten Endpunkt und Pausenzeit wird auf 0 gesetzt
    * @param timeRecord - Zeiteintrag-Daten
    * @returns Promise mit dem erstellten Zeiteintrag
    */
@@ -113,7 +116,8 @@ class TimeTrackingService {
         breakMinutes: 0
       }
 
-      const response = await apiClient.post('/api/time-records', processedRecord)
+      // ✅ KORRIGIERT: /api/timetracking statt /api/time-records
+      const response = await apiClient.post('/api/timetracking', processedRecord)
       
       if (!response.data.success) {
         throw new Error(response.data.error || 'Fehler beim Erstellen des Zeiteintrags')
@@ -133,7 +137,7 @@ class TimeTrackingService {
 
   /**
    * Aktualisiert einen Zeiteintrag
-   * ANGEPASST: Pausenzeit wird automatisch auf 0 gesetzt
+   * KORRIGIERT: Verwendet korrekten Endpunkt und Pausenzeit wird auf 0 gesetzt
    * @param id - Zeiteintrag-ID
    * @param updateData - Aktualisierungsdaten
    * @returns Promise mit dem aktualisierten Zeiteintrag
@@ -146,7 +150,8 @@ class TimeTrackingService {
         breakMinutes: 0
       }
 
-      const response = await apiClient.put(`/api/time-records/${id}`, processedData)
+      // ✅ KORRIGIERT: /api/timetracking/${id} statt /api/time-records/${id}
+      const response = await apiClient.put(`/api/timetracking/${id}`, processedData)
       
       if (!response.data.success) {
         throw new Error(response.data.error || 'Fehler beim Aktualisieren des Zeiteintrags')
@@ -166,12 +171,14 @@ class TimeTrackingService {
 
   /**
    * Löscht einen Zeiteintrag
+   * KORRIGIERT: Verwendet korrekten Endpunkt
    * @param id - Zeiteintrag-ID
    * @returns Promise<boolean>
    */
   static async deleteTimeRecord(id: number): Promise<boolean> {
     try {
-      const response = await apiClient.delete(`/api/time-records/${id}`)
+      // ✅ KORRIGIERT: /api/timetracking/${id} statt /api/time-records/${id}
+      const response = await apiClient.delete(`/api/timetracking/${id}`)
       
       if (!response.data.success) {
         throw new Error(response.data.error || 'Fehler beim Löschen des Zeiteintrags')
@@ -230,8 +237,6 @@ class TimeTrackingService {
         errors.push('Arbeitszeit muss mindestens 15 Minuten betragen')
       }
     }
-
-    // ENTFERNT: Pausenzeit-Validierung da deaktiviert
 
     // Datums-Validierung
     if (entryData.date) {
@@ -297,59 +302,79 @@ class TimeTrackingService {
   }
 
   /**
-   * Hilfsmethode: Vorherigen Monat berechnen
-   * @param currentMonth - Aktueller Monat (YYYY-MM)
-   * @returns Vorheriger Monat
+   * Holt Abrechnungsperioden für Dropdown
+   * @returns Promise mit verfügbaren Abrechnungsperioden
    */
-  static getPreviousMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month - 1, 1)
-    date.setMonth(date.getMonth() - 1)
-    
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-  }
-
-  /**
-   * Hilfsmethode: Nächsten Monat berechnen
-   * @param currentMonth - Aktueller Monat (YYYY-MM)
-   * @returns Nächster Monat
-   */
-  static getNextMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month - 1, 1)
-    date.setMonth(date.getMonth() + 1)
-    
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-  }
-
-  /**
-   * Generiert verfügbare Abrechnungsperioden (letzte 6 Monate)
-   * @returns Array von Abrechnungsperioden
-   */
-  static generateAvailablePeriods(): BillingPeriod[] {
-    const periods: BillingPeriod[] = []
-    const today = new Date()
-    
-    for (let i = 0; i < 6; i++) {
-      const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
-      const year = date.getFullYear()
-      const month = date.getMonth() + 1
-      const monthName = date.toLocaleDateString('de-DE', { month: 'long' })
+  static async getBillingPeriods(): Promise<BillingPeriod[]> {
+    try {
+      const response = await apiClient.get('/api/timetracking/periods')
       
-      periods.push({
-        value: `${year}-${String(month).padStart(2, '0')}`,
-        label: `${monthName} ${year}`,
-        year,
-        month,
-        monthName,
-        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-        endDate: new Date(year, month, 0).toISOString().split('T')[0],
-        isCurrent: i === 0
-      })
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Laden der Abrechnungsperioden')
+      }
+
+      return response.data.data.periods || []
+    } catch (error: any) {
+      console.error('Fehler beim Laden der Abrechnungsperioden:', error)
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Abrechnungsperioden konnten nicht geladen werden')
     }
-    
-    return periods
+  }
+
+  /**
+   * Holt einen einzelnen Zeiteintrag
+   * @param id - Zeiteintrag-ID
+   * @returns Promise mit dem Zeiteintrag
+   */
+  static async getTimeRecord(id: number): Promise<TimeRecord> {
+    try {
+      const response = await apiClient.get(`/api/timetracking/${id}`)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Laden des Zeiteintrags')
+      }
+
+      return response.data.data.entry
+    } catch (error: any) {
+      console.error('Fehler beim Laden des Zeiteintrags:', error)
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Zeiteintrag konnte nicht geladen werden')
+    }
+  }
+
+  /**
+   * Holt Multi-Monats-Statistiken
+   * @param months - Anzahl Monate (Standard: 12)
+   * @returns Promise mit Statistiken
+   */
+  static async getMultiMonthStats(months: number = 12): Promise<any> {
+    try {
+      const response = await apiClient.get(`/api/timetracking/stats/multi-month?months=${months}`)
+      
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Fehler beim Laden der Statistiken')
+      }
+
+      return response.data.data
+    } catch (error: any) {
+      console.error('Fehler beim Laden der Statistiken:', error)
+      
+      if (error.response?.data?.error) {
+        throw new Error(error.response.data.error)
+      }
+      
+      throw new Error('Statistiken konnten nicht geladen werden')
+    }
   }
 }
 
 export { TimeTrackingService }
+export default TimeTrackingService
