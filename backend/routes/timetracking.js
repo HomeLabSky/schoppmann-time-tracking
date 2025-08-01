@@ -46,7 +46,7 @@ const validateTimeEntry = [
 ];
 
 // ✅ ZEITEINTRÄGE FÜR MONAT ABRUFEN
-router.get('/', 
+router.get('/',
   authenticateToken,
   [
     query('month')
@@ -56,12 +56,17 @@ router.get('/',
   ],
   async (req, res) => {
     try {
+
+      // ✅ DEBUG: Token-Inhalt überprüfen
+      console.log('🔍 DEBUG req.user:', req.user);
+      console.log('🔍 DEBUG req.user.userId:', req.user?.userId);
+
       const { month } = req.query;
       const [year, monthNumber] = month.split('-').map(Number);
-      
+
       const result = await TimeEntryService.getMonthlyTimeRecords(
-        req.user.userId, 
-        year, 
+        req.user.userId,
+        year,
         monthNumber
       );
 
@@ -74,7 +79,7 @@ router.get('/',
       });
     } catch (error) {
       console.error('Fehler beim Laden der Zeiteinträge:', error);
-      
+
       if (error.message.includes('USER_NOT_FOUND')) {
         return res.status(404).json({
           success: false,
@@ -94,7 +99,7 @@ router.get('/',
 );
 
 // ✅ ABRECHNUNGSPERIODEN ABRUFEN (für Dropdown)
-router.get('/periods', 
+router.get('/periods',
   authenticateToken,
   async (req, res) => {
     try {
@@ -138,7 +143,7 @@ router.get('/:id',
       });
     } catch (error) {
       console.error('Fehler beim Laden des Zeiteintrags:', error);
-      
+
       if (error.message.includes('ENTRY_NOT_FOUND')) {
         return res.status(404).json({
           success: false,
@@ -180,7 +185,7 @@ router.post('/',
       });
     } catch (error) {
       console.error('Fehler beim Erstellen des Zeiteintrags:', error);
-      
+
       if (error.message.includes('VALIDATION_ERROR')) {
         return res.status(400).json({
           success: false,
@@ -226,8 +231,8 @@ router.put('/:id',
       delete updateData.userId;
 
       const updatedEntry = await TimeEntryService.updateTimeEntry(
-        entryId, 
-        updateData, 
+        entryId,
+        updateData,
         req.user.userId
       );
 
@@ -240,7 +245,7 @@ router.put('/:id',
       });
     } catch (error) {
       console.error('Fehler beim Aktualisieren des Zeiteintrags:', error);
-      
+
       if (error.message.includes('ENTRY_NOT_FOUND')) {
         return res.status(404).json({
           success: false,
@@ -287,7 +292,7 @@ router.delete('/:id',
       });
     } catch (error) {
       console.error('Fehler beim Löschen des Zeiteintrags:', error);
-      
+
       if (error.message.includes('ENTRY_NOT_FOUND')) {
         return res.status(404).json({
           success: false,
@@ -349,7 +354,7 @@ if (config.nodeEnv === 'development') {
         // 10 Testeinträge für aktuellen Monat erstellen
         for (let i = 1; i <= 10; i++) {
           const date = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-${i.toString().padStart(2, '0')}`;
-          
+
           const entryData = {
             userId: req.user.userId,
             date: date,
