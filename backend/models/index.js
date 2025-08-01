@@ -1,6 +1,7 @@
 const { sequelize } = require('../config/database');
 const User = require('./User');
 const MinijobSetting = require('./MinijobSetting');
+const TimeEntry = require('./TimeEntry');
 
 // ✅ Beziehungen zwischen Models definieren
 User.hasMany(MinijobSetting, {
@@ -11,6 +12,17 @@ User.hasMany(MinijobSetting, {
 MinijobSetting.belongsTo(User, {
   foreignKey: 'createdBy',
   as: 'Creator'
+});
+
+// TimeEntry Beziehungen
+User.hasMany(TimeEntry, {
+  foreignKey: 'userId',
+  as: 'TimeEntries'
+});
+
+TimeEntry.belongsTo(User, {
+  foreignKey: 'userId',
+  as: 'User'
 });
 
 // ✅ Datenbank initialisieren (ersetzt die alte database.js Funktion)
