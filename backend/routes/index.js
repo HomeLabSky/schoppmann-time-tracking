@@ -11,7 +11,7 @@ const adminRoutes = require('./admin');
 const employeeRoutes = require('./employee');
 const minijobRoutes = require('./minijob');
 const setupRoutes = require('./setup');
-const timeTrackingRoutes = require('./timtracking'); // ✅ HINZUGEFÜGT!
+const timeTrackingRoutes = require('./timetracking'); // ✅ HINZUGEFÜGT!
 
 const router = express.Router();
 

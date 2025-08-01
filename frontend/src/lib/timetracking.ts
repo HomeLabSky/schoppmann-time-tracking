@@ -1,447 +1,315 @@
-// frontend/src/lib/timeTracking.ts
-import type { ApiResponse } from '@/types/api'
+// backend/routes/index.js
+const express = require('express');
+const config = require('../config');
 
-// ✅ Time Record Types
-export interface TimeRecord {
-  id: number
-  userId: number
-  date: string // YYYY-MM-DD
-  startTime: string // HH:mm
-  endTime: string // HH:mm
-  breakMinutes: number
-  description?: string
-  workTime: string // HH:mm format
-  workMinutes: number
-  earnings: number
-  formattedEarnings: string
-  createdAt: string
-  updatedAt: string
-}
+// ✅ Middleware importieren
+const { publicAPI, authenticatedAPI, adminAPI } = require('../middleware');
+const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
 
-export interface TimeRecordSummary {
-  totalHours: number
-  totalEarnings: number
-  actualEarnings: number
-  carryIn: number
-  carryOut: number
-  paidThisMonth: number
-  minijobLimit: number
-  hourlyRate: number
-  exceedsLimit: boolean
-  entryCount: number
-}
+// ✅ Route-Module importieren
+const authRoutes = require('./auth');
+const adminRoutes = require('./admin');
+const employeeRoutes = require('./employee');
+const minijobRoutes = require('./minijob');
+const setupRoutes = require('./setup');
+const timeTrackingRoutes = require('./timetracking'); // ✅ KORRIGIERT: 'timetracking' statt 'timtracking'
 
-export interface BillingPeriod {
-  value: string // YYYY-MM
-  label: string // "April 2025 (01.04.2025 – 30.04.2025)"
-  year: number
-  month: number
-  monthName: string
-  startDate: string
-  endDate: string
-  isCurrent: boolean
-}
+const router = express.Router();
 
-export interface MonthlyTimeRecords {
-  records: TimeRecord[]
-  summary: TimeRecordSummary
-  period: {
-    year: number
-    month: number
-    monthName: string
-    startDate: string
-    endDate: string
-  }
-}
-
-export interface CreateTimeRecordRequest {
-  date: string
-  startTime: string
-  endTime: string
-  breakMinutes?: number
-  description?: string
-}
-
-export interface UpdateTimeRecordRequest {
-  startTime?: string
-  endTime?: string
-  breakMinutes?: number
-  description?: string
-}
-
-export interface MultiMonthStats {
-  monthlyStats: Array<TimeRecordSummary & {
-    year: number
-    month: number
-    monthName: string
-  }>
-  totalStats: {
-    totalHours: number
-    totalEarnings: number
-    averageMonthlyHours: number
-  }
-}
-
-/**
- * ✅ Time Tracking Service - Frontend API Client
- * Handles all time tracking and minijob calculation API calls
- */
-class TimeTrackingService {
-  private static baseUrl = '/api/timetracking' // ✅ KORRIGIERT zu Backend-Endpunkt
-
-  /**
-   * Authentifizierter API-Request mit Token-Handling
-   */
-  private static async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const token = localStorage.getItem('accessToken')
-    
-    let response = await fetch(`${this.baseUrl}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-        ...options.headers,
+// ✅ API Info Route
+router.get('/', (req, res) => {
+  res.json({
+    message: '🚀 Schoppmann Time Tracking API',
+    version: '2.0.0',
+    environment: config.nodeEnv,
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      auth: {
+        base: '/api/auth',
+        routes: [
+          'POST /api/auth/register',
+          'POST /api/auth/login', 
+          'POST /api/auth/refresh',
+          'GET /api/auth/profile',
+          'PUT /api/auth/profile',
+          'PUT /api/auth/change-password',
+          'POST /api/auth/logout'
+        ]
       },
-    })
+      timeTracking: {
+        base: '/api/timetracking',
+        description: 'Zeiterfassungs-API für alle authentifizierten Benutzer',
+        routes: [
+          'GET /api/timetracking?month=YYYY-MM',
+          'GET /api/timetracking/periods',
+          'GET /api/timetracking/:id',
+          'POST /api/timetracking',
+          'PUT /api/timetracking/:id',
+          'DELETE /api/timetracking/:id',
+          'GET /api/timetracking/stats/multi-month'
+        ]
+      },
+      employee: {
+        base: '/api/employee',
+        description: 'Mitarbeiter-spezifische Routen',
+        routes: [
+          'GET /api/employee/profile',
+          'PUT /api/employee/profile',
+          'PUT /api/employee/change-password',
+          'GET /api/employee/settings',
+          'PUT /api/employee/settings',
+          'GET /api/employee/minijob/current',
+          'GET /api/employee/dashboard',
+          'GET /api/employee/account-status',
+          'POST /api/employee/logout'
+        ]
+      },
+      admin: {
+        base: '/api/admin',
+        description: 'Administrator-spezifische Routen (nur für Admins)',
+        routes: [
+          'GET /api/admin/users',
+          'GET /api/admin/users/:id',
+          'POST /api/admin/users',
+          'PUT /api/admin/users/:id',
+          'PUT /api/admin/users/:id/settings',
+          'PATCH /api/admin/users/:id/toggle-status',
+          'DELETE /api/admin/users/:id',
+          'GET /api/admin/stats/users',
+          'GET /api/admin/create-first-admin',
+          'POST /api/admin/reset-database',
+          'POST /api/admin/reset-database-confirm'
+        ]
+      },
+      minijob: {
+        base: '/api/admin/minijob',
+        description: 'Minijob-Verwaltung (nur für Admins)',
+        routes: [
+          'GET /api/admin/minijob/settings',
+          'GET /api/admin/minijob/settings/current',
+          'POST /api/admin/minijob/settings',
+          'PUT /api/admin/minijob/settings/:id',
+          'DELETE /api/admin/minijob/settings/:id',
+          'POST /api/admin/minijob/settings/recalculate-periods',
+          'POST /api/admin/minijob/settings/refresh-status',
+          'GET /api/admin/minijob/stats'
+        ]
+      }
+    },
+    security: {
+      authentication: 'JWT Bearer Token required',
+      rateLimit: {
+        general: `${config.rateLimit.general} requests per ${config.rateLimit.windowMs / 1000 / 60} minutes`,
+        login: `${config.rateLimit.login} attempts per ${config.rateLimit.windowMs / 1000 / 60} minutes`,
+        registration: '3 attempts per hour'
+      }
+    }
+  });
+});
 
-    // Handle token refresh on 401/403
-    if ((response.status === 401 || response.status === 403) && token) {
-      const refreshToken = localStorage.getItem('refreshToken')
-      
-      if (refreshToken) {
-        try {
-          const refreshResponse = await fetch('/api/auth/refresh', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ refreshToken })
-          })
+// ✅ AUTH ROUTES
+// Login und Registration haben spezielle Rate Limits
+router.use('/auth/login', loginLimiter);
+router.use('/auth/register', registrationLimiter);
+router.use('/auth', authRoutes);
 
-          const refreshData = await refreshResponse.json()
+// ✅ SETUP ROUTES (Öffentlich - für erste Einrichtung)
+router.use('/setup', publicAPI, setupRoutes);
 
-          if (refreshResponse.ok && refreshData.success) {
-            localStorage.setItem('accessToken', refreshData.data.accessToken)
-            localStorage.setItem('refreshToken', refreshData.data.refreshToken)
-            localStorage.setItem('user', JSON.stringify(refreshData.data.user))
+// ✅ ZEITERFASSUNG ROUTES (Authentifizierung erforderlich)
+router.use('/timetracking', authenticatedAPI, timeTrackingRoutes); // ✅ HINZUGEFÜGT!
 
-            // Retry original request with new token
-            response = await fetch(`${this.baseUrl}${endpoint}`, {
-              ...options,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${refreshData.data.accessToken}`,
-                ...options.headers,
-              },
-            })
-          } else {
-            // Refresh failed - redirect to login
-            localStorage.removeItem('accessToken')
-            localStorage.removeItem('refreshToken')
-            localStorage.removeItem('user')
-            window.location.href = '/login'
-            throw new Error('SESSION_EXPIRED')
-          }
-        } catch (error) {
-          localStorage.removeItem('accessToken')
-          localStorage.removeItem('refreshToken')
-          localStorage.removeItem('user')
-          window.location.href = '/login'
-          throw new Error('SESSION_EXPIRED')
+// ✅ EMPLOYEE ROUTES (Authentifizierung erforderlich)
+router.use('/employee', authenticatedAPI, employeeRoutes);
+
+// ✅ ADMIN ROUTES (Admin-Berechtigung erforderlich)
+router.use('/admin', adminAPI, adminRoutes);
+
+// ✅ MINIJOB ROUTES (Teil der Admin-Routes)
+router.use('/admin/minijob', adminAPI, minijobRoutes);
+
+// Development Routes (nur in Development verfügbar)
+if (config.nodeEnv === 'development') {
+  router.get('/dev/routes', (req, res) => {
+    res.json({
+      message: '🔧 Development: Verfügbare API-Routen',
+      environment: config.nodeEnv,
+      routes: {
+        public: [
+          'GET /api/',
+          'GET /api/status',
+          'GET /api/version',
+          'GET /api/setup/*'
+        ],
+        auth: [
+          'POST /api/auth/register',
+          'POST /api/auth/login',
+          'POST /api/auth/refresh',
+          'GET /api/auth/profile',
+          'PUT /api/auth/profile',
+          'PUT /api/auth/change-password',
+          'POST /api/auth/logout'
+        ],
+        timetracking: [  // ✅ HINZUGEFÜGT!
+          'GET /api/timetracking?month=YYYY-MM',
+          'GET /api/timetracking/periods',
+          'GET /api/timetracking/:id',
+          'POST /api/timetracking',
+          'PUT /api/timetracking/:id',
+          'DELETE /api/timetracking/:id',
+          'GET /api/timetracking/stats/multi-month'
+        ],
+        employee: [
+          'GET /api/employee/profile',
+          'PUT /api/employee/profile',
+          'PUT /api/employee/change-password',
+          'GET /api/employee/settings',
+          'PUT /api/employee/settings',
+          'GET /api/employee/minijob/current',
+          'GET /api/employee/dashboard',
+          'GET /api/employee/account-status',
+          'POST /api/employee/logout'
+        ],
+        admin: [
+          'GET /api/admin/users',
+          'GET /api/admin/users/:id',
+          'POST /api/admin/users',
+          'PUT /api/admin/users/:id',
+          'PUT /api/admin/users/:id/settings',
+          'PATCH /api/admin/users/:id/toggle-status',
+          'DELETE /api/admin/users/:id',
+          'GET /api/admin/stats/users',
+          'GET /api/admin/create-first-admin',
+          'POST /api/admin/reset-database',
+          'POST /api/admin/reset-database-confirm'
+        ],
+        minijob: [
+          'GET /api/admin/minijob/settings',
+          'GET /api/admin/minijob/settings/current',
+          'POST /api/admin/minijob/settings',
+          'PUT /api/admin/minijob/settings/:id',
+          'DELETE /api/admin/minijob/settings/:id',
+          'POST /api/admin/minijob/settings/recalculate-periods',
+          'POST /api/admin/minijob/settings/refresh-status',
+          'GET /api/admin/minijob/stats'
+        ]
+      },
+      middleware: {
+        publicAPI: 'Keine Authentifizierung erforderlich',
+        authenticatedAPI: 'JWT Token erforderlich', 
+        adminAPI: 'Admin-Rolle erforderlich'
+      }
+    });
+  });
+
+  router.get('/dev/middleware', (req, res) => {
+    res.json({
+      message: '🔧 Development: Middleware-Information',
+      middleware: {
+        security: [
+          'helmet (Security Headers)',
+          'cors (Cross-Origin)',
+          'express-rate-limit (Rate Limiting)'
+        ],
+        authentication: [
+          'JWT Verification',
+          'Token Refresh Handling',
+          'Role-based Access Control'
+        ],
+        validation: [
+          'express-validator',
+          'Request Body Validation',
+          'Parameter Validation'
+        ],
+        database: [
+          'Sequelize ORM',
+          'SQLite Database',
+          'Model Associations'
+        ]
+      },
+      config: {
+        jwtSecret: config.jwt.secret ? `${config.jwt.secret.length} chars` : 'not set',
+        refreshSecret: config.jwt.refreshSecret ? `${config.jwt.refreshSecret.length} chars` : 'not set',
+        corsOrigins: config.cors.origin.length,
+        rateLimit: {
+          windowMs: config.rateLimit.windowMs,
+          general: config.rateLimit.general,
+          login: config.rateLimit.login
         }
+      },
+      middleware: {
+        security: 'helmet + cors + headers',
+        auth: 'JWT Bearer Token',
+        validation: 'express-validator',
+        rateLimit: 'express-rate-limit',
+        database: 'sequelize + sqlite'
       }
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
-    }
-
-    return response.json()
-  }
-
-  /**
-   * Holt alle Zeiteinträge für einen Monat mit Minijob-Berechnungen
-   */
-  static async getMonthlyTimeRecords(month: string): Promise<MonthlyTimeRecords> {
-    const response = await this.request<ApiResponse<MonthlyTimeRecords>>(`?month=${month}`)
-    return response.data
-  }
-
-  /**
-   * Holt verfügbare Abrechnungsperioden für Dropdown
-   */
-  static async getBillingPeriods(): Promise<{
-    periods: BillingPeriod[]
-    currentPeriod: BillingPeriod | undefined
-  }> {
-    const response = await this.request<ApiResponse<{
-      periods: BillingPeriod[]
-      currentPeriod: BillingPeriod | undefined
-    }>>('/periods')
-    return response.data
-  }
-
-  /**
-   * Holt einen einzelnen Zeiteintrag
-   */
-  static async getTimeRecord(id: number): Promise<TimeRecord> {
-    const response = await this.request<ApiResponse<{ entry: TimeRecord }>>(`/${id}`)
-    return response.data.entry
-  }
-
-  /**
-   * Erstellt einen neuen Zeiteintrag
-   */
-  static async createTimeRecord(data: CreateTimeRecordRequest): Promise<TimeRecord> {
-    const response = await this.request<ApiResponse<{ entry: TimeRecord }>>('', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    })
-    return response.data.entry
-  }
-
-  /**
-   * Aktualisiert einen Zeiteintrag
-   */
-  static async updateTimeRecord(id: number, data: UpdateTimeRecordRequest): Promise<TimeRecord> {
-    const response = await this.request<ApiResponse<{ entry: TimeRecord }>>(`/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    })
-    return response.data.entry
-  }
-
-  /**
-   * Löscht einen Zeiteintrag
-   */
-  static async deleteTimeRecord(id: number): Promise<void> {
-    await this.request<ApiResponse<void>>(`/${id}`, {
-      method: 'DELETE',
-    })
-  }
-
-  /**
-   * Holt Multi-Monats-Statistiken
-   */
-  static async getMultiMonthStats(months: number = 12): Promise<MultiMonthStats> {
-    const response = await this.request<ApiResponse<MultiMonthStats>>(`/stats/multi-month?months=${months}`)
-    return response.data
-  }
-
-  /**
-   * Development: Erstellt Testdaten
-   */
-  static async createTestData(): Promise<TimeRecord[]> {
-    if (process.env.NODE_ENV !== 'development') {
-      throw new Error('Testdaten nur in Development verfügbar')
-    }
-    
-    const response = await this.request<ApiResponse<{ entries: TimeRecord[] }>>('/dev/create-test-data', {
-      method: 'POST',
-    })
-    return response.data.entries
-  }
-
-  // ✅ Utility Methods
-
-  /**
-   * Formatiert Währung in deutschem Format
-   */
-  static formatCurrency(amount: number): string {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(amount)
-  }
-
-  /**
-   * Formatiert Datum für deutsche Anzeige
-   */
-  static formatDate(dateString: string): string {
-    const date = new Date(dateString + 'T12:00:00.000Z')
-    return date.toLocaleDateString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      timeZone: 'UTC'
-    })
-  }
-
-  /**
-   * Formatiert Zeit für Anzeige (HH:mm)
-   */
-  static formatTime(timeString: string): string {
-    if (!timeString) return '--:--'
-    return timeString.substring(0, 5)
-  }
-
-  /**
-   * Konvertiert Minuten zu HH:mm Format
-   */
-  static minutesToTime(minutes: number): string {
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`
-  }
-
-  /**
-   * Validiert Zeitformat (HH:mm)
-   */
-  static validateTimeFormat(time: string): boolean {
-    return /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(time)
-  }
-
-  /**
-   * Validiert Datumsformat (YYYY-MM-DD)
-   */
-  static validateDateFormat(date: string): boolean {
-    return /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date))
-  }
-
-  /**
-   * Berechnet Arbeitszeit zwischen zwei Uhrzeiten (in Minuten)
-   */
-  static calculateWorkMinutes(startTime: string, endTime: string, breakMinutes: number = 0): number {
-    if (!this.validateTimeFormat(startTime) || !this.validateTimeFormat(endTime)) {
-      return 0
-    }
-
-    const [startHours, startMins] = startTime.split(':').map(Number)
-    const [endHours, endMins] = endTime.split(':').map(Number)
-
-    const startTotalMinutes = startHours * 60 + startMins
-    let endTotalMinutes = endHours * 60 + endMins
-
-    // Über Mitternacht arbeiten berücksichtigen
-    if (endTotalMinutes < startTotalMinutes) {
-      endTotalMinutes += 24 * 60
-    }
-
-    const workMinutes = endTotalMinutes - startTotalMinutes - breakMinutes
-    return Math.max(0, workMinutes)
-  }
-
-  /**
-   * Gibt aktuellen Monat im YYYY-MM Format zurück
-   */
-  static getCurrentMonth(): string {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = (now.getMonth() + 1).toString().padStart(2, '0')
-    return `${year}-${month}`
-  }
-
-  /**
-   * Navigiert zu vorherigem Monat
-   */
-  static getPreviousMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month - 2, 1) // month - 2 weil getMonth() 0-basiert ist
-    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`
-  }
-
-  /**
-   * Navigiert zu nächstem Monat
-   */
-  static getNextMonth(currentMonth: string): string {
-    const [year, month] = currentMonth.split('-').map(Number)
-    const date = new Date(year, month, 1) // month (nicht month-1) für nächsten Monat
-    return `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`
-  }
-
-  /**
-   * Prüft ob Minijob-Grenze überschritten wurde
-   */
-  static checkMinijobLimitExceeded(summary: TimeRecordSummary): {
-    exceeded: boolean
-    excessAmount: number
-    warningMessage?: string
-  } {
-    const exceeded = summary.exceedsLimit
-    const excessAmount = Math.max(0, summary.carryOut)
-
-    if (exceeded) {
-      return {
-        exceeded: true,
-        excessAmount,
-        warningMessage: `Die Minijob-Grenze von ${this.formatCurrency(summary.minijobLimit)} wurde überschritten. ${this.formatCurrency(excessAmount)} werden in den nächsten Monat übertragen.`
-      }
-    }
-
-    return {
-      exceeded: false,
-      excessAmount: 0
-    }
-  }
-
-  /**
-   * Validiert Zeiteintrag-Daten
-   */
-  static validateTimeRecord(data: CreateTimeRecordRequest | UpdateTimeRecordRequest): {
-    isValid: boolean
-    errors: string[]
-  } {
-    const errors: string[] = []
-
-    // Datum validieren (nur bei CREATE)
-    if ('date' in data) {
-      if (!data.date) {
-        errors.push('Datum ist erforderlich')
-      } else if (!this.validateDateFormat(data.date)) {
-        errors.push('Datum muss im Format YYYY-MM-DD sein')
-      }
-    }
-
-    // Startzeit validieren
-    if (data.startTime) {
-      if (!this.validateTimeFormat(data.startTime)) {
-        errors.push('Startzeit muss im Format HH:mm sein')
-      }
-    }
-
-    // Endzeit validieren
-    if (data.endTime) {
-      if (!this.validateTimeFormat(data.endTime)) {
-        errors.push('Endzeit muss im Format HH:mm sein')
-      }
-    }
-
-    // Zeit-Logik validieren
-    if (data.startTime && data.endTime) {
-      const workMinutes = this.calculateWorkMinutes(
-        data.startTime, 
-        data.endTime, 
-        data.breakMinutes || 0
-      )
-
-      if (workMinutes <= 0) {
-        errors.push('Endzeit muss nach Startzeit liegen')
-      }
-
-      if (workMinutes < 15) {
-        errors.push('Mindestarbeitszeit beträgt 15 Minuten')
-      }
-    }
-
-    // Pausenzeit validieren
-    if (data.breakMinutes !== undefined) {
-      if (data.breakMinutes < 0 || data.breakMinutes > 480) {
-        errors.push('Pausendauer muss zwischen 0 und 480 Minuten liegen')
-      }
-    }
-
-    // Beschreibung validieren
-    if (data.description && data.description.length > 500) {
-      errors.push('Beschreibung darf maximal 500 Zeichen haben')
-    }
-
-    return {
-      isValid: errors.length === 0,
-      errors
-    }
-  }
+    });
+  });
 }
 
-export default TimeTrackingService
+// ✅ API Status Route (für Health Checks)
+router.get('/status', (req, res) => {
+  res.json({
+    status: 'OK',
+    message: '✅ API ist online und bereit',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv,
+    version: '2.0.0',
+    services: {
+      database: 'connected',
+      auth: 'ready',
+      rateLimit: 'active'
+    }
+  });
+});
+
+// ✅ API Version Info
+router.get('/version', (req, res) => {
+  res.json({
+    api: {
+      name: 'Schoppmann Time Tracking API',
+      version: '2.0.0',
+      releaseDate: '2024-12-19',
+      environment: config.nodeEnv
+    },
+    features: [
+      'JWT Authentication',
+      'Role-based Access Control',
+      'Rate Limiting', 
+      'Input Validation',
+      'Time Tracking',
+      'Minijob Management',
+      'User Management',
+      'Security Headers'
+    ],
+    dependencies: {
+      express: require('express/package.json').version,
+      sequelize: require('sequelize/package.json').version,
+      jsonwebtoken: require('jsonwebtoken/package.json').version,
+      bcryptjs: require('bcryptjs/package.json').version
+    }
+  });
+});
+
+// ✅ 404 Handler für API-Routen
+router.use('*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'API-Endpoint nicht gefunden',
+    code: 'ENDPOINT_NOT_FOUND',
+    path: req.originalUrl,
+    method: req.method,
+    timestamp: new Date().toISOString(),
+    availableEndpoints: {
+      auth: '/api/auth/*',
+      timetracking: '/api/timetracking/*',
+      employee: '/api/employee/*',
+      admin: '/api/admin/*',
+      minijob: '/api/admin/minijob/*',
+      setup: '/api/setup/*'
+    }
+  });
+});
+
+module.exports = router;
