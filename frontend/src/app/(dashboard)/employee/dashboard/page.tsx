@@ -5,47 +5,48 @@ import { useAuth } from '@/lib/auth'
 import { TimeTrackingService } from '@/lib/timetracking'
 import type { 
   TimeRecord, 
-  TimeRecordSummary, 
-  BillingPeriod, 
-  MonthlyTimeRecords,
-  CreateTimeRecordRequest 
+  MonthlyTimeRecords, 
+  CreateTimeRecordRequest, 
+  UpdateTimeRecordRequest,
+  BillingPeriod 
 } from '@/lib/timetracking'
+
+interface FormData extends CreateTimeRecordRequest {}
+interface EditFormData extends UpdateTimeRecordRequest {}
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
-  
-  // State Management
+  const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
+  const [currentPeriodData, setCurrentPeriodData] = useState<MonthlyTimeRecords | null>(null) // Neue State für aktuelle Periode
   const [currentMonth, setCurrentMonth] = useState<string>(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
-  const [availablePeriods, setAvailablePeriods] = useState<BillingPeriod[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string>('')
-  
-  // Form States
+  const [error, setError] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingRecord, setEditingRecord] = useState<TimeRecord | null>(null)
-  // Edit form state
-  const [editFormData, setEditFormData] = useState({
-    startTime: '',
-    endTime: '',
-    breakMinutes: 0, // Pausenzeit deaktiviert
-    description: ''
-  })
-  const [formData, setFormData] = useState<CreateTimeRecordRequest>({
+  const [availablePeriods, setAvailablePeriods] = useState<BillingPeriod[]>([])
+
+  const [formData, setFormData] = useState<FormData>({
     date: new Date().toISOString().split('T')[0],
     startTime: '09:00',
     endTime: '17:00',
-    breakMinutes: 0, // Pausenzeit deaktiviert
+    breakMinutes: 0,
     description: ''
   })
 
-  // Load data on component mount and month change
+  const [editFormData, setEditFormData] = useState<EditFormData>({
+    startTime: '09:00',
+    endTime: '17:00',
+    breakMinutes: 0,
+    description: ''
+  })
+
   useEffect(() => {
     if (user?.id) {
       loadMonthlyData()
+      loadCurrentPeriodData() // Neue Funktion für aktuelle Periode
       loadBillingPeriods()
     }
   }, [currentMonth, user?.id])
@@ -69,6 +70,24 @@ export default function EmployeeDashboard() {
       console.error('Error loading monthly data:', err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Neue Funktion: Lädt immer die aktuelle Periode, unabhängig von der Auswahl
+  const loadCurrentPeriodData = async () => {
+    if (!user?.id) return
+    
+    try {
+      const now = new Date()
+      const currentYear = now.getFullYear()
+      const currentMonth = now.getMonth() + 1
+      
+      const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, currentYear, currentMonth)
+      setCurrentPeriodData(data)
+    } catch (err: any) {
+      console.error('Error loading current period data:', err)
+      // Fallback: setCurrentPeriodData auf null, damit die Box leer angezeigt wird
+      setCurrentPeriodData(null)
     }
   }
 
@@ -114,6 +133,7 @@ export default function EmployeeDashboard() {
 
       await TimeTrackingService.createTimeRecord(processedFormData)
       await loadMonthlyData() // Refresh data
+      await loadCurrentPeriodData() // Refresh aktuelle Periode
       setShowAddForm(false)
       resetForm()
       setError('')
@@ -138,6 +158,7 @@ export default function EmployeeDashboard() {
     try {
       await TimeTrackingService.updateTimeRecord(editingRecord.id, editFormData)
       await loadMonthlyData()
+      await loadCurrentPeriodData() // Refresh aktuelle Periode
       setEditingRecord(null)
       setError('')
     } catch (err: any) {
@@ -151,6 +172,7 @@ export default function EmployeeDashboard() {
     try {
       await TimeTrackingService.deleteTimeRecord(id)
       await loadMonthlyData()
+      await loadCurrentPeriodData() // Refresh aktuelle Periode
       setError('')
     } catch (err: any) {
       setError(err.message || 'Fehler beim Löschen des Zeiteintrags')
@@ -204,24 +226,20 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Summary Cards - mit Übertrag-Information */}
+      {/* Summary Cards - mit separater aktueller Periode */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Arbeitszeit */}
+        {/* Arbeitszeit (AKTUELLE PERIODE - unabhängig von Auswahl) */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Arbeitszeit</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Gesamtstunden:</span>
-              <span className="font-medium">{monthlyData?.summary?.totalHours?.toFixed(2) || '0.00'}h</span>
+          <h3 className="text-lg font-medium text-slate-900 mb-6">Arbeitszeit (Periode)</h3>
+          <div className="text-center">
+            <div className="text-4xl font-bold text-blue-600 mb-2">
+              {currentPeriodData?.summary?.totalHours?.toFixed(1) || '0.0'}h
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Einträge:</span>
-              <span className="font-medium">{monthlyData?.summary?.entryCount || 0}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Stundenlohn:</span>
-              <span className="font-medium">{monthlyData?.summary?.hourlyRate?.toFixed(2) || '0.00'} €</span>
-            </div>
+            {currentPeriodData?.period && (
+              <p className="text-sm text-slate-500">
+                {currentPeriodData.period.monthName} {currentPeriodData.period.year}
+              </p>
+            )}
           </div>
         </div>
 
@@ -248,23 +266,14 @@ export default function EmployeeDashboard() {
               <span className="text-slate-600">Total (inkl. Übertrag):</span>
               <span className="font-medium">{monthlyData?.summary?.actualEarnings?.toFixed(2) || '0.00'} €</span>
             </div>
-            {monthlyData?.summary?.carryIn && monthlyData.summary.carryIn > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Übertrag aus Vormonat:</span>
-                <span className="text-slate-600">+{monthlyData.summary.carryIn.toFixed(2)} €</span>
-              </div>
-            )}
-            {monthlyData?.summary?.carryOut && monthlyData.summary.carryOut > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Übertrag für nächsten Monat:</span>
-                <span className="text-slate-600">{monthlyData.summary.carryOut.toFixed(2)} €</span>
-              </div>
-            )}
-            {monthlyData?.summary?.exceedsLimit && (
-              <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded">
-                <p className="text-orange-800 text-sm">
-                  ⚠️ Limit überschritten!
-                </p>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Übertrag:</span>
+              <span className="font-medium">{monthlyData?.summary?.carryIn?.toFixed(2) || '0.00'} €</span>
+            </div>
+            {monthlyData?.summary?.carryOut !== undefined && monthlyData.summary.carryOut > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-600">Nächster Monat:</span>
+                <span className="font-medium text-amber-600">{monthlyData.summary.carryOut.toFixed(2)} €</span>
               </div>
             )}
           </div>
@@ -310,28 +319,26 @@ export default function EmployeeDashboard() {
                 onClick={() => setShowAddForm(!showAddForm)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
               >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
                 <span>Neue Arbeitszeit erfassen</span>
               </button>
             </div>
           </div>
         </div>
-        
-        {/* Add Entry Form */}
+
+        {/* Add Form */}
         {showAddForm && (
-          <div className="bg-gray-50 px-6 py-4 border-b border-slate-200">
-            <h4 className="text-md font-medium text-slate-900 mb-3">Neue Arbeitszeit</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Datum</label>
                 <input
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -340,8 +347,7 @@ export default function EmployeeDashboard() {
                   type="time"
                   value={formData.startTime}
                   onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
@@ -350,46 +356,38 @@ export default function EmployeeDashboard() {
                   type="time"
                   value={formData.endTime}
                   onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                  required
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-              {/* Pausenzeit-Feld entfernt */}
-              <div className="md:col-span-2 lg:col-span-1">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Aktionen</label>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={handleCreateRecord}
-                    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
-                  >
-                    Speichern
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowAddForm(false)
-                      resetForm()
-                    }}
-                    className="bg-gray-500 text-white px-4 py-2 rounded-md hover:bg-gray-600 transition-colors"
-                  >
-                    Abbrechen
-                  </button>
-                </div>
-              </div>
-              <div className="md:col-span-2 lg:col-span-5">
-                <label className="block text-sm font-medium text-slate-700 mb-1">Beschreibung (optional)</label>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Beschreibung</label>
                 <input
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Beschreibung der Tätigkeit..."
-                  maxLength={500}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Optional..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div className="flex items-end space-x-2">
+                <button
+                  onClick={handleCreateRecord}
+                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
+                >
+                  Speichern
+                </button>
+                <button
+                  onClick={() => setShowAddForm(false)}
+                  className="bg-slate-500 text-white px-4 py-2 rounded-md hover:bg-slate-600 transition-colors"
+                >
+                  Abbrechen
+                </button>
               </div>
             </div>
           </div>
         )}
-        
+
+        {/* Table Content */}
         {!monthlyData?.records?.length ? (
           <div className="p-8 text-center">
             <svg className="w-12 h-12 text-slate-300 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
@@ -405,7 +403,6 @@ export default function EmployeeDashboard() {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Datum</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Zeit</th>
-                  {/* Pausenzeit-Spalte entfernt */}
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Arbeitszeit</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Verdienst</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Beschreibung</th>
@@ -413,43 +410,84 @@ export default function EmployeeDashboard() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
-                {monthlyData.records
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                  .map((record) => (
-                  <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                {monthlyData.records.map((record) => (
+                  <tr key={record.id} className="hover:bg-slate-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {new Date(record.date).toLocaleDateString('de-DE', {
-                        weekday: 'short',
-                        day: '2-digit',
-                        month: '2-digit'
-                      })}
+                      {new Date(record.date).toLocaleDateString('de-DE')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {record.startTime} - {record.endTime}
+                      {editingRecord?.id === record.id ? (
+                        <div className="flex space-x-2">
+                          <input
+                            type="time"
+                            value={editFormData.startTime}
+                            onChange={(e) => setEditFormData({ ...editFormData, startTime: e.target.value })}
+                            className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
+                          />
+                          <span>-</span>
+                          <input
+                            type="time"
+                            value={editFormData.endTime}
+                            onChange={(e) => setEditFormData({ ...editFormData, endTime: e.target.value })}
+                            className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
+                          />
+                        </div>
+                      ) : (
+                        `${record.startTime} - ${record.endTime}`
+                      )}
                     </td>
-                    {/* Pausenzeit-Spalte entfernt */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {record.workTime}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="text-sm font-medium text-slate-900">{record.workTime}</span>
+                      <span className="text-xs text-slate-500 block">({record.totalHours}h)</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {record.formattedEarnings}
                     </td>
-                    <td className="px-6 py-4 text-sm text-slate-900 max-w-xs truncate">
-                      {record.description || '-'}
+                    <td className="px-6 py-4 text-sm text-slate-900">
+                      {editingRecord?.id === record.id ? (
+                        <input
+                          type="text"
+                          value={editFormData.description}
+                          onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
+                          placeholder="Beschreibung..."
+                        />
+                      ) : (
+                        record.description || '-'
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <button
-                        onClick={() => handleEditRecord(record)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
-                      >
-                        Bearbeiten
-                      </button>
-                      <button
-                        onClick={() => handleDeleteRecord(record.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Löschen
-                      </button>
+                      {editingRecord?.id === record.id ? (
+                        <div className="flex justify-end space-x-2">
+                          <button
+                            onClick={handleSaveEdit}
+                            className="text-green-600 hover:text-green-900"
+                          >
+                            Speichern
+                          </button>
+                          <button
+                            onClick={() => setEditingRecord(null)}
+                            className="text-slate-600 hover:text-slate-900"
+                          >
+                            Abbrechen
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end space-x-2">
+                          <button
+                            onClick={() => handleEditRecord(record)}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            Bearbeiten
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRecord(record.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Löschen
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -458,66 +496,6 @@ export default function EmployeeDashboard() {
           </div>
         )}
       </div>
-
-      {/* Edit Record Modal */}
-      {editingRecord && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-medium text-slate-900 mb-4">Zeiteintrag bearbeiten</h3>
-            
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Startzeit</label>
-                  <input
-                    type="time"
-                    value={editFormData.startTime}
-                    onChange={(e) => setEditFormData({ ...editFormData, startTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Endzeit</label>
-                  <input
-                    type="time"
-                    value={editFormData.endTime}
-                    onChange={(e) => setEditFormData({ ...editFormData, endTime: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Pausenzeit-Feld entfernt */}
-              
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Beschreibung (optional)</label>
-                <textarea
-                  value={editFormData.description}
-                  onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Beschreibung der Tätigkeit..."
-                />
-              </div>
-            </div>
-            
-            <div className="flex justify-end space-x-3 mt-6">
-              <button
-                onClick={() => setEditingRecord(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200"
-              >
-                Abbrechen
-              </button>
-              <button
-                onClick={handleSaveEdit}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700"
-              >
-                Speichern
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

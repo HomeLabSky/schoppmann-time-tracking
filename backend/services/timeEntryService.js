@@ -453,9 +453,8 @@ class TimeEntryService {
   }
 
   /**
-  * Generiert Abrechnungsperioden für Dropdown
-  * ✅ KORRIGIERT: Alle this-Referenzen und asynchrone Aufrufe behoben
-  */
+ * ✅ KORRIGIERTE Periodengenerierung - Erzeugt überlappungsfreie Perioden
+ */
   static async generateBillingPeriods(userId, monthsBack = 12, monthsForward = 3) {
     try {
       // User-Abrechnungseinstellungen laden
@@ -468,24 +467,46 @@ class TimeEntryService {
       const endDay = user ? (user.abrechnungEnde || 31) : 31;
 
       const periods = [];
+
+      // ✅ KORRIGIERT: Beginne mit weit zurückliegenden Perioden
+      // Bei 22.-21. Periode: Starte mit Referenzmonat weit in der Vergangenheit
+
       const currentDate = new Date();
+
+      // Für periodenübergreifende Abrechnungen (22.-21.): Starte früher
+      const baseMonth = startDay > endDay ? currentDate.getMonth() - 1 : currentDate.getMonth();
 
       // Vergangenheit
       for (let i = monthsBack; i > 0; i--) {
-        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 15);
-        periods.push(TimeEntryService.createPeriodObjectForUser(date, startDay, endDay));
+        const date = new Date(currentDate.getFullYear(), baseMonth - i, 15);
+        const periodObj = TimeEntryService.createPeriodObjectForUser(date, startDay, endDay);
+        periods.push(periodObj);
       }
 
-      // Aktueller Monat  
-      periods.push(TimeEntryService.createPeriodObjectForUser(currentDate, startDay, endDay));
+      // Aktueller Zeitraum
+      const currentPeriodDate = new Date(currentDate.getFullYear(), baseMonth, 15);
+      periods.push(TimeEntryService.createPeriodObjectForUser(currentPeriodDate, startDay, endDay));
 
       // Zukunft
       for (let i = 1; i <= monthsForward; i++) {
-        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() + i, 15);
-        periods.push(TimeEntryService.createPeriodObjectForUser(date, startDay, endDay));
+        const date = new Date(currentDate.getFullYear(), baseMonth + i, 15);
+        const periodObj = TimeEntryService.createPeriodObjectForUser(date, startDay, endDay);
+        periods.push(periodObj);
       }
 
-      return periods;
+      // ✅ Duplikate entfernen und nach Datum sortieren
+      const uniquePeriods = periods.filter((period, index, self) =>
+        index === self.findIndex((p) => p.value === period.value)
+      );
+
+      uniquePeriods.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+      console.log('📅 Generierte Abrechnungsperioden:');
+      uniquePeriods.forEach(p => {
+        console.log(`  ${p.label} (${p.startDate} - ${p.endDate}) isCurrent:${p.isCurrent}`);
+      });
+
+      return uniquePeriods;
     } catch (error) {
       console.error('Fehler beim Generieren der Abrechnungsperioden:', error);
       // Fallback auf Standard-Kalendermonate bei Fehlern
@@ -494,12 +515,17 @@ class TimeEntryService {
   }
 
   /**
+     * Erstellt benutzerspezifisches Perioden-Objekt
+     * ✅ KORRIGIERT: Periodenübergreifende Abrechnungen werden nach dem Endmonat benannt
+     * ✅ KORRIGIERT: isCurrent prüft ob heutiges Datum innerhalb der Abrechnungsperiode liegt
+     * 
+     * Beispiele:
+     * - Periode 1.-31.: "Januar 2025" (nach Referenzmonat)
+     * - Periode 22.1.-21.2.: "Februar 2025" (nach Endmonat)
+     */
+  /**
  * Erstellt benutzerspezifisches Perioden-Objekt
- * ✅ KORRIGIERT: Periodenübergreifende Abrechnungen werden nach dem Endmonat benannt
- * 
- * Beispiele:
- * - Periode 1.-31.: "Januar 2025" (nach Referenzmonat)
- * - Periode 22.1.-21.2.: "Februar 2025" (nach Endmonat)
+ * ✅ VOLLSTÄNDIG KORRIGIERT: Intelligente Benennung und korrekte isCurrent-Prüfung
  */
   static createPeriodObjectForUser(date, startDay, endDay) {
     const year = date.getFullYear();
@@ -514,7 +540,7 @@ class TimeEntryService {
 
     if (startDay > endDay) {
       // Periodenübergreifend: Benennung nach ENDmonat
-      // Beispiel: 22.1. - 21.2. → "Februar 2025"
+      // Beispiel: 22.7.-21.8. → "August 2025"
       const endDate = new Date(billingPeriod.endDate + 'T12:00:00.000Z');
       displayYear = endDate.getUTCFullYear();
       displayMonth = endDate.getUTCMonth() + 1;
@@ -523,7 +549,7 @@ class TimeEntryService {
       console.log(`📅 Periodenübergreifend ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
     } else {
       // Monatsintern: Benennung nach REFERENZmonat
-      // Beispiel: 1. - 31. → "Januar 2025"
+      // Beispiel: 1.-31. → "Januar 2025"
       displayYear = year;
       displayMonth = month;
       displayMonthName = TimeEntryService.getMonthName(month);
@@ -531,8 +557,15 @@ class TimeEntryService {
       console.log(`📅 Monatsintern ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
     }
 
+    // ✅ KORREKTE isCurrent-LOGIK: Prüft ob heutiges Datum innerhalb der Abrechnungsperiode liegt
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD Format
+    const isCurrentPeriod = today >= billingPeriod.startDate && today <= billingPeriod.endDate;
+
+    console.log(`📅 isCurrent-Check für ${displayMonthName} ${displayYear}: heute=${today}, periode=${billingPeriod.startDate} bis ${billingPeriod.endDate} → isCurrent=${isCurrentPeriod}`);
+
     return {
-      // ✅ Value bleibt Referenzmonat für interne API-Konsistenz
+      // ✅ WICHTIG: Value muss Referenzmonat bleiben für API-Konsistenz
+      // Das Backend erwartet den Referenzmonat, um die richtige Periode zu berechnen
       value: `${year}-${month.toString().padStart(2, '0')}`,
 
       // ✅ Display-Werte verwenden den korrekten Monat (End- oder Referenzmonat)
@@ -541,15 +574,18 @@ class TimeEntryService {
       month: displayMonth,
       monthName: displayMonthName,
 
-      // Perioden-Daten
+      // Perioden-Daten für Debugging
       startDate: billingPeriod.startDate,
       endDate: billingPeriod.endDate,
 
-      // ✅ isCurrent prüft gegen korrekten Display-Monat
-      isCurrent: displayYear === new Date().getFullYear() && displayMonth === new Date().getMonth() + 1
+      // Zusätzliche Info für Frontend
+      referenceMonth: month,
+      referenceYear: year,
+
+      // ✅ KORRIGIERT: isCurrent prüft ob heutiges Datum innerhalb der Abrechnungsperiode liegt
+      isCurrent: isCurrentPeriod
     };
   }
-
   /**
    * Fallback-Methode für Standard-Kalendermonate
    * ✅ KORRIGIERT: this.createPeriodObject() -> TimeEntryService.createPeriodObject()
@@ -574,9 +610,8 @@ class TimeEntryService {
   }
 
   /**
- * Erstellt Perioden-Objekt für Dropdown (Standard-Kalendermonate)
- * ✅ KORRIGIERT: this.getMonthName() -> TimeEntryService.getMonthName()
- */
+   * ✅ KORRIGIERTE Standard-Kalenderperioden (für Fallback)
+   */
   static createPeriodObject(date) {
     const year = date.getFullYear();
     const month = date.getMonth() + 1;
@@ -584,6 +619,10 @@ class TimeEntryService {
 
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
     const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+
+    // ✅ KORRIGIERT: Auch hier die richtige isCurrent-Logik
+    const today = new Date().toISOString().split('T')[0];
+    const isCurrentPeriod = today >= startDate && today <= endDate;
 
     return {
       value: `${year}-${month.toString().padStart(2, '0')}`,
@@ -593,7 +632,7 @@ class TimeEntryService {
       monthName,
       startDate,
       endDate,
-      isCurrent: year === new Date().getFullYear() && month === new Date().getMonth() + 1
+      isCurrent: isCurrentPeriod
     };
   }
 }
