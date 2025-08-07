@@ -3,25 +3,22 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth'
 import { TimeTrackingService } from '@/lib/timetracking'
-import type { 
-  TimeRecord, 
-  MonthlyTimeRecords, 
-  CreateTimeRecordRequest, 
+import type {
+  TimeRecord,
+  MonthlyTimeRecords,
+  CreateTimeRecordRequest,
   UpdateTimeRecordRequest,
-  BillingPeriod 
+  BillingPeriod
 } from '@/lib/timetracking'
 
-interface FormData extends CreateTimeRecordRequest {}
-interface EditFormData extends UpdateTimeRecordRequest {}
+interface FormData extends CreateTimeRecordRequest { }
+interface EditFormData extends UpdateTimeRecordRequest { }
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
   const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
   const [currentPeriodData, setCurrentPeriodData] = useState<MonthlyTimeRecords | null>(null) // Neue State für aktuelle Periode
-  const [currentMonth, setCurrentMonth] = useState<string>(() => {
-    const now = new Date()
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  })
+  const [currentMonth, setCurrentMonth] = useState<string>('')  // ✅ Leer lassen, wird vom Backend gesetzt
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -46,25 +43,35 @@ export default function EmployeeDashboard() {
   useEffect(() => {
     if (user?.id) {
       loadMonthlyData()
-      loadCurrentPeriodData() // Neue Funktion für aktuelle Periode
-      loadBillingPeriods()
+      loadBillingPeriods() // Zuerst Perioden laden
     }
   }, [currentMonth, user?.id])
 
+  // Separater useEffect für aktuelle Periode, der erst nach Laden der Perioden ausgeführt wird
+  useEffect(() => {
+    if (user?.id && availablePeriods.length > 0) {
+      loadCurrentPeriodData()
+    }
+  }, [availablePeriods, user?.id])
+
   const loadMonthlyData = async () => {
-    if (!user?.id) return
-    
+    if (!user?.id || !currentMonth) return  // ✅ Prüfe auch ob currentMonth gesetzt ist
+
     try {
       setLoading(true)
       setError('')
-      
+
+      console.log(`📅 Lade Daten für Periode: ${currentMonth}`)
+
       // Neue API-Struktur: userId, year, month
       const [yearStr, monthStr] = currentMonth.split('-')
       const year = parseInt(yearStr)
       const month = parseInt(monthStr)
-      
+
       const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
       setMonthlyData(data)
+
+      console.log(`📅 Daten geladen für Periode:`, data.period)
     } catch (err: any) {
       setError(err.message || 'Fehler beim Laden der Zeitdaten')
       console.error('Error loading monthly data:', err)
@@ -76,14 +83,27 @@ export default function EmployeeDashboard() {
   // Neue Funktion: Lädt immer die aktuelle Periode, unabhängig von der Auswahl
   const loadCurrentPeriodData = async () => {
     if (!user?.id) return
-    
+
     try {
-      const now = new Date()
-      const currentYear = now.getFullYear()
-      const currentMonth = now.getMonth() + 1
-      
-      const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, currentYear, currentMonth)
-      setCurrentPeriodData(data)
+      // Finde die aktuelle Abrechnungsperiode aus den verfügbaren Perioden
+      const currentPeriod = availablePeriods.find(period => period.isCurrent)
+
+      if (currentPeriod) {
+        const [yearStr, monthStr] = currentPeriod.value.split('-')
+        const year = parseInt(yearStr)
+        const month = parseInt(monthStr)
+
+        const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
+        setCurrentPeriodData(data)
+      } else {
+        // Fallback: aktueller Kalendermonat
+        const now = new Date()
+        const currentYear = now.getFullYear()
+        const currentMonth = now.getMonth() + 1
+
+        const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, currentYear, currentMonth)
+        setCurrentPeriodData(data)
+      }
     } catch (err: any) {
       console.error('Error loading current period data:', err)
       // Fallback: setCurrentPeriodData auf null, damit die Box leer angezeigt wird
@@ -92,17 +112,35 @@ export default function EmployeeDashboard() {
   }
 
   const loadBillingPeriods = async () => {
+    if (!user?.id) return
+
     try {
-      // Nur die letzten 6 Monate generieren
+      // ✅ KORRIGIERT: Backend-API verwenden für benutzerdefinierte Abrechnungsperioden
+      const periods = await TimeTrackingService.getBillingPeriods()
+      setAvailablePeriods(periods)
+
+      console.log('📅 Frontend: Geladene Abrechnungsperioden:', periods)
+
+      // ✅ WICHTIG: Setze automatisch die aktuelle Periode als ausgewählt
+      const currentPeriod = periods.find(p => p.isCurrent)
+      if (currentPeriod && currentPeriod.value !== currentMonth) {
+        console.log(`📅 Setze aktuelle Periode: ${currentPeriod.value} (${currentPeriod.label})`)
+        setCurrentMonth(currentPeriod.value)
+      }
+
+    } catch (err) {
+      console.error('Error loading billing periods:', err)
+
+      // Fallback: Standard-Kalenderperioden generieren
       const periods: BillingPeriod[] = []
       const today = new Date()
-      
+
       for (let i = 0; i < 6; i++) {
         const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
         const year = date.getFullYear()
         const month = date.getMonth() + 1
         const monthName = date.toLocaleDateString('de-DE', { month: 'long' })
-        
+
         periods.push({
           value: `${year}-${String(month).padStart(2, '0')}`,
           label: `${monthName} ${year}`,
@@ -114,10 +152,8 @@ export default function EmployeeDashboard() {
           isCurrent: i === 0
         })
       }
-      
+
       setAvailablePeriods(periods)
-    } catch (err) {
-      console.error('Error loading billing periods:', err)
     }
   }
 
@@ -154,7 +190,7 @@ export default function EmployeeDashboard() {
 
   const handleSaveEdit = async () => {
     if (!editingRecord) return
-    
+
     try {
       await TimeTrackingService.updateTimeRecord(editingRecord.id, editFormData)
       await loadMonthlyData()
@@ -168,7 +204,7 @@ export default function EmployeeDashboard() {
 
   const handleDeleteRecord = async (id: number) => {
     if (!confirm('Möchten Sie diesen Zeiteintrag wirklich löschen?')) return
-    
+
     try {
       await TimeTrackingService.deleteTimeRecord(id)
       await loadMonthlyData()
@@ -245,37 +281,42 @@ export default function EmployeeDashboard() {
 
         {/* Verdienst (nur diese Periode) */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Verdienst (Periode)</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Verdient:</span>
-              <span className="font-medium">{monthlyData?.summary?.totalEarnings?.toFixed(2) || '0.00'} €</span>
+          <h3 className="text-lg font-medium text-slate-900 mb-6">Verdienst (Periode)</h3>
+          <div className="text-center">
+            <div className={`text-4xl font-bold mb-2 ${(monthlyData?.summary?.totalEarnings || 0) > (monthlyData?.summary?.minijobLimit || 0)
+              ? 'text-orange-600'
+              : 'text-green-600'
+              }`}>
+              {monthlyData?.summary?.totalEarnings?.toFixed(2) || '0.00'} €
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Limit:</span>
-              <span className="font-medium">{monthlyData?.summary?.minijobLimit?.toFixed(2) || '0.00'} €</span>
-            </div>
+            {(monthlyData?.summary?.totalEarnings || 0) > (monthlyData?.summary?.minijobLimit || 0) && (
+              <p className="text-sm text-orange-600 font-medium">
+                Limit von {monthlyData?.summary?.minijobLimit?.toFixed(2) || '0.00'} € überschritten!
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Gesamtverdienst (mit Übertrag) */}
+        {/* Kontostand */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Gesamtverdienst</h3>
+          <h3 className="text-lg font-medium text-slate-900 mb-4">Kontostand</h3>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-slate-600">Total (inkl. Übertrag):</span>
-              <span className="font-medium">{monthlyData?.summary?.actualEarnings?.toFixed(2) || '0.00'} €</span>
+              <span className="text-slate-600">Verdienst (aktueller Monat):</span>
+              <span className="font-medium">{monthlyData?.summary?.totalEarnings?.toFixed(2) || '0.00'} €</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-slate-600">Übertrag:</span>
+              <span className="text-slate-600">Übertrag aus Vormonat:</span>
               <span className="font-medium">{monthlyData?.summary?.carryIn?.toFixed(2) || '0.00'} €</span>
             </div>
-            {monthlyData?.summary?.carryOut !== undefined && monthlyData.summary.carryOut > 0 && (
-              <div className="flex justify-between">
-                <span className="text-slate-600">Nächster Monat:</span>
-                <span className="font-medium text-amber-600">{monthlyData.summary.carryOut.toFixed(2)} €</span>
-              </div>
-            )}
+            <div className="flex justify-between">
+              <span className="text-slate-600">Auszahlung (aktueller Monat):</span>
+              <span className="font-medium">{monthlyData?.summary?.paidThisMonth?.toFixed(2) || '0.00'} €</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-600">Übertrag in kommenden Monat:</span>
+              <span className="font-medium">{monthlyData?.summary?.carryOut?.toFixed(2) || '0.00'} €</span>
+            </div>
           </div>
         </div>
       </div>
@@ -295,7 +336,7 @@ export default function EmployeeDashboard() {
                 </p>
               )}
             </div>
-            
+
             {/* Rechte Seite: Periodenauswahl + Button */}
             <div className="flex items-center space-x-4">
               {/* Periodenauswahl */}
@@ -308,12 +349,12 @@ export default function EmployeeDashboard() {
                 >
                   {availablePeriods.map(period => (
                     <option key={period.value} value={period.value}>
-                      {period.label}
+                      {period.label}  {/* ✅ Zeigt vollständige Abrechnungsperioden-Info */}
                     </option>
                   ))}
                 </select>
               </div>
-              
+
               {/* Add Button */}
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
