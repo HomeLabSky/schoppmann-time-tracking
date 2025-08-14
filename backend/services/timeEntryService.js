@@ -132,17 +132,13 @@ class TimeEntryService {
     }
   }
 
-  /**
-  * Berechnet den Übertrag aus dem Vormonat
-  * GEÄNDERT: Berücksichtigt jetzt benutzerdefinierte Abrechnungsperioden
-  * @param {number} userId - User ID
-  * @param {number} year - Jahr
-  * @param {number} month - Monat
-  * @param {number} minijobLimit - Aktuelle Minijob-Grenze
-  * @returns {Promise<number>} Übertrag aus Vormonat
-  */
+  // ✅ ERWEITERTE DEBUG-VERSION für calculateCarryIn
+
   static async calculateCarryIn(userId, year, month, minijobLimit) {
     try {
+      console.log(`🔍 DEBUG: calculateCarryIn für User ${userId}, Jahr ${year}, Monat ${month}`)
+      console.log(`💰 DEBUG: Aktuelles Minijob-Limit: ${minijobLimit}€`)
+
       // GEÄNDERT: User-Abrechnungseinstellungen laden
       const user = await User.findByPk(userId, {
         attributes: ['abrechnungStart', 'abrechnungEnde']
@@ -153,7 +149,27 @@ class TimeEntryService {
       const startDay = user.abrechnungStart || 1;
       const endDay = user.abrechnungEnde || 31;
 
+      console.log(`🔍 DEBUG: User-Abrechnungsperiode: ${startDay}. bis ${endDay}.`)
+
+      // ✅ KORRIGIERT: Zielperiode berechnen, bis zu der wir carryIn berechnen müssen
+      const targetReferenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
+      const targetBillingPeriod = DateService.createBillingPeriod(startDay, endDay, targetReferenceDate);
+
+      console.log(`🎯 DEBUG: Zielperiode (für die wir carryIn berechnen): ${targetBillingPeriod.startDate} bis ${targetBillingPeriod.endDate}`)
+
       let carryIn = 0;
+
+      // ✅ DEBUG: Alle existierenden Zeiteinträge für diesen User anzeigen
+      const allEntries = await TimeEntry.findAll({
+        where: { userId },
+        order: [['date', 'ASC']],
+        attributes: ['date', 'earnings']
+      });
+
+      console.log(`📊 DEBUG: User hat insgesamt ${allEntries.length} Zeiteinträge:`)
+      allEntries.forEach(entry => {
+        console.log(`   ${entry.date}: ${entry.earnings.toFixed(2)}€`)
+      });
 
       // Startmonat der Zeiterfassung finden
       const firstEntry = await TimeEntry.findOne({
@@ -162,37 +178,67 @@ class TimeEntryService {
         attributes: ['date']
       });
 
-      if (!firstEntry) return 0;
+      if (!firstEntry) {
+        console.log(`🔍 DEBUG: Keine Zeiteinträge gefunden → carryIn = 0`)
+        return 0;
+      }
 
       const firstDate = new Date(firstEntry.date);
       let currentYear = firstDate.getFullYear();
       let currentMonth = firstDate.getMonth() + 1; // getMonth() ist 0-basiert
 
-      // Bis zum gewünschten Monat durchgehen
-      while (currentYear < year || (currentYear === year && currentMonth < month)) {
+      console.log(`🔍 DEBUG: Erste Zeiterfassung am ${firstEntry.date} → Start bei ${currentYear}-${currentMonth}`)
 
-        // GEÄNDERT: Korrekte Abrechnungsperiode für aktuellen Monat berechnen
-        const referenceDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-15`;
-        const billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
+      // ✅ KORRIGIERT: Bis zur Zielperiode durchgehen (aber NICHT die Zielperiode selbst)
+      let iterationCount = 0;
+      while (iterationCount < 50) { // Sicherheit gegen Endlos-Loop
 
-        // GEÄNDERT: Einträge für diese Abrechnungsperiode laden (nicht Kalendermonat!)
+        const currentReferenceDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-15`;
+        const currentBillingPeriod = DateService.createBillingPeriod(startDay, endDay, currentReferenceDate);
+
+        console.log(`🔄 DEBUG: Iteration ${iterationCount}: Prüfe Periode ${currentYear}-${currentMonth}`)
+        console.log(`   Periode: ${currentBillingPeriod.startDate} bis ${currentBillingPeriod.endDate}`)
+
+        // ✅ KORRIGIERT: Stoppe BEVOR wir die Zielperiode erreichen
+        // Vergleiche das ENDdatum der aktuellen Periode mit dem STARTdatum der Zielperiode
+        if (currentBillingPeriod.endDate >= targetBillingPeriod.startDate) {
+          console.log(`🛑 DEBUG: Stoppe hier - aktuelle Periode endet nach/an Zielperioden-Start`)
+          console.log(`   Aktuelle Periode Ende: ${currentBillingPeriod.endDate}`)
+          console.log(`   Zielperiode Start: ${targetBillingPeriod.startDate}`)
+          break;
+        }
+
+        // Einträge für diese Abrechnungsperiode laden
         const entries = await TimeEntry.findAll({
           where: {
             userId,
             date: {
-              [Op.between]: [billingPeriod.startDate, billingPeriod.endDate]
+              [Op.between]: [currentBillingPeriod.startDate, currentBillingPeriod.endDate]
             }
           }
+        });
+
+        console.log(`📊 DEBUG: Gefundene Einträge für Periode ${currentYear}-${currentMonth}: ${entries.length}`)
+        entries.forEach(entry => {
+          console.log(`   ${entry.date}: ${entry.earnings.toFixed(2)}€`)
         });
 
         // Verdienst für diese Periode berechnen
         const monthlyEarnings = entries.reduce((sum, entry) => sum + entry.earnings, 0);
         const totalForPeriod = monthlyEarnings + carryIn;
         const paidForPeriod = Math.min(totalForPeriod, minijobLimit);
+        const newCarryOut = Math.max(0, totalForPeriod - minijobLimit);
 
-        carryIn = Math.max(0, totalForPeriod - minijobLimit);
+        console.log(`💰 DEBUG: Periode ${currentYear}-${currentMonth}:`)
+        console.log(`   Verdienst dieser Periode: ${monthlyEarnings.toFixed(2)}€`)
+        console.log(`   CarryIn zu dieser Periode: ${carryIn.toFixed(2)}€`)
+        console.log(`   Total (Verdienst + CarryIn): ${totalForPeriod.toFixed(2)}€`)
+        console.log(`   Minijob-Limit: ${minijobLimit.toFixed(2)}€`)
+        console.log(`   Ausgezahlt dieser Periode: ${paidForPeriod.toFixed(2)}€`)
+        console.log(`   CarryOut zu nächster Periode: ${newCarryOut.toFixed(2)}€`)
+        console.log(`   Überschreitung: ${totalForPeriod > minijobLimit ? 'JA' : 'NEIN'}`)
 
-        console.log(`💰 Übertrag-Berechnung ${currentYear}-${currentMonth}: Verdienst=${monthlyEarnings.toFixed(2)}€, Übertrag=${carryIn.toFixed(2)}€`);
+        carryIn = newCarryOut;
 
         // Nächster Monat
         if (currentMonth === 12) {
@@ -201,9 +247,13 @@ class TimeEntryService {
         } else {
           currentMonth++;
         }
+
+        iterationCount++;
       }
 
+      console.log(`🎯 DEBUG: Finaler CarryIn für Zielperiode ${targetBillingPeriod.startDate}-${targetBillingPeriod.endDate}: ${carryIn.toFixed(2)}€`)
       return carryIn;
+
     } catch (error) {
       console.error('Fehler beim Berechnen des Übertrags:', error);
       return 0;

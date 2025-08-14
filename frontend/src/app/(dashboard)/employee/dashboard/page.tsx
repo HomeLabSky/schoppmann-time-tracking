@@ -1,3 +1,9 @@
+// ✅ ÄNDERUNGEN:
+// 1. currentPeriodData State entfernt
+// 2. Alle Summary Cards verwenden monthlyData
+// 3. loadCurrentPeriodData() Aufrufe entfernt
+// 4. loadCurrentPeriodData() Funktion entfernt
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -17,7 +23,7 @@ interface EditFormData extends UpdateTimeRecordRequest { }
 export default function EmployeeDashboard() {
   const { user } = useAuth()
   const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
-  const [currentPeriodData, setCurrentPeriodData] = useState<MonthlyTimeRecords | null>(null) // Neue State für aktuelle Periode
+  // ✅ ENTFERNT: currentPeriodData State nicht mehr nötig
   const [currentMonth, setCurrentMonth] = useState<string>('')  // ✅ Leer lassen, wird vom Backend gesetzt
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -47,12 +53,7 @@ export default function EmployeeDashboard() {
     }
   }, [currentMonth, user?.id])
 
-  // Separater useEffect für aktuelle Periode, der erst nach Laden der Perioden ausgeführt wird
-  useEffect(() => {
-    if (user?.id && availablePeriods.length > 0) {
-      loadCurrentPeriodData()
-    }
-  }, [availablePeriods, user?.id])
+  // ✅ ENTFERNT: useEffect für currentPeriodData
 
   const loadMonthlyData = async () => {
     if (!user?.id || !currentMonth) return  // ✅ Prüfe auch ob currentMonth gesetzt ist
@@ -80,36 +81,7 @@ export default function EmployeeDashboard() {
     }
   }
 
-  // Neue Funktion: Lädt immer die aktuelle Periode, unabhängig von der Auswahl
-  const loadCurrentPeriodData = async () => {
-    if (!user?.id) return
-
-    try {
-      // Finde die aktuelle Abrechnungsperiode aus den verfügbaren Perioden
-      const currentPeriod = availablePeriods.find(period => period.isCurrent)
-
-      if (currentPeriod) {
-        const [yearStr, monthStr] = currentPeriod.value.split('-')
-        const year = parseInt(yearStr)
-        const month = parseInt(monthStr)
-
-        const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
-        setCurrentPeriodData(data)
-      } else {
-        // Fallback: aktueller Kalendermonat
-        const now = new Date()
-        const currentYear = now.getFullYear()
-        const currentMonth = now.getMonth() + 1
-
-        const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, currentYear, currentMonth)
-        setCurrentPeriodData(data)
-      }
-    } catch (err: any) {
-      console.error('Error loading current period data:', err)
-      // Fallback: setCurrentPeriodData auf null, damit die Box leer angezeigt wird
-      setCurrentPeriodData(null)
-    }
-  }
+  // ✅ ENTFERNT: loadCurrentPeriodData() Funktion nicht mehr nötig
 
   const loadBillingPeriods = async () => {
     if (!user?.id) return
@@ -119,13 +91,19 @@ export default function EmployeeDashboard() {
       const periods = await TimeTrackingService.getBillingPeriods()
       setAvailablePeriods(periods)
 
-      console.log('📅 Frontend: Geladene Abrechnungsperioden:', periods)
+      console.log('📅 DEBUG: Alle geladenen Perioden:')
+      periods.forEach((period, index) => {
+        console.log(`  ${index}: Label="${period.label}" | Value="${period.value}" | isCurrent=${period.isCurrent}`)
+        console.log(`       StartDate=${period.startDate} | EndDate=${period.endDate}`)
+      })
 
-      // ✅ WICHTIG: Setze automatisch die aktuelle Periode als ausgewählt
+      // ✅ KORRIGIERT: Nur setzen wenn currentMonth noch leer ist (beim ersten Laden)
       const currentPeriod = periods.find(p => p.isCurrent)
-      if (currentPeriod && currentPeriod.value !== currentMonth) {
-        console.log(`📅 Setze aktuelle Periode: ${currentPeriod.value} (${currentPeriod.label})`)
+      if (currentPeriod && !currentMonth) {  // ← NUR wenn currentMonth leer ist!
+        console.log(`📅 Setze aktuelle Periode beim ersten Laden: ${currentPeriod.value} (${currentPeriod.label})`)
         setCurrentMonth(currentPeriod.value)
+      } else if (currentMonth) {
+        console.log(`📅 Behalte Benutzerauswahl bei: ${currentMonth}`)
       }
 
     } catch (err) {
@@ -154,6 +132,11 @@ export default function EmployeeDashboard() {
       }
 
       setAvailablePeriods(periods)
+
+      // ✅ KORRIGIERT: Auch hier nur beim ersten Laden setzen
+      if (!currentMonth && periods.length > 0) {
+        setCurrentMonth(periods[0].value)
+      }
     }
   }
 
@@ -168,8 +151,7 @@ export default function EmployeeDashboard() {
       }
 
       await TimeTrackingService.createTimeRecord(processedFormData)
-      await loadMonthlyData() // Refresh data
-      await loadCurrentPeriodData() // Refresh aktuelle Periode
+      await loadMonthlyData() // ✅ Nur noch diese eine Funktion
       setShowAddForm(false)
       resetForm()
       setError('')
@@ -193,8 +175,7 @@ export default function EmployeeDashboard() {
 
     try {
       await TimeTrackingService.updateTimeRecord(editingRecord.id, editFormData)
-      await loadMonthlyData()
-      await loadCurrentPeriodData() // Refresh aktuelle Periode
+      await loadMonthlyData()  // ✅ Nur noch diese eine Funktion
       setEditingRecord(null)
       setError('')
     } catch (err: any) {
@@ -207,8 +188,7 @@ export default function EmployeeDashboard() {
 
     try {
       await TimeTrackingService.deleteTimeRecord(id)
-      await loadMonthlyData()
-      await loadCurrentPeriodData() // Refresh aktuelle Periode
+      await loadMonthlyData()  // ✅ Nur noch diese eine Funktion
       setError('')
     } catch (err: any) {
       setError(err.message || 'Fehler beim Löschen des Zeiteintrags')
@@ -226,6 +206,18 @@ export default function EmployeeDashboard() {
   }
 
   const handleMonthChange = (newMonth: string) => {
+    console.log(`🔍 DEBUG: User wählte Monat: ${newMonth}`)
+
+    // Zeige Details der gewählten Periode
+    const selectedPeriod = availablePeriods.find(p => p.value === newMonth)
+    if (selectedPeriod) {
+      console.log(`📅 DEBUG: Gewählte Periode:`)
+      console.log(`  Label: ${selectedPeriod.label}`)
+      console.log(`  Value: ${selectedPeriod.value}`)
+      console.log(`  StartDate: ${selectedPeriod.startDate}`)
+      console.log(`  EndDate: ${selectedPeriod.endDate}`)
+    }
+
     setCurrentMonth(newMonth)
   }
 
@@ -262,18 +254,18 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* Summary Cards - mit separater aktueller Periode */}
+      {/* ✅ KORRIGIERT: Summary Cards - alle verwenden jetzt monthlyData */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Arbeitszeit (AKTUELLE PERIODE - unabhängig von Auswahl) */}
+        {/* ✅ KORRIGIERT: Arbeitszeit verwendet jetzt monthlyData statt currentPeriodData */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-medium text-slate-900 mb-6">Arbeitszeit (Periode)</h3>
           <div className="text-center">
             <div className="text-4xl font-bold text-blue-600 mb-2">
-              {currentPeriodData?.summary?.totalHours?.toFixed(1) || '0.0'}h
+              {monthlyData?.summary?.totalHours?.toFixed(1) || '0.0'}h
             </div>
-            {currentPeriodData?.period && (
+            {monthlyData?.period && (
               <p className="text-sm text-slate-500">
-                {currentPeriodData.period.monthName} {currentPeriodData.period.year}
+                {monthlyData.period.monthName} {monthlyData.period.year}
               </p>
             )}
           </div>
@@ -369,6 +361,7 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
+        {/* Rest des Codes bleibt gleich... */}
         {/* Add Form */}
         {showAddForm && (
           <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
@@ -479,7 +472,7 @@ export default function EmployeeDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-slate-900">{record.workTime}</span>
-                      <span className="text-xs text-slate-500 block">({record.totalHours}h)</span>
+                      <span className="text-xs text-slate-500 block">{record.totalHours}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {record.formattedEarnings}
