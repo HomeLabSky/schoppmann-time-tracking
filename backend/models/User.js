@@ -143,45 +143,4 @@ User.findActiveUsers = function() {
   }
 };
 
-// ✅ Validation Helper
-User.validateUserData = function(userData, operation = 'create') {
-  const errors = [];
-
-  if (operation === 'create') {
-    if (!userData.email) errors.push('Email ist erforderlich');
-    if (!userData.password) errors.push('Passwort ist erforderlich');
-    if (!userData.name) errors.push('Name ist erforderlich');
-  }
-
-  // Email Format prüfen
-  if (userData.email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(userData.email)) {
-      errors.push('Ungültiges Email-Format');
-    }
-  }
-
-  // Name prüfen
-  if (userData.name) {
-    if (userData.name.length < 2 || userData.name.length > 50) {
-      errors.push('Name muss zwischen 2 und 50 Zeichen haben');
-    }
-  }
-
-  // Passwort prüfen
-  if (userData.password && (operation === 'create' || userData.password.length > 0)) {
-    if (userData.password.length < 8) {
-      errors.push('Passwort muss mindestens 8 Zeichen haben');
-    }
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(userData.password)) {
-      errors.push('Passwort muss Groß-, Kleinbuchstaben und eine Zahl enthalten');
-    }
-  }
-
-  return {
-    isValid: errors.length === 0,
-    errors
-  };
-};
-
 module.exports = User;

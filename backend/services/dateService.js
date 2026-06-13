@@ -149,9 +149,6 @@ class DateService {
             const actualEndDay = Math.min(endDay, lastDayOfMonth);
 
             endDate = new Date(Date.UTC(year, month, actualEndDay));
-
-            console.log(`📅 Abrechnungsperiode ${startDay}-${endDay}: ${year}-${month + 1}, tatsächlich bis ${actualEndDay}. Tag (Monat hat ${lastDayOfMonth} Tage)`);
-
         } else {
             // Periode überschreitet Monatswechsel (z.B. 15. - 14. des Folgemonats)
             startDate = new Date(Date.UTC(year, month, startDay));
@@ -166,8 +163,6 @@ class DateService {
             const actualEndDay = Math.min(endDay, lastDayOfNextMonth);
 
             endDate = new Date(Date.UTC(nextYear, actualNextMonth, actualEndDay));
-
-            console.log(`📅 Monatsübergreifende Abrechnungsperiode ${startDay}-${endDay}: ${year}-${month + 1} bis ${nextYear}-${actualNextMonth + 1}, tatsächlich bis ${actualEndDay}. Tag`);
         }
 
         return {

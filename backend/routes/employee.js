@@ -1,55 +1,55 @@
+/**
+ * Employee-Routen (/api/employee) – Self-Service für eingeloggte Nutzer.
+ *
+ * Dünne Controller-Schicht: Geschäftslogik liegt im UserService, Lese-Zugriffe
+ * laufen über UserService.findUserById. Minijob-Daten kommen read-only aus dem
+ * Model. Antwortformate folgen dem Vertrag ({ success, message, data }).
+ */
 const express = require('express');
-const { User, MinijobSetting } = require('../models');
+const { MinijobSetting } = require('../models');
+const UserService = require('../services/userService');
 const { validateUserSettings, handleValidationErrors, sanitizeInput } = require('../middleware/validation');
 const { requireEmployee, authenticateToken } = require('../middleware/auth');
-const config = require('../config');
+const { sendServiceError } = require('../utils/serviceErrors');
 
 const router = express.Router();
+
+/**
+ * Lädt den eingeloggten Nutzer (inkl. inaktiver) und sendet bei Fehlen/Inaktiv
+ * die passende Vertragsantwort. Gibt `null` zurück, wenn bereits geantwortet
+ * wurde.
+ * @param {object} req @param {object} res
+ * @param {boolean} rejectInactive 403 wenn Nutzer deaktiviert ist
+ */
+const loadSelf = async (req, res, rejectInactive = true) => {
+  const user = await UserService.findUserById(req.user.userId, true);
+  if (!user) {
+    res.status(404).json({ success: false, error: 'Benutzer nicht gefunden', code: 'USER_NOT_FOUND' });
+    return null;
+  }
+  if (rejectInactive && !user.isActive) {
+    res.status(403).json({ success: false, error: 'Benutzer ist deaktiviert', code: 'USER_INACTIVE' });
+    return null;
+  }
+  return user;
+};
 
 // ✅ EIGENES PROFIL ABRUFEN (Mitarbeiter + Admin)
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId, {
-      attributes: { exclude: ['password'] }
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'Benutzer nicht gefunden',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        error: 'Benutzer ist deaktiviert',
-        code: 'USER_INACTIVE'
-      });
-    }
+    const user = await loadSelf(req, res);
+    if (!user) return;
 
     console.log(`📋 Profil abgerufen: ${user.email}`);
-
-    res.json({
-      success: true,
-      message: 'Profil erfolgreich geladen',
-      data: {
-        user: user.toSafeJSON()
-      }
-    });
+    res.json({ success: true, message: 'Profil erfolgreich geladen', data: { user } });
   } catch (error) {
     console.error('Fehler beim Abrufen des Profils:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Profil konnte nicht geladen werden',
-      code: 'PROFILE_LOAD_ERROR'
-    });
+    res.status(500).json({ success: false, error: 'Profil konnte nicht geladen werden', code: 'PROFILE_LOAD_ERROR' });
   }
 });
 
 // ✅ EIGENES PROFIL AKTUALISIEREN (Mitarbeiter + Admin)
-router.put('/profile', 
+router.put('/profile',
   authenticateToken,
   sanitizeInput,
   [
@@ -70,61 +70,16 @@ router.put('/profile',
   async (req, res) => {
     try {
       const { name, email } = req.body;
-      const user = await User.findByPk(req.user.userId);
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'Benutzer nicht gefunden',
-          code: 'USER_NOT_FOUND'
-        });
-      }
-
-      if (!user.isActive) {
-        return res.status(403).json({
-          success: false,
-          error: 'Benutzer ist deaktiviert',
-          code: 'USER_INACTIVE'
-        });
-      }
-
-      // Update-Daten vorbereiten
       const updateData = {};
       if (name && name.trim()) updateData.name = name.trim();
-      
-      if (email && email !== user.email) {
-        // Email-Eindeutigkeit prüfen
-        const existingUser = await User.findOne({ where: { email } });
-        if (existingUser) {
-          return res.status(409).json({
-            success: false,
-            error: 'Email bereits vergeben',
-            code: 'EMAIL_EXISTS'
-          });
-        }
-        updateData.email = email;
-      }
+      if (email) updateData.email = email;
 
-      // User aktualisieren
-      if (Object.keys(updateData).length > 0) {
-        await user.update(updateData);
-        console.log(`✏️ Profil aktualisiert: ${user.email}`);
-      }
+      const user = await UserService.updateUserProfile(req.user.userId, updateData);
 
-      res.json({
-        success: true,
-        message: 'Profil erfolgreich aktualisiert',
-        data: {
-          user: user.toSafeJSON()
-        }
-      });
+      console.log(`✏️ Profil aktualisiert: ${user.email}`);
+      res.json({ success: true, message: 'Profil erfolgreich aktualisiert', data: { user } });
     } catch (error) {
-      console.error('Fehler beim Aktualisieren des Profils:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Profil konnte nicht aktualisiert werden',
-        code: 'PROFILE_UPDATE_ERROR'
-      });
+      sendServiceError(res, error, { status: 500, code: 'PROFILE_UPDATE_ERROR', error: 'Profil konnte nicht aktualisiert werden' });
     }
   }
 );
@@ -154,50 +109,12 @@ router.put('/change-password',
   async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body;
-      const user = await User.findByPk(req.user.userId);
+      await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword);
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'Benutzer nicht gefunden',
-          code: 'USER_NOT_FOUND'
-        });
-      }
-
-      if (!user.isActive) {
-        return res.status(403).json({
-          success: false,
-          error: 'Benutzer ist deaktiviert',
-          code: 'USER_INACTIVE'
-        });
-      }
-
-      // Aktuelles Passwort prüfen
-      const isValidPassword = await user.comparePassword(currentPassword);
-      if (!isValidPassword) {
-        return res.status(401).json({
-          success: false,
-          error: 'Aktuelles Passwort ist falsch',
-          code: 'INVALID_CURRENT_PASSWORD'
-        });
-      }
-
-      // Neues Passwort setzen
-      await user.update({ password: newPassword });
-
-      console.log(`🔐 Passwort geändert: ${user.email}`);
-
-      res.json({
-        success: true,
-        message: 'Passwort erfolgreich geändert'
-      });
+      console.log(`🔐 Passwort geändert: User ${req.user.userId}`);
+      res.json({ success: true, message: 'Passwort erfolgreich geändert' });
     } catch (error) {
-      console.error('Fehler beim Ändern des Passworts:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Passwort konnte nicht geändert werden',
-        code: 'PASSWORD_CHANGE_ERROR'
-      });
+      sendServiceError(res, error, { status: 500, code: 'PASSWORD_CHANGE_ERROR', error: 'Passwort konnte nicht geändert werden' });
     }
   }
 );
@@ -205,31 +122,10 @@ router.put('/change-password',
 // ✅ EIGENE ARBEITSEINSTELLUNGEN ABRUFEN (Mitarbeiter + Admin)
 router.get('/settings', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId, {
-      attributes: [
-        'id', 'name', 'email', 'role', 
-        'stundenlohn', 'abrechnungStart', 'abrechnungEnde', 'lohnzettelEmail'
-      ]
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'Benutzer nicht gefunden',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        error: 'Benutzer ist deaktiviert',
-        code: 'USER_INACTIVE'
-      });
-    }
+    const user = await loadSelf(req, res);
+    if (!user) return;
 
     console.log(`⚙️ Arbeitseinstellungen abgerufen: ${user.email}`);
-
     res.json({
       success: true,
       message: 'Arbeitseinstellungen erfolgreich geladen',
@@ -240,81 +136,28 @@ router.get('/settings', authenticateToken, async (req, res) => {
           abrechnungEnde: user.abrechnungEnde || 31,
           lohnzettelEmail: user.lohnzettelEmail || user.email
         },
-        userInfo: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
+        userInfo: { id: user.id, name: user.name, email: user.email, role: user.role }
       }
     });
   } catch (error) {
     console.error('Fehler beim Abrufen der Arbeitseinstellungen:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Arbeitseinstellungen konnten nicht geladen werden',
-      code: 'SETTINGS_LOAD_ERROR'
-    });
+    res.status(500).json({ success: false, error: 'Arbeitseinstellungen konnten nicht geladen werden', code: 'SETTINGS_LOAD_ERROR' });
   }
 });
 
-// ✅ EIGENE ARBEITSEINSTELLUNGEN AKTUALISIEREN (nur Mitarbeiter können eigene Settings ändern)
-router.put('/settings', 
+// ✅ EIGENE ARBEITSEINSTELLUNGEN AKTUALISIEREN (nur Mitarbeiter/Admin)
+router.put('/settings',
   requireEmployee,
   ...validateUserSettings,
   handleValidationErrors,
   async (req, res) => {
     try {
-      const { stundenlohn, abrechnungStart, abrechnungEnde, lohnzettelEmail } = req.body;
-      
-      const user = await User.findByPk(req.user.userId);
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          error: 'Benutzer nicht gefunden',
-          code: 'USER_NOT_FOUND'
-        });
-      }
+      const settings = await UserService.updateUserSettings(req.user.userId, req.body);
 
-      if (!user.isActive) {
-        return res.status(403).json({
-          success: false,
-          error: 'Benutzer ist deaktiviert',
-          code: 'USER_INACTIVE'
-        });
-      }
-
-      // Update-Objekt vorbereiten
-      const updateData = {};
-      if (stundenlohn !== undefined) updateData.stundenlohn = parseFloat(stundenlohn);
-      if (abrechnungStart !== undefined) updateData.abrechnungStart = parseInt(abrechnungStart);
-      if (abrechnungEnde !== undefined) updateData.abrechnungEnde = parseInt(abrechnungEnde);
-      if (lohnzettelEmail !== undefined) updateData.lohnzettelEmail = lohnzettelEmail || null;
-
-      // Einstellungen aktualisieren
-      await user.update(updateData);
-
-      console.log(`⚙️ Arbeitseinstellungen aktualisiert: ${user.email}`);
-
-      res.json({
-        success: true,
-        message: 'Arbeitseinstellungen erfolgreich aktualisiert',
-        data: {
-          settings: {
-            stundenlohn: user.stundenlohn,
-            abrechnungStart: user.abrechnungStart,
-            abrechnungEnde: user.abrechnungEnde,
-            lohnzettelEmail: user.lohnzettelEmail
-          }
-        }
-      });
+      console.log(`⚙️ Arbeitseinstellungen aktualisiert: User ${req.user.userId}`);
+      res.json({ success: true, message: 'Arbeitseinstellungen erfolgreich aktualisiert', data: { settings } });
     } catch (error) {
-      console.error('Fehler beim Aktualisieren der Arbeitseinstellungen:', error);
-      res.status(500).json({
-        success: false,
-        error: 'Arbeitseinstellungen konnten nicht aktualisiert werden',
-        code: 'SETTINGS_UPDATE_ERROR'
-      });
+      sendServiceError(res, error, { status: 500, code: 'SETTINGS_UPDATE_ERROR', error: 'Arbeitseinstellungen konnten nicht aktualisiert werden' });
     }
   }
 );
@@ -329,14 +172,11 @@ router.get('/minijob/current', authenticateToken, async (req, res) => {
         success: false,
         error: 'Keine aktuelle Minijob-Einstellung gefunden',
         code: 'NO_CURRENT_SETTING',
-        data: {
-          message: 'Bitte wenden Sie sich an einen Administrator'
-        }
+        data: { message: 'Bitte wenden Sie sich an einen Administrator' }
       });
     }
 
     console.log(`📊 ${req.user.email} hat aktuelle Minijob-Einstellung abgerufen`);
-
     res.json({
       success: true,
       message: 'Aktuelle Minijob-Einstellung erfolgreich geladen',
@@ -353,122 +193,67 @@ router.get('/minijob/current', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Fehler beim Abrufen der aktuellen Minijob-Einstellung:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Aktuelle Minijob-Einstellung konnte nicht geladen werden',
-      code: 'MINIJOB_CURRENT_ERROR'
-    });
+    res.status(500).json({ success: false, error: 'Aktuelle Minijob-Einstellung konnte nicht geladen werden', code: 'MINIJOB_CURRENT_ERROR' });
   }
 });
 
 // ✅ BENUTZER-DASHBOARD INFORMATIONEN (Mitarbeiter + Admin)
 router.get('/dashboard', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId, {
-      attributes: { exclude: ['password'] }
-    });
+    const user = await loadSelf(req, res);
+    if (!user) return;
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'Benutzer nicht gefunden',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        error: 'Benutzer ist deaktiviert',
-        code: 'USER_INACTIVE'
-      });
-    }
-
-    // Aktuelle Minijob-Einstellung abrufen
     const currentMinijobSetting = await MinijobSetting.getCurrentSetting();
 
-    // Dashboard-Daten zusammenstellen
-    const dashboardData = {
-      user: user.toSafeJSON(),
-      minijobSetting: currentMinijobSetting ? {
-        monthlyLimit: currentMinijobSetting.monthlyLimit,
-        description: currentMinijobSetting.description,
-        validFrom: currentMinijobSetting.validFrom,
-        validUntil: currentMinijobSetting.validUntil
-      } : null,
-      settings: {
-        stundenlohn: user.stundenlohn || 12.00,
-        abrechnungStart: user.abrechnungStart || 1,
-        abrechnungEnde: user.abrechnungEnde || 31,
-        lohnzettelEmail: user.lohnzettelEmail || user.email
-      },
-      // Platzhalter für zukünftige Features
-      stats: {
-        // Hier könnten später Zeiterfassungs-Statistiken stehen
-        currentMonth: {
-          hoursWorked: 0,
-          earnings: 0
-        }
-      }
-    };
-
     console.log(`📊 Dashboard-Daten abgerufen: ${user.email}`);
-
     res.json({
       success: true,
       message: 'Dashboard-Daten erfolgreich geladen',
-      data: dashboardData
+      data: {
+        user,
+        minijobSetting: currentMinijobSetting ? {
+          monthlyLimit: currentMinijobSetting.monthlyLimit,
+          description: currentMinijobSetting.description,
+          validFrom: currentMinijobSetting.validFrom,
+          validUntil: currentMinijobSetting.validUntil
+        } : null,
+        settings: {
+          stundenlohn: user.stundenlohn || 12.00,
+          abrechnungStart: user.abrechnungStart || 1,
+          abrechnungEnde: user.abrechnungEnde || 31,
+          lohnzettelEmail: user.lohnzettelEmail || user.email
+        },
+        stats: { currentMonth: { hoursWorked: 0, earnings: 0 } }
+      }
     });
   } catch (error) {
     console.error('Fehler beim Abrufen der Dashboard-Daten:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Dashboard-Daten konnten nicht geladen werden',
-      code: 'DASHBOARD_ERROR'
-    });
+    res.status(500).json({ success: false, error: 'Dashboard-Daten konnten nicht geladen werden', code: 'DASHBOARD_ERROR' });
   }
 });
 
 // ✅ ACCOUNT-STATUS PRÜFEN (Mitarbeiter + Admin)
 router.get('/account-status', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findByPk(req.user.userId, {
-      attributes: ['id', 'email', 'name', 'role', 'isActive', 'createdAt', 'updatedAt']
-    });
+    // Auch deaktivierte Accounts liefern hier einen Status (kein 403).
+    const user = await loadSelf(req, res, false);
+    if (!user) return;
 
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'Benutzer nicht gefunden',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    // Account-Status bestimmen
-    let status = 'active';
-    let message = 'Account ist aktiv und verfügbar';
-    
-    if (!user.isActive) {
-      status = 'inactive';
-      message = 'Account ist deaktiviert - bitte wenden Sie sich an einen Administrator';
-    }
+    const status = user.isActive ? 'active' : 'inactive';
+    const message = user.isActive
+      ? 'Account ist aktiv und verfügbar'
+      : 'Account ist deaktiviert - bitte wenden Sie sich an einen Administrator';
 
     console.log(`🔍 Account-Status geprüft: ${user.email} - ${status}`);
-
     res.json({
       success: true,
       message: 'Account-Status erfolgreich ermittelt',
       data: {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role
-        },
+        user: { id: user.id, email: user.email, name: user.name, role: user.role },
         status: {
           isActive: user.isActive,
           statusCode: status,
-          message: message,
+          message,
           memberSince: user.createdAt,
           lastUpdated: user.updatedAt
         }
@@ -476,28 +261,18 @@ router.get('/account-status', authenticateToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Fehler beim Prüfen des Account-Status:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Account-Status konnte nicht ermittelt werden',
-      code: 'ACCOUNT_STATUS_ERROR'
-    });
+    res.status(500).json({ success: false, error: 'Account-Status konnte nicht ermittelt werden', code: 'ACCOUNT_STATUS_ERROR' });
   }
 });
 
-// ✅ LOGOUT (optional - für erweiterte Session-Verwaltung)
+// ✅ LOGOUT (bei JWT clientseitig; Platz für spätere Token-Blacklist)
 router.post('/logout', authenticateToken, (req, res) => {
-  // Bei JWT-basierter Auth passiert Logout client-seitig
-  // Hier könnte man eine Token-Blacklist implementieren
   console.log(`👋 Logout: ${req.user.email} (${req.user.role})`);
-  
   res.json({
     success: true,
     message: 'Erfolgreich abgemeldet',
     data: {
-      user: {
-        email: req.user.email,
-        name: req.user.name
-      },
+      user: { email: req.user.email, name: req.user.name },
       timestamp: new Date().toISOString()
     }
   });

@@ -148,6 +148,29 @@ const validateMinijobSetting = [
     })
 ];
 
+// ✅ Zeiteintrag-Validierung
+const validateTimeEntry = [
+  body('date')
+    .isISO8601({ strict: true })
+    .withMessage('Datum muss im Format YYYY-MM-DD sein')
+    .toDate(),
+  body('startTime')
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Startzeit muss im Format HH:mm sein'),
+  body('endTime')
+    .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Endzeit muss im Format HH:mm sein'),
+  body('breakMinutes')
+    .optional()
+    .isInt({ min: 0, max: 480 })
+    .withMessage('Pausendauer muss zwischen 0 und 480 Minuten liegen'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Beschreibung darf maximal 500 Zeichen haben')
+];
+
 // ✅ Validation Error Handler mit verbessertem Logging
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -230,6 +253,7 @@ module.exports = {
   validateUserUpdate,
   validateUserSettings,
   validateMinijobSetting,
+  validateTimeEntry,
   handleValidationErrors,
   customValidations,
   sanitizeInput
