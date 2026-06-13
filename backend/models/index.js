@@ -63,12 +63,5 @@ module.exports = {
 
   // Database
   sequelize,
-  initDatabase,
-
-  // Helper (für backwards compatibility)
-  models: {
-    User,
-    MinijobSetting,
-    TimeEntry // ✅ HINZUGEFÜGT: TimeEntry auch hier exportieren
-  }
+  initDatabase
 };

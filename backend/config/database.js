@@ -8,19 +8,4 @@ const sequelize = new Sequelize({
   logging: config.database.logging ? console.log : false
 });
 
-// Datenbankverbindung testen
-const testConnection = async () => {
-  try {
-    await sequelize.authenticate();
-    console.log('✅ Datenbankverbindung erfolgreich etabliert');
-    console.log(`📊 Database: ${config.database.dialect} (${config.database.storage})`);
-  } catch (error) {
-    console.error('❌ Datenbankverbindung fehlgeschlagen:', error);
-    throw error;
-  }
-};
-
-module.exports = { 
-  sequelize, 
-  testConnection 
-};
+module.exports = { sequelize };

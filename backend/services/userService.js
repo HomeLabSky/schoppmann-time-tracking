@@ -1,5 +1,4 @@
-const bcrypt = require('bcryptjs');
-const { User } = require('../models');
+const { User, MinijobSetting } = require('../models');
 const { Op } = require('sequelize');
 const TokenService = require('./tokenService');
 
@@ -421,55 +420,105 @@ class UserService {
   }
 
   /**
-   * Validiert User-Eingaben
-   * @param {Object} userData - User Daten
-   * @param {string} operation - Operation Type ('create', 'update')
-   * @returns {Object} { isValid: boolean, errors: Array }
+   * Admin-Update eines beliebigen Users (auch inaktiver).
+   * Anders als updateUserProfile blockiert diese Methode inaktive Nutzer NICHT,
+   * da Admins deaktivierte Konten bearbeiten können müssen.
+   * @param {number} userId - Ziel-User-ID
+   * @param {Object} data - { email, name, role, isActive, password }
+   * @returns {Promise<Object>} Aktualisierter User (ohne Passwort)
+   * @throws {Error} USER_NOT_FOUND, EMAIL_EXISTS, INVALID_ROLE
    */
-  static validateUserData(userData, operation = 'create') {
-    const errors = [];
+  static async adminUpdateUser(userId, data) {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+    }
 
-    if (operation === 'create') {
-      if (!userData.email) {
-        errors.push('Email ist erforderlich');
-      }
-      if (!userData.password) {
-        errors.push('Passwort ist erforderlich');
-      }
-      if (!userData.name) {
-        errors.push('Name ist erforderlich');
+    const { email, name, role, isActive, password } = data;
+
+    if (email && email !== user.email) {
+      const existingUser = await User.findOne({ where: { email } });
+      if (existingUser) {
+        throw new Error('EMAIL_EXISTS:Email bereits vergeben');
       }
     }
 
-    // Email Format prüfen
-    if (userData.email) {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(userData.email)) {
-        errors.push('Ungültiges Email-Format');
-      }
+    if (role !== undefined && !['admin', 'mitarbeiter'].includes(role)) {
+      throw new Error('INVALID_ROLE:Rolle muss admin oder mitarbeiter sein');
     }
 
-    // Name prüfen
-    if (userData.name) {
-      if (userData.name.length < 2 || userData.name.length > 50) {
-        errors.push('Name muss zwischen 2 und 50 Zeichen haben');
+    const updateData = {};
+    if (email) updateData.email = email;
+    if (name) updateData.name = name;
+    if (role && ['admin', 'mitarbeiter'].includes(role)) updateData.role = role;
+    if (typeof isActive === 'boolean') updateData.isActive = isActive;
+    if (password && password.trim() !== '') updateData.password = password;
+
+    try {
+      await user.update(updateData);
+      return user.toSafeJSON();
+    } catch (error) {
+      if (error.name === 'SequelizeValidationError') {
+        const messages = error.errors.map(err => err.message);
+        throw new Error(`VALIDATION_ERROR:${messages.join(', ')}`);
       }
+      throw new Error(`UPDATE_ERROR:${error.message}`);
+    }
+  }
+
+  /**
+   * Admin-Update der Arbeitseinstellungen eines beliebigen Users (auch inaktiver).
+   * @param {number} userId - Ziel-User-ID
+   * @param {Object} settings - { stundenlohn, abrechnungStart, abrechnungEnde, lohnzettelEmail }
+   * @returns {Promise<Object>} Aktualisierter User (ohne Passwort)
+   * @throws {Error} USER_NOT_FOUND
+   */
+  static async adminUpdateUserSettings(userId, settings) {
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
     }
 
-    // Passwort prüfen (bei create oder wenn neues Passwort)
-    if (userData.password && (operation === 'create' || userData.password.length > 0)) {
-      if (userData.password.length < 8) {
-        errors.push('Passwort muss mindestens 8 Zeichen haben');
-      }
-      if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(userData.password)) {
-        errors.push('Passwort muss Groß-, Kleinbuchstaben und eine Zahl enthalten');
-      }
+    const updateData = {};
+    if (settings.stundenlohn !== undefined) updateData.stundenlohn = parseFloat(settings.stundenlohn);
+    if (settings.abrechnungStart !== undefined) updateData.abrechnungStart = parseInt(settings.abrechnungStart);
+    if (settings.abrechnungEnde !== undefined) updateData.abrechnungEnde = parseInt(settings.abrechnungEnde);
+    if (settings.lohnzettelEmail !== undefined) updateData.lohnzettelEmail = settings.lohnzettelEmail || null;
+
+    try {
+      await user.update(updateData);
+      return user.toSafeJSON();
+    } catch (error) {
+      throw new Error(`SETTINGS_UPDATE_ERROR:${error.message}`);
+    }
+  }
+
+  /**
+   * Löscht einen User (Admin). Verhindert Selbstlöschung und Löschung von
+   * Usern, die noch Minijob-Einstellungen erstellt haben.
+   * @param {number} userId - Ziel-User-ID
+   * @param {number} adminUserId - ID des ausführenden Admins
+   * @returns {Promise<Object>} { name, email } des gelöschten Users
+   * @throws {Error} CANNOT_DELETE_SELF, USER_NOT_FOUND, USER_HAS_DEPENDENCIES
+   */
+  static async deleteUser(userId, adminUserId) {
+    if (parseInt(userId) === parseInt(adminUserId)) {
+      throw new Error('CANNOT_DELETE_SELF:Sie können sich nicht selbst löschen');
     }
 
-    return {
-      isValid: errors.length === 0,
-      errors
-    };
+    const user = await User.findByPk(userId);
+    if (!user) {
+      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+    }
+
+    const minijobCount = await MinijobSetting.count({ where: { createdBy: userId } });
+    if (minijobCount > 0) {
+      throw new Error(`USER_HAS_DEPENDENCIES:Benutzer kann nicht gelöscht werden - hat ${minijobCount} Minijob-Einstellung(en) erstellt`);
+    }
+
+    const deleted = { name: user.name, email: user.email };
+    await user.destroy();
+    return deleted;
   }
 }
 

@@ -6,7 +6,8 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "build": "echo 'Backend build complete'",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "smoke": "node scripts/smoke-test.js",
+    "test": "node scripts/smoke-test.js"
   },
   "keywords": [],
   "author": "",

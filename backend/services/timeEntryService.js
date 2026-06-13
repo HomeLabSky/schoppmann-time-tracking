@@ -41,8 +41,6 @@ class TimeEntryService {
         const referenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
         billingPeriod = DateService.createBillingPeriod(startDay, endDay, referenceDate);
 
-        console.log(`📅 Benutzerdefinierte Abrechnungsperiode für ${user.email}: ${billingPeriod.startDate} bis ${billingPeriod.endDate}`);
-
         // Zeiteinträge für die Abrechnungsperiode laden
         entries = await TimeEntry.findAll({
           where: {
@@ -134,28 +132,19 @@ class TimeEntryService {
 
   static async calculateCarryIn(userId, year, month, minijobLimit) {
     try {
-      console.log(`🔍 DEBUG: calculateCarryIn für User ${userId}, Jahr ${year}, Monat ${month}`)
-      console.log(`💰 DEBUG: Aktuelles Minijob-Limit: ${minijobLimit}€`)
-
       // User-Abrechnungseinstellungen laden
       const user = await User.findByPk(userId, {
-        attributes: ['abrechnungStart', 'abrechnungEnde', 'stundenlohn']  // ← stundenlohn hinzugefügt
+        attributes: ['abrechnungStart', 'abrechnungEnde', 'stundenlohn']
       });
 
       if (!user) return 0;
 
       const startDay = user.abrechnungStart || 1;
       const endDay = user.abrechnungEnde || 31;
-      const userHourlyRate = user.stundenlohn || 12.00;  // ← Stundenlohn speichern
-
-      console.log(`🔍 DEBUG: User-Abrechnungsperiode: ${startDay}. bis ${endDay}.`)
-      console.log(`💰 DEBUG: User-Stundenlohn: ${userHourlyRate}€`)
 
       // Zielperiode berechnen
       const targetReferenceDate = `${year}-${month.toString().padStart(2, '0')}-15`;
       const targetBillingPeriod = DateService.createBillingPeriod(startDay, endDay, targetReferenceDate);
-
-      console.log(`🎯 DEBUG: Zielperiode: ${targetBillingPeriod.startDate} bis ${targetBillingPeriod.endDate}`)
 
       let carryIn = 0;
 
@@ -167,7 +156,6 @@ class TimeEntryService {
       });
 
       if (!firstEntry) {
-        console.log(`🔍 DEBUG: Keine Zeiteinträge gefunden → carryIn = 0`)
         return 0;
       }
 
@@ -179,10 +167,7 @@ class TimeEntryService {
       // Bei periodenübergreifenden Abrechnungen: Referenzmonat anpassen
       if (startDay > endDay) {
         const dayOfMonth = firstEntryDate.getDate();
-        if (dayOfMonth >= startDay) {
-          console.log(`📅 Erster Eintrag (Tag ${dayOfMonth}) >= Starttag ${startDay} → gehört zu Monat ${currentMonth}`)
-        } else {
-          console.log(`📅 Erster Eintrag (Tag ${dayOfMonth}) < Starttag ${startDay} → gehört zu Vormonat`)
+        if (dayOfMonth < startDay) {
           if (currentMonth === 1) {
             currentMonth = 12;
             currentYear--;
@@ -192,27 +177,14 @@ class TimeEntryService {
         }
       }
 
-      console.log(`🔍 DEBUG: Erste Zeiterfassung am ${firstEntry.date} → Start mit Referenzmonat ${currentYear}-${currentMonth}`)
-
       // Durchlaufe alle Perioden bis zur Zielperiode
       let iterationCount = 0;
       while (iterationCount < 50) {
         const currentReferenceDate = `${currentYear}-${currentMonth.toString().padStart(2, '0')}-15`;
         const currentBillingPeriod = DateService.createBillingPeriod(startDay, endDay, currentReferenceDate);
 
-        console.log(`🔄 DEBUG: Iteration ${iterationCount}: Prüfe Periode mit Referenz ${currentYear}-${currentMonth}`)
-        console.log(`   Periode: ${currentBillingPeriod.startDate} bis ${currentBillingPeriod.endDate}`)
-
-        // Stoppe wenn wir die Zielperiode erreicht haben
-        if (currentBillingPeriod.startDate === targetBillingPeriod.startDate) {
-          console.log(`🛑 DEBUG: Zielperiode erreicht - stoppe hier`)
-          console.log(`   Finaler CarryIn aus Vorperiode: ${carryIn.toFixed(2)}€`)
-          break;
-        }
-
-        // Prüfe ob wir über die Zielperiode hinaus sind
-        if (currentBillingPeriod.startDate > targetBillingPeriod.startDate) {
-          console.log(`⚠️ DEBUG: Über Zielperiode hinaus - stoppe hier`)
+        // Stoppe wenn wir die Zielperiode erreicht oder überschritten haben
+        if (currentBillingPeriod.startDate >= targetBillingPeriod.startDate) {
           break;
         }
 
@@ -227,32 +199,18 @@ class TimeEntryService {
           include: [{
             model: User,
             as: 'User',
-            attributes: ['stundenlohn']  // ← WICHTIG: User mit stundenlohn laden!
+            attributes: ['stundenlohn']
           }]
         });
-
-        console.log(`📊 DEBUG: Gefundene Einträge für Periode ${currentBillingPeriod.startDate} bis ${currentBillingPeriod.endDate}: ${entries.length}`)
 
         // Verdienst für diese Periode berechnen
         let monthlyEarnings = 0;
         entries.forEach(entry => {
-          const earnings = entry.earnings;  // Jetzt sollte es funktionieren!
-          console.log(`     - ${entry.date}: ${earnings.toFixed(2)}€ (${entry.workMinutes} Min)`)
-          monthlyEarnings += earnings;
+          monthlyEarnings += entry.earnings;
         });
 
         const totalForPeriod = monthlyEarnings + carryIn;
-        const paidForPeriod = Math.min(totalForPeriod, minijobLimit);
-        const newCarryOut = Math.max(0, totalForPeriod - minijobLimit);
-
-        console.log(`💰 DEBUG: Periode ${currentYear}-${currentMonth}:`)
-        console.log(`   Verdienst: ${monthlyEarnings.toFixed(2)}€`)
-        console.log(`   CarryIn: ${carryIn.toFixed(2)}€`)
-        console.log(`   Total: ${totalForPeriod.toFixed(2)}€`)
-        console.log(`   Ausgezahlt: ${paidForPeriod.toFixed(2)}€`)
-        console.log(`   CarryOut: ${newCarryOut.toFixed(2)}€`)
-
-        carryIn = newCarryOut;
+        carryIn = Math.max(0, totalForPeriod - minijobLimit);
 
         // Nächster Monat (Referenzmonat)
         if (currentMonth === 12) {
@@ -265,9 +223,7 @@ class TimeEntryService {
         iterationCount++;
       }
 
-      console.log(`🎯 DEBUG: Finaler CarryIn für Zielperiode: ${carryIn.toFixed(2)}€`)
       return carryIn;
-
     } catch (error) {
       console.error('Fehler beim Berechnen des Übertrags:', error);
       return 0;
@@ -565,11 +521,6 @@ class TimeEntryService {
 
       uniquePeriods.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
 
-      console.log('📅 Generierte Abrechnungsperioden:');
-      uniquePeriods.forEach(p => {
-        console.log(`  ${p.label} (${p.startDate} - ${p.endDate}) isCurrent:${p.isCurrent}`);
-      });
-
       return uniquePeriods;
     } catch (error) {
       console.error('Fehler beim Generieren der Abrechnungsperioden:', error);
@@ -609,23 +560,17 @@ class TimeEntryService {
       displayYear = endDate.getUTCFullYear();
       displayMonth = endDate.getUTCMonth() + 1;
       displayMonthName = TimeEntryService.getMonthName(displayMonth);
-
-      console.log(`📅 Periodenübergreifend ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
     } else {
       // Monatsintern: Benennung nach REFERENZmonat
       // Beispiel: 1.-31. → "Januar 2025"
       displayYear = year;
       displayMonth = month;
       displayMonthName = TimeEntryService.getMonthName(month);
-
-      console.log(`📅 Monatsintern ${startDay}-${endDay}: ${billingPeriod.startDate} bis ${billingPeriod.endDate} → ${displayMonthName} ${displayYear}`);
     }
 
     // ✅ KORREKTE isCurrent-LOGIK: Prüft ob heutiges Datum innerhalb der Abrechnungsperiode liegt
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD Format
     const isCurrentPeriod = today >= billingPeriod.startDate && today <= billingPeriod.endDate;
-
-    console.log(`📅 isCurrent-Check für ${displayMonthName} ${displayYear}: heute=${today}, periode=${billingPeriod.startDate} bis ${billingPeriod.endDate} → isCurrent=${isCurrentPeriod}`);
 
     return {
       // ✅ WICHTIG: Value muss Referenzmonat bleiben für API-Konsistenz
