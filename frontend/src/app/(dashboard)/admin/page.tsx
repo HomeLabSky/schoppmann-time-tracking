@@ -36,8 +36,7 @@ interface Activity {
 
 export default function AdminDashboard() {
   const router = useRouter()
-  const { logout, handleSessionExpired } = useAuth()
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const { user: currentUser, logout, handleSessionExpired } = useAuth()
   const [dashboardStats, setDashboardStats] = useState<DashboardStats>({
     totalUsers: 0,
     activeUsers: 0,
@@ -52,15 +51,6 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState<boolean>(true)
 
   useEffect(() => {
-    const userString = localStorage.getItem('user')
-    if (userString) {
-      try {
-        const user = JSON.parse(userString) as User
-        setCurrentUser(user)
-      } catch (error) {
-        console.error('Error parsing user from localStorage:', error)
-      }
-    }
     loadDashboardData()
   }, [])
 
@@ -99,7 +89,7 @@ export default function AdminDashboard() {
 
       // Letzte Aktivitäten aus dem Änderungsprotokoll
       try {
-        const audit = await adminApi.getAuditLog({ limit: 5 })
+        const audit = await adminApi.getAuditLog({ limit: 5, exclude: 'auth' })
         setRecentActivities(audit.data.entries.map((entry) => ({
           id: entry.id,
           action: ACTION_LABELS[entry.action] ?? entry.action,

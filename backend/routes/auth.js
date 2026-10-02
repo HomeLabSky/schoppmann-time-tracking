@@ -1,21 +1,34 @@
 /**
  * Auth-Routen (/api/auth).
  *
- * Dünne Controller-Schicht: delegiert die Geschäftslogik an UserService und
- * TokenService und übersetzt Domänenfehler (Format `CODE:Nachricht`) in den
- * HTTP-Vertrag ({ success, error, code }). Enthält selbst keine
- * Sequelize-Queries oder Token-Erzeugung mehr.
+ * Die Anmeldung läuft über httpOnly-Cookies (siehe utils/authCookies.js); Tokens erscheinen nie im
+ * Antwort-Body. Dünne Controller-Schicht: UserService prüft Zugangsdaten, SessionService verwaltet
+ * Sitzungen und Tokens, AuditService hält Anmeldungen, Fehlversuche und Abmeldungen fest.
  */
 const express = require('express');
-const jwt = require('jsonwebtoken');
+const { body } = require('express-validator');
 const config = require('../config');
 const UserService = require('../services/userService');
-const TokenService = require('../services/tokenService');
+const SessionService = require('../services/sessionService');
+const AuditService = require('../services/auditService');
 const { validateRegistration, validateLogin, handleValidationErrors, sanitizeInput } = require('../middleware/validation');
 const { authenticateToken } = require('../middleware/auth');
-const { sendServiceError } = require('../utils/serviceErrors');
+const { sendServiceError, extractKnownError } = require('../utils/serviceErrors');
+const { setAuthCookies, clearAuthCookies, readCookies } = require('../utils/authCookies');
 
 const router = express.Router();
+
+const clientContext = (req) => ({ ip: req.ip, userAgent: req.get('user-agent') });
+
+/** Protokolleintrag für Anmelde-Ereignisse; ein Fehler beim Protokollieren darf die Anmeldung nicht verhindern. */
+const audit = (entry) =>
+  AuditService.record(entry).catch((error) => console.error('Audit-Eintrag fehlgeschlagen:', error.message));
+
+const startSession = async (req, res, user) => {
+  const session = await SessionService.createSession(user, clientContext(req));
+  setAuthCookies(res, session);
+  return session;
+};
 
 // ✅ REGISTRIERUNG (nur wenn ALLOW_REGISTRATION aktiviert ist; sonst legt ein Admin Konten an)
 const requireRegistrationEnabled = (req, res, next) => {
@@ -39,14 +52,15 @@ router.post('/register',
 
       // Rolle bewusst NICHT aus dem Body übernehmen → immer Standardrolle.
       const user = await UserService.createUser({ email, password, name });
-      const { accessToken, refreshToken } = TokenService.generateTokens(user);
+      await startSession(req, res, user);
+      await audit({ actor: { id: user.id, email: user.email }, action: 'auth.login', entityType: 'Session', targetUserId: user.id, meta: { via: 'registration', ip: req.ip } });
 
       console.log(`✅ Neue Registrierung: ${user.email}`);
 
       res.status(201).json({
         success: true,
         message: 'Registrierung erfolgreich',
-        data: { accessToken, refreshToken, user }
+        data: { user }
       });
     } catch (error) {
       sendServiceError(res, error, {
@@ -63,22 +77,31 @@ router.post('/login',
   ...validateLogin,
   handleValidationErrors,
   async (req, res) => {
+    const { email, password } = req.body;
     try {
-      const { email, password } = req.body;
-      const { user, tokens } = await UserService.authenticateUser(email, password);
+      const { user } = await UserService.authenticateUser(email, password);
+      await startSession(req, res, user);
+      await audit({ actor: { id: user.id, email: user.email }, action: 'auth.login', entityType: 'Session', targetUserId: user.id, meta: { ip: req.ip } });
 
       console.log(`✅ Login: ${user.email} (${user.role})`);
 
       res.json({
         success: true,
         message: 'Login erfolgreich',
-        data: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          user
-        }
+        data: { user }
       });
     } catch (error) {
+      const known = extractKnownError(error && error.message);
+      if (known && (known.code === 'INVALID_CREDENTIALS' || known.code === 'USER_INACTIVE')) {
+        const existing = await UserService.findUserByEmail(email, true).catch(() => null);
+        await audit({
+          actor: null,
+          action: 'auth.login_failed',
+          entityType: 'Session',
+          targetUserId: existing ? existing.id : null,
+          meta: { email: String(email).slice(0, 255), reason: known.code, ip: req.ip }
+        });
+      }
       sendServiceError(res, error, {
         status: 500,
         code: 'LOGIN_ERROR',
@@ -88,48 +111,51 @@ router.post('/login',
   }
 );
 
-// ✅ TOKEN REFRESH
-// Verifikation bewusst über rohes jwt.verify, damit bereits ausgegebene
-// Refresh-Tokens (ohne issuer/audience/tokenType) gültig bleiben.
+// ✅ SITZUNG ERNEUERN (Erneuerungs-Token aus dem Cookie, wird rotiert)
 router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
+  const refreshToken = readCookies(req)[config.auth.refreshCookie];
 
   if (!refreshToken) {
     return res.status(401).json({
       success: false,
-      error: 'Refresh Token erforderlich',
+      error: 'Nicht angemeldet',
       code: 'MISSING_REFRESH_TOKEN'
     });
   }
 
   try {
-    const decoded = jwt.verify(refreshToken, config.jwt.refreshSecret);
-    const user = await UserService.findUserById(decoded.userId);
-
-    if (!user) {
-      return res.status(403).json({
-        success: false,
-        error: 'User nicht gefunden oder inaktiv',
-        code: 'USER_NOT_FOUND'
-      });
-    }
-
-    const { accessToken, refreshToken: newRefreshToken } = TokenService.generateTokens(user);
-
-    console.log(`🔄 Token refresh für ${user.email}`);
+    const { user, accessToken, refreshToken: nextRefreshToken } = await SessionService.rotate(refreshToken);
+    setAuthCookies(res, { accessToken, refreshToken: nextRefreshToken });
 
     res.json({
       success: true,
-      message: 'Token erfolgreich erneuert',
-      data: { accessToken, refreshToken: newRefreshToken, user }
+      message: 'Sitzung erfolgreich erneuert',
+      data: { user: user.toSafeJSON() }
     });
   } catch (error) {
-    console.error('Token refresh Fehler:', error);
-    res.status(403).json({
-      success: false,
-      error: 'Ungültiger Refresh Token',
-      code: 'INVALID_REFRESH_TOKEN'
-    });
+    if (error.name !== 'SessionError') {
+      console.error('Sitzungserneuerung fehlgeschlagen:', error);
+      return res.status(500).json({ success: false, error: 'Sitzung konnte nicht erneuert werden', code: 'REFRESH_ERROR' });
+    }
+
+    // Zwei Tabs erneuern gleichzeitig: nichts löschen, der Client versucht es mit dem neuen Cookie erneut
+    if (error.code === 'REFRESH_IN_PROGRESS') {
+      return res.status(409).json({ success: false, error: error.message, code: error.code });
+    }
+
+    if (error.code === 'REFRESH_TOKEN_REUSED') {
+      await audit({
+        actor: null,
+        action: 'auth.session_reuse_detected',
+        entityType: 'Session',
+        targetUserId: error.userId ?? null,
+        meta: { ip: req.ip, userAgent: (req.get('user-agent') || '').slice(0, 255) }
+      });
+      console.warn(`🚨 Erneuerungs-Token wiederverwendet (Benutzer ${error.userId}) – Sitzung beendet`);
+    }
+
+    clearAuthCookies(res);
+    res.status(401).json({ success: false, error: error.message, code: error.code });
   }
 });
 
@@ -145,8 +171,6 @@ router.get('/profile', authenticateToken, async (req, res) => {
         code: 'USER_NOT_FOUND'
       });
     }
-
-    console.log(`📋 Profil abgerufen: ${user.email}`);
 
     res.json({
       success: true,
@@ -195,15 +219,15 @@ router.put('/profile',
   }
 );
 
-// ✅ PASSWORT ÄNDERN (geschützt)
+// ✅ PASSWORT ÄNDERN (geschützt) – beendet alle anderen Sitzungen des Benutzers
 router.put('/change-password',
   authenticateToken,
   [
     sanitizeInput,
-    require('express-validator').body('currentPassword')
+    body('currentPassword')
       .notEmpty()
       .withMessage('Aktuelles Passwort ist erforderlich'),
-    require('express-validator').body('newPassword')
+    body('newPassword')
       .isLength({ min: 8 })
       .withMessage('Neues Passwort muss mindestens 8 Zeichen haben')
       .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
@@ -213,7 +237,7 @@ router.put('/change-password',
   async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body;
-      await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword);
+      await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword, undefined, req.user.sid);
 
       console.log(`🔐 Passwort geändert: User ${req.user.userId}`);
 
@@ -231,13 +255,23 @@ router.put('/change-password',
   }
 );
 
-// ✅ LOGOUT (bei JWT clientseitig; Platz für spätere Token-Blacklist)
-router.post('/logout', authenticateToken, (req, res) => {
-  console.log(`👋 Logout: ${req.user.email}`);
-  res.json({
-    success: true,
-    message: 'Erfolgreich abgemeldet'
-  });
+// ✅ LOGOUT: beendet die Sitzung serverseitig und löscht die Cookies.
+// Bewusst ohne vorherige Anmeldeprüfung – auch mit abgelaufenem Zugriffs-Token muss man sich abmelden können.
+router.post('/logout', async (req, res) => {
+  const cookies = readCookies(req);
+  try {
+    const ended = await SessionService.logout({
+      refreshToken: cookies[config.auth.refreshCookie],
+      accessToken: cookies[config.auth.accessCookie]
+    });
+    if (ended) {
+      await audit({ actor: { id: ended.userId, email: ended.email }, action: 'auth.logout', entityType: 'Session', targetUserId: ended.userId, meta: { ip: req.ip } });
+    }
+  } catch (error) {
+    console.error('Logout Fehler:', error);
+  }
+  clearAuthCookies(res);
+  res.json({ success: true, message: 'Erfolgreich abgemeldet' });
 });
 
 module.exports = router;

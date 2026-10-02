@@ -1,10 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
-import type { User } from '@/types/api'
 
 export default function EmployeeLayout({
   children,
@@ -12,44 +11,19 @@ export default function EmployeeLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const { logout } = useAuth()
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+  const { user: currentUser, loading, logout } = useAuth()
 
   useEffect(() => {
-    const checkEmployeeAuth = () => {
-      const token = localStorage.getItem('accessToken')
-      const userData = localStorage.getItem('user')
-
-      if (!token || !userData) {
-        router.push('/login')
-        return
-      }
-
-      try {
-        const user = JSON.parse(userData)
-
-        if (user.role === 'admin') {
-          // Admin accessing employee area, redirect to admin dashboard
-          router.push('/admin')
-          return
-        }
-
-        setCurrentUser(user)
-        setLoading(false)
-      } catch (error) {
-        // Invalid stored data
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('user')
-        router.push('/login')
-      }
+    if (loading) return
+    if (!currentUser) {
+      router.replace('/login')
+    } else if (currentUser.role === 'admin') {
+      // Admin im Mitarbeiterbereich → zum Admin-Dashboard
+      router.replace('/admin')
     }
+  }, [currentUser, loading, router])
 
-    checkEmployeeAuth()
-  }, [router])
-
-  if (loading) {
+  if (loading || !currentUser || currentUser.role === 'admin') {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">

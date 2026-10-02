@@ -9,6 +9,7 @@
  * Backup der .db-Datei anlegen.
  */
 const { ask, closeCli, obtainPassword, boot } = require('./lib/cli');
+const SessionService = require('../services/sessionService');
 
 (async () => {
   const { User } = await boot();
@@ -28,8 +29,10 @@ const { ask, closeCli, obtainPassword, boot } = require('./lib/cli');
   const { password, generated } = await obtainPassword(process.argv.includes('--generate'));
   user.password = password; // wird im Model-Hook gehasht
   await user.save();
+  const ended = await SessionService.revokeAllForUser(user.id, { reason: 'password_reset_cli' });
 
   console.log(`✅ Passwort zurückgesetzt für ${user.email} (${user.role})`);
+  if (ended > 0) console.log(`🔒 ${ended} bestehende Sitzung(en) beendet – der Benutzer muss sich neu anmelden.`);
   if (!user.isActive) {
     console.log('⚠️  Das Konto ist deaktiviert – Login erst nach Aktivierung durch einen Admin möglich.');
   }

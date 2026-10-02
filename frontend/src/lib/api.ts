@@ -16,50 +16,101 @@ import type {
 } from '@/types/api'
 import type { AuditEntry, AuditQuery, BackupStatus, Pagination, Timesheet, TimesheetPeriod } from '@/types/audit'
 
-// API Base URL
 import { API_BASE_URL } from './config'
 
-// Token Management
-class TokenManager {
-  static getAccessToken(): string | null {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('accessToken')
-  }
+/**
+ * Anmeldung über httpOnly-Cookies: Der Browser schickt die Cookies automatisch mit (`credentials: 'include'`),
+ * JavaScript sieht die Tokens nie. Ändernde Anfragen tragen den Header X-CSRF-Protection (Pflicht im Backend).
+ *
+ * Läuft das kurze Zugriffs-Token ab (401), wird still über das Erneuerungs-Cookie eine neue Sitzung geholt
+ * und die Anfrage einmal wiederholt. Gelingt das nicht, gilt die Sitzung als abgelaufen.
+ */
+const CSRF_HEADER = { 'X-CSRF-Protection': '1' }
 
-  static getRefreshToken(): string | null {
-    if (typeof window === 'undefined') return null
-    return localStorage.getItem('refreshToken')
-  }
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-  static setTokens(accessToken: string, refreshToken: string): void {
-    if (typeof window === 'undefined') return
-    localStorage.setItem('accessToken', accessToken)
-    localStorage.setItem('refreshToken', refreshToken)
-  }
+// Wird vom AuthProvider gesetzt: räumt den Zustand auf und leitet zur Anmeldung weiter
+let sessionExpiredHandler: (() => void) | null = null
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  sessionExpiredHandler = handler
+}
 
-  static clearTokens(): void {
-    if (typeof window === 'undefined') return
-    localStorage.removeItem('accessToken')
-    localStorage.removeItem('refreshToken')
-    localStorage.removeItem('user')
+function handleSessionExpired(): void {
+  if (sessionExpiredHandler) {
+    sessionExpiredHandler()
+    return
   }
+  if (typeof window !== 'undefined' && !/^\/(login|register)/.test(window.location.pathname)) {
+    window.location.href = '/login'
+  }
+}
 
-  static setUser(user: User): void {
-    if (typeof window === 'undefined') return
-    localStorage.setItem('user', JSON.stringify(user))
-  }
+// Mehrere gleichzeitige 401-Antworten teilen sich eine einzige Erneuerung
+let refreshPromise: Promise<boolean> | null = null
 
-  static getUser(): User | null {
-    if (typeof window === 'undefined') return null
-    const userData = localStorage.getItem('user')
-    return userData ? JSON.parse(userData) : null
+async function performRefresh(): Promise<boolean> {
+  // Bis zu 4 Versuche: erneuert ein zweiter Tab gerade parallel (409), liegt danach das neue Cookie vor
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...CSRF_HEADER }
+      })
+      if (response.ok) return true
+      const data = await response.json().catch(() => null)
+      if (response.status === 409 && data?.code === 'REFRESH_IN_PROGRESS') {
+        await delay(300)
+        continue
+      }
+      return false
+    } catch {
+      return false
+    }
   }
+  return false
+}
+
+export function refreshSession(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = performRefresh().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
+/**
+ * fetch mit Cookies, Sicherheits-Header und stiller Sitzungserneuerung (für Seiten mit eigener URL).
+ * Wirft Error('SESSION_EXPIRED'), wenn keine gültige Sitzung mehr besteht.
+ */
+export async function authenticatedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const send = () =>
+    fetch(url, {
+      ...init,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...CSRF_HEADER,
+        ...(init.headers as Record<string, string> | undefined)
+      }
+    })
+
+  let response = await send()
+  if (response.status === 401) {
+    if (await refreshSession()) {
+      response = await send()
+      if (response.status !== 401) return response
+    }
+    handleSessionExpired()
+    throw new Error('SESSION_EXPIRED')
+  }
+  return response
 }
 
 // HTTP Client
 class ApiClient {
   private baseURL: string
-  private refreshPromise: Promise<boolean> | null = null
 
   constructor(baseURL: string) {
     this.baseURL = baseURL
@@ -67,7 +118,7 @@ class ApiClient {
 
   // Generic request method
   async request<T = any>(
-    endpoint: string, 
+    endpoint: string,
     config: RequestConfig = {}
   ): Promise<T> {
     const {
@@ -78,51 +129,24 @@ class ApiClient {
     } = config
 
     const url = `${this.baseURL}${endpoint}`
-    
-    // Prepare headers
-    const requestHeaders: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...headers
-    }
-
-    // Add auth token if required
-    if (requireAuth) {
-      const token = TokenManager.getAccessToken()
-      if (token) {
-        requestHeaders['Authorization'] = `Bearer ${token}`
-      }
-    }
-
-    // Prepare request options
-    const requestOptions: RequestInit = {
-      method,
-      headers: requestHeaders,
-      ...(body && { body: JSON.stringify(body) })
-    }
+    const send = () =>
+      fetch(url, {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...CSRF_HEADER, ...headers },
+        ...(body !== undefined && { body: JSON.stringify(body) })
+      })
 
     try {
-      let response = await fetch(url, requestOptions)
+      let response = await send()
 
-      // Handle token refresh on 401/403
-      if ((response.status === 401 || response.status === 403) && requireAuth) {
-        const refreshSuccess = await this.refreshTokens()
-        
-        if (refreshSuccess) {
-          // Retry with new token
-          const newToken = TokenManager.getAccessToken()
-          if (newToken) {
-            requestHeaders['Authorization'] = `Bearer ${newToken}`
-            response = await fetch(url, {
-              ...requestOptions,
-              headers: requestHeaders
-            })
-          }
-        } else {
-          // Refresh failed - redirect to login
-          TokenManager.clearTokens()
-          if (typeof window !== 'undefined') {
-            window.location.href = '/login'
-          }
+      // Zugriffs-Token abgelaufen → still erneuern und einmal wiederholen
+      if (response.status === 401 && requireAuth) {
+        if (await refreshSession()) {
+          response = await send()
+        }
+        if (response.status === 401) {
+          handleSessionExpired()
           throw new Error('SESSION_EXPIRED')
         }
       }
@@ -133,6 +157,7 @@ class ApiClient {
         throw {
           error: data.error || 'Request failed',
           details: data.details,
+          code: data.code,
           status: response.status
         } as ApiError
       }
@@ -146,48 +171,6 @@ class ApiClient {
         } as ApiError
       }
       throw error
-    }
-  }
-
-  // Token refresh logic
-  private async refreshTokens(): Promise<boolean> {
-    if (this.refreshPromise) {
-      return this.refreshPromise
-    }
-
-    this.refreshPromise = this.performRefresh()
-    const result = await this.refreshPromise
-    this.refreshPromise = null
-    return result
-  }
-
-  private async performRefresh(): Promise<boolean> {
-    const refreshToken = TokenManager.getRefreshToken()
-    
-    if (!refreshToken) {
-      return false
-    }
-
-    try {
-      const response = await fetch(`${this.baseURL}/api/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.success) {
-        TokenManager.setTokens(data.data.accessToken, data.data.refreshToken)
-        TokenManager.setUser(data.data.user)
-        return true
-      } else {
-        TokenManager.clearTokens()
-        return false
-      }
-    } catch (error) {
-      TokenManager.clearTokens()
-      return false
     }
   }
 
@@ -225,8 +208,28 @@ export const authApi = {
   register: (data: RegisterData): Promise<AuthResponse> =>
     apiClient.post('/api/auth/register', data, false),
 
-  refresh: (refreshToken: string): Promise<AuthResponse> =>
-    apiClient.post('/api/auth/refresh', { refreshToken }, false),
+  /**
+   * Stellt die Anmeldung beim Laden der Seite wieder her: Profil abrufen, bei abgelaufenem Zugriffs-Token einmal
+   * still erneuern. Gibt null zurück, wenn niemand angemeldet ist (ohne Weiterleitung).
+   */
+  restoreSession: async (): Promise<User | null> => {
+    const loadProfile = async (): Promise<User> => {
+      const res = await apiClient.request<{ data: { user: User } }>('/api/auth/profile', { requireAuth: false })
+      return res.data.user
+    }
+    try {
+      return await loadProfile()
+    } catch (error) {
+      if ((error as ApiError)?.status === 401 && (await refreshSession())) {
+        try {
+          return await loadProfile()
+        } catch {
+          return null
+        }
+      }
+      return null
+    }
+  },
 
   getProfile: (): Promise<{ success: boolean, data: { user: User }, message: string }> =>
     apiClient.get('/api/auth/profile'),
@@ -238,7 +241,7 @@ export const authApi = {
     apiClient.put('/api/auth/profile', data),
 
   logout: (): Promise<{ success: boolean, message: string }> =>
-    apiClient.post('/api/auth/logout'),
+    apiClient.post('/api/auth/logout', undefined, false),
 }
 
 // ===== ADMIN API - KORRIGIERTE ENDPUNKTE =====
@@ -354,5 +357,5 @@ export const employeeApi = {
 }
 
 // Export the main client and token manager
-export { apiClient, TokenManager }
+export { apiClient }
 export default apiClient

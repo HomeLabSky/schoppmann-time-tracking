@@ -55,7 +55,7 @@ class AuditService {
 
   /**
    * Protokoll durchsuchen (neueste zuerst).
-   * @param {{page?:number,limit?:number,userId?:number,action?:string,entityType?:string,from?:string,to?:string}} filter
+   * @param {{page?:number,limit?:number,userId?:number,action?:string,exclude?:string,entityType?:string,from?:string,to?:string}} filter
    */
   static async list(filter = {}) {
     const page = Math.max(1, parseInt(filter.page) || 1);
@@ -64,7 +64,12 @@ class AuditService {
     const where = {};
     if (filter.userId) where.targetUserId = parseInt(filter.userId);
     if (filter.entityType) where.entityType = filter.entityType;
-    if (filter.action) where.action = { [Op.like]: `${filter.action}%` };
+    const clauses = [];
+    if (filter.action) clauses.push({ action: { [Op.like]: `${filter.action}%` } });
+    // exclude: kommagetrennte Präfixe, z. B. "auth" blendet Anmelde-Ereignisse aus
+    String(filter.exclude || '').split(',').map((p) => p.trim()).filter(Boolean)
+      .forEach((prefix) => clauses.push({ action: { [Op.notLike]: `${prefix}%` } }));
+    if (clauses.length > 0) where[Op.and] = clauses;
     if (filter.from || filter.to) {
       where.createdAt = {};
       if (filter.from) where.createdAt[Op.gte] = new Date(`${filter.from}T00:00:00`);

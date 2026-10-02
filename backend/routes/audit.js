@@ -23,8 +23,8 @@ router.get('/',
   ],
   async (req, res) => {
     try {
-      const { page, limit, userId, action, entityType, from, to } = req.query;
-      const result = await AuditService.list({ page, limit, userId, action, entityType, from, to });
+      const { page, limit, userId, action, exclude, entityType, from, to } = req.query;
+      const result = await AuditService.list({ page, limit, userId, action, exclude, entityType, from, to });
       res.json({ success: true, message: 'Änderungsprotokoll erfolgreich geladen', data: result });
     } catch (error) {
       sendServiceError(res, error, { status: 500, code: 'AUDIT_LOAD_ERROR', error: 'Änderungsprotokoll konnte nicht geladen werden' });

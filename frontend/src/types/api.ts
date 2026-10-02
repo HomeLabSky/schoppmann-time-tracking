@@ -30,8 +30,7 @@ export interface RegisterData {
 
 // Auth Data (was im data-Feld der Response steht)
 export interface AuthData {
-  accessToken: string
-  refreshToken: string
+  // Tokens liegen in httpOnly-Cookies und erscheinen nie im Antwort-Body
   user: User
 }
 

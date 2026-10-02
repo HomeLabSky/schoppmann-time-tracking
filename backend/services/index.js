@@ -3,16 +3,20 @@
  * Sammelt alle Services für einfache Imports
  */
 
-const TokenService = require('./tokenService');
 const DateService = require('./dateService');
 const UserService = require('./userService');
+const SessionService = require('./sessionService');
+const AuditService = require('./auditService');
 const MinijobService = require('./minijobService');
 const TimeEntryService = require('./timeEntryService');
+const PeriodService = require('./periodService');
 
 module.exports = {
-  TokenService,
   DateService,
   UserService,
+  SessionService,
+  AuditService,
   MinijobService,
-  TimeEntryService
+  TimeEntryService,
+  PeriodService
 };

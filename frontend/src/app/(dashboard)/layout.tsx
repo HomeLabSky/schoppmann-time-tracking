@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { authManager } from '@/lib/auth'
+import { useAuth } from '@/lib/auth'
 
 export default function DashboardLayout({
   children,
@@ -10,36 +10,15 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState(null)
+  const { user, loading } = useAuth()
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('accessToken')
-      const userData = localStorage.getItem('user')
-
-      if (!token || !userData) {
-        router.push('/login')
-        return
-      }
-
-      try {
-        const user = JSON.parse(userData)
-        setUser(user)
-        setIsLoading(false)
-      } catch (error) {
-        // Invalid stored data
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('user')
-        router.push('/login')
-      }
+    if (!loading && !user) {
+      router.replace('/login')
     }
+  }, [user, loading, router])
 
-    checkAuth()
-  }, [router])
-
-  if (isLoading) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">

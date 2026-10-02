@@ -68,19 +68,6 @@ export default function UsersPage() {
   const [loadingAction, setLoadingAction] = useState(false)
 
   useEffect(() => {
-    // Debug: Prüfe Auth-Status
-    const token = localStorage.getItem('accessToken')
-    const userData = localStorage.getItem('user')
-    
-    console.log('🔐 Token vorhanden:', !!token)
-    console.log('👤 User Data:', userData ? JSON.parse(userData) : 'Keine User-Daten')
-    
-    if (token && userData) {
-      const user = JSON.parse(userData)
-      console.log('👤 User Role:', user.role)
-      console.log('👤 User ist Admin:', user.role === 'admin')
-    }
-    
     loadAllUsers()
   }, [])
 

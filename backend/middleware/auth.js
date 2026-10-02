@@ -1,123 +1,72 @@
-const jwt = require('jsonwebtoken');
-const config = require('../config'); // Ihre bestehende config nutzen
+const config = require('../config');
+const SessionService = require('../services/sessionService');
+const { readCookies } = require('../utils/authCookies');
 
-// ✅ JWT Token Authentication Middleware
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+/**
+ * Authentifizierung über das httpOnly-Cookie mit dem Zugriffs-Token.
+ *
+ * Bei jeder Anfrage wird zusätzlich gegen die Datenbank geprüft, ob die Sitzung noch gültig und der Benutzer
+ * aktiv ist. Rolle, Name und E-Mail stammen aus der Datenbank, nicht aus dem Token: Abmelden, Sperren und
+ * Rollenänderungen wirken sofort.
+ *
+ * Fehlerantworten (immer 401, außer fehlende Berechtigung = 403):
+ *   MISSING_TOKEN / TOKEN_EXPIRED → das Frontend versucht still eine Erneuerung
+ *   INVALID_TOKEN / SESSION_ENDED / USER_INACTIVE → erneute Anmeldung nötig
+ */
 
+const fail = (res, status, code, error) => res.status(status).json({ success: false, error, code });
+
+/** Setzt `req.user`; liefert false, wenn bereits mit einer Fehlerantwort geantwortet wurde. */
+const authenticate = async (req, res) => {
+  if (req.user && req.user.sid) return true; // in dieser Anfrage bereits geprüft
+
+  const token = readCookies(req)[config.auth.accessCookie];
   if (!token) {
-    console.log('❌ Auth: Kein Token bereitgestellt');
-    return res.status(401).json({ 
-      error: 'Access Token erforderlich',
-      code: 'MISSING_TOKEN'
-    });
+    fail(res, 401, 'MISSING_TOKEN', 'Nicht angemeldet');
+    return false;
   }
 
-  jwt.verify(token, config.jwt.secret, (err, user) => {
-    if (err) {
-      console.log('❌ Auth: Token verification failed:', err.message);
-      return res.status(403).json({ 
-        error: 'Ungültiger Token',
-        code: 'INVALID_TOKEN'
-      });
+  try {
+    const { user, sid } = await SessionService.authenticate(token);
+    req.user = { userId: user.id, email: user.email, role: user.role, name: user.name, sid };
+    return true;
+  } catch (error) {
+    if (error.name === 'SessionError') {
+      fail(res, 401, error.code, error.message);
+      return false;
     }
-    
-    // User-Info in Request speichern
-    req.user = user;
-    
-    if (config.nodeEnv === 'development') {
-      console.log(`✅ Auth: User ${user.email} (${user.role}) authenticated`);
-    }
-    
-    next();
-  });
-};
-
-// ✅ Admin-only Access Middleware
-const requireAdmin = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    console.log('❌ Admin: Kein Token bereitgestellt');
-    return res.status(401).json({ 
-      error: 'Access Token erforderlich',
-      code: 'MISSING_TOKEN'
-    });
+    throw error;
   }
-
-  jwt.verify(token, config.jwt.secret, (err, user) => {
-    if (err) {
-      console.log('❌ Admin: Token verification failed:', err.message);
-      return res.status(403).json({ 
-        error: 'Ungültiger Token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-
-    // ✅ Admin-Rolle prüfen
-    if (user.role !== 'admin') {
-      console.log(`❌ Admin: Access denied for user ${user.email} - Role: ${user.role}`);
-      return res.status(403).json({
-        error: 'Administratorrechte erforderlich',
-        code: 'INSUFFICIENT_PERMISSIONS',
-        userRole: user.role
-      });
-    }
-
-    req.user = user;
-    
-    if (config.nodeEnv === 'development') {
-      console.log(`✅ Admin: User ${user.email} authorized`);
-    }
-    
-    next();
-  });
 };
 
-// ✅ Employee-only Access Middleware (für zukünftige Features)
-const requireEmployee = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ 
-      error: 'Access Token erforderlich',
-      code: 'MISSING_TOKEN'
-    });
+const authenticateToken = async (req, res, next) => {
+  try {
+    if (await authenticate(req, res)) next();
+  } catch (error) {
+    next(error);
   }
-
-  jwt.verify(token, config.jwt.secret, (err, user) => {
-    if (err) {
-      return res.status(403).json({ 
-        error: 'Ungültiger Token',
-        code: 'INVALID_TOKEN'
-      });
-    }
-
-    // Employee oder Admin berechtigt
-    if (user.role !== 'mitarbeiter' && user.role !== 'admin') {
-      console.log(`❌ Employee: Access denied for user ${user.email} - Role: ${user.role}`);
-      return res.status(403).json({
-        error: 'Mitarbeiter-Rechte erforderlich',
-        code: 'INSUFFICIENT_PERMISSIONS',
-        userRole: user.role
-      });
-    }
-
-    req.user = user;
-    
-    if (config.nodeEnv === 'development') {
-      console.log(`✅ Employee: User ${user.email} (${user.role}) authorized`);
-    }
-    
-    next();
-  });
 };
 
-module.exports = { 
-  authenticateToken, 
-  requireAdmin, 
+const requireRole = (allowedRoles, message) => async (req, res, next) => {
+  try {
+    if (!(await authenticate(req, res))) return;
+    if (!allowedRoles.includes(req.user.role)) {
+      console.log(`❌ Zugriff verweigert: ${req.user.email} (${req.user.role}) → ${req.method} ${req.originalUrl}`);
+      return fail(res, 403, 'INSUFFICIENT_PERMISSIONS', message);
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Admin-only
+const requireAdmin = requireRole(['admin'], 'Administratorrechte erforderlich');
+// Mitarbeiter oder Admin
+const requireEmployee = requireRole(['mitarbeiter', 'admin'], 'Mitarbeiter-Rechte erforderlich');
+
+module.exports = {
+  authenticateToken,
+  requireAdmin,
   requireEmployee
 };

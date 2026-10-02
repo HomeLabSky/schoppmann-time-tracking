@@ -43,12 +43,29 @@ const config = {
   // damit Rate-Limits die echte Client-IP verwenden.
   trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY) : false,
 
-  // JWT Configuration
+  // Geheimnisse: JWT_SECRET signiert die Zugriffs-Tokens, JWT_REFRESH_SECRET sichert die in der
+  // Datenbank gespeicherten Prüfwerte der Erneuerungs-Tokens (HMAC) – beide müssen gesetzt sein.
   jwt: {
     secret: requireSecret('JWT_SECRET'),
-    refreshSecret: requireSecret('JWT_REFRESH_SECRET'),
-    expiresIn: '15m',
-    refreshExpiresIn: '7d'
+    refreshSecret: requireSecret('JWT_REFRESH_SECRET')
+  },
+
+  // Anmeldung über httpOnly-Cookies mit Sitzungen in der Datenbank
+  auth: {
+    // Zugriffs-Token (JWT): kurz gültig; wird über das Erneuerungs-Token still verlängert
+    accessTtlSeconds: parseInt(process.env.ACCESS_TOKEN_TTL_SECONDS) || 15 * 60,
+    // Erneuerungs-Token: gleitend, wird bei jeder Nutzung rotiert
+    refreshTtlDays: parseInt(process.env.REFRESH_TOKEN_TTL_DAYS) || 7,
+    // Absolute Obergrenze einer Sitzung, danach ist eine neue Anmeldung nötig
+    sessionMaxDays: parseInt(process.env.SESSION_MAX_DAYS) || 30,
+    // Parallele Erneuerung (zwei Tabs): ein soeben rotiertes Token gilt noch kurz als "in Arbeit"
+    refreshGraceSeconds: 10,
+    // Cookie-Attribut Secure: in Produktion an (HTTPS), lokal per http aus
+    cookieSecure: process.env.COOKIE_SECURE !== undefined
+      ? asBool(process.env.COOKIE_SECURE)
+      : nodeEnv === 'production',
+    accessCookie: 'zeit_access',
+    refreshCookie: 'zeit_refresh'
   },
 
   // Database

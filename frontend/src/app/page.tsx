@@ -2,38 +2,19 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { authUtils, useAuth } from '@/lib/auth'
 
 export default function LandingPage() {
   const router = useRouter()
+  const { user, loading } = useAuth()
 
   useEffect(() => {
-    // Check if user is logged in
-    const token = localStorage.getItem('accessToken')
-    const userData = localStorage.getItem('user')
-    
-    if (token && userData) {
-      try {
-        const user = JSON.parse(userData)
-        // Redirect based on role
-        if (user.role === 'admin') {
-          router.push('/admin')
-        } else {
-          router.push('/employee/dashboard')
-        }
-      } catch (error) {
-        // Invalid stored data, clear and redirect to login
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        localStorage.removeItem('user')
-        router.push('/login')
-      }
-    } else {
-      // Not logged in, redirect to login
-      router.push('/login')
-    }
-  }, [router])
+    if (loading) return
+    // Je nach Anmeldung und Rolle weiterleiten
+    router.replace(user ? authUtils.getRedirectPath(user) : '/login')
+  }, [user, loading, router])
 
-  // Loading screen while checking auth
+  // Ladeanzeige, während geprüft wird, ob eine Sitzung besteht
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-stone-100 to-slate-200 flex items-center justify-center p-4">
       <div className="text-center">
