@@ -13,7 +13,7 @@ export function formatCurrency(amount: number): string {
 
 export function formatDate(dateString: string): string {
   if (!dateString) return 'Kein Datum'
-  return new Date(dateString + 'T12:00:00').toLocaleDateString('de-DE')
+  return new Date(dateString + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })
 }
 
 export function formatDateTime(dateString: string): string {
@@ -117,4 +117,15 @@ export function toLocalDateString(date: Date = new Date()): string {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+/** Lesbarer Text aus einem API-Fehler ({ error, details }) oder einem Error. */
+export function getErrorMessage(error: unknown, fallback = 'Unbekannter Fehler'): string {
+  if (error && typeof error === 'object') {
+    const e = error as { error?: string; details?: string[] | string; message?: string }
+    if (Array.isArray(e.details) && e.details.length > 0) return e.details.join(', ')
+    if (e.error) return e.error
+    if (e.message) return e.message
+  }
+  return fallback
 }

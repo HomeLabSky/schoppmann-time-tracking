@@ -45,6 +45,19 @@ npm run user:reset-password -- admin@schoppmann.de --generate
 Weitere Konten legt ein Admin im Portal unter *Benutzer* an. Die Selbstregistrierung ist
 standardmäßig **aus** (`ALLOW_REGISTRATION=false`).
 
+## Monatsabschluss und Änderungsprotokoll
+
+Im Admin-Bereich:
+
+- **Zeitnachweise** (`/admin/timesheets`): Zeiten eines Mitarbeiters je Abrechnungsperiode prüfen,
+  die Periode **abschließen** (erst nach Periodenende) oder mit Begründung **wieder öffnen**. In einer abgeschlossenen
+  Periode kann der Mitarbeiter nichts mehr anlegen, ändern oder löschen; die Beträge sind festgeschrieben.
+- **Protokoll** (*Protokoll*): zeigt, wer wann was geändert hat (Zeiteinträge, Abschlüsse, Benutzer, Minijob-Grenzen) –
+  unveränderlich und ohne Passwörter.
+
+Mitarbeiterkonten mit Zeiteinträgen lassen sich nicht löschen, nur deaktivieren (Nachweise bleiben erhalten).
+Technische Details: [`backend/ARCHITECTURE.md`](backend/ARCHITECTURE.md).
+
 ## Tests
 
 ```bash

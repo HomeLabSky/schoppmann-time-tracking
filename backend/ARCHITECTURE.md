@@ -50,6 +50,8 @@ utils/         Einheitliche Response-Helfer (responses.js) und zentrales
 | Mitarbeiter (Self-Service) | `routes/employee.js` (`/api/employee`) | `services/userService.js`, `services/minijobService.js` | `User`, `MinijobSetting` |
 | Administration | `routes/admin.js` (`/api/admin`) | `services/userService.js` | `User`, `MinijobSetting` |
 | Minijob-Grenzen | `routes/minijob.js` (`/api/admin/minijob`) | `services/minijobService.js` | `MinijobSetting` |
+| Zeitnachweise & Monatsabschluss (Admin) | `routes/timesheets.js` (`/api/admin/timesheets`) | `services/periodService.js`, `services/periodGuard.js` | `PeriodClosure` |
+| Änderungsprotokoll (Admin, nur lesend) | `routes/audit.js` (`/api/admin/audit`) | `services/auditService.js` | `AuditLog` |
 | Wartung (nur lokal, kein HTTP) | `scripts/create-admin.js`, `scripts/reset-password.js` (`npm run admin:create` / `user:reset-password`) | `models/` direkt | `User` |
 
 ## API-Vertrag (verbindlich)
@@ -95,6 +97,38 @@ Wichtige Regeln:
 Schema-Änderungen für bestehende Datenbanken: `models/migrations.js` (idempotent, legt vor der
 ersten Änderung eine Sicherungskopie der DB-Datei an).
 
+## Änderungsprotokoll (Audit-Log)
+
+Jede fachliche Änderung wird in `AuditLogs` festgehalten: wer (`actorId`, `actorEmail` als Momentaufnahme),
+wann, welcher Vorgang (`time_entry.update`, `period.close`, `user.update` …), welcher Datensatz, welcher
+Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON.
+
+- **Gleiche Transaktion:** `AuditService.record(..., { transaction })` läuft zusammen mit der Änderung. Schlägt
+  eine von beiden fehl, passiert keine – es gibt nie eine Änderung ohne Eintrag.
+- **Unveränderlich:** Model-Hooks verhindern Update/Delete; zusätzlich brechen SQLite-Trigger
+  (`auditlogs_no_update` / `auditlogs_no_delete`, angelegt in `models/migrations.js`) jedes UPDATE/DELETE – auch
+  bei direktem SQL. Für eine gewollte Bereinigung müssen die Trigger bewusst entfernt werden.
+- **Keine Geheimnisse:** Snapshots enthalten nie Passwörter; `stripSecrets` entfernt zusätzlich Felder wie
+  `password` und `token` aus allen Einträgen.
+- **Auslöser (`actor`):** Routen übergeben `{ id, email }` aus dem JWT an die Services. Fehlt er, gilt der
+  betroffene Benutzer selbst (Selbstbedienung/Registrierung).
+- Lesen nur über `GET /api/admin/audit` (Filter: `userId`, `action`-Präfix, `entityType`, `from`, `to`, Seite).
+
+## Monatsabschluss
+
+`PeriodClosure` hält je (Mitarbeiter, Abrechnungsperiode) die eingefrorenen Zahlen (Minuten, Verdienst, Grenze,
+Übertrag ein/aus, Auszahlung). Regeln (`services/periodService.js`):
+
+- Abschluss erst **nach Periodenende** und nur, wenn frühere Perioden **mit Einträgen** bereits abgeschlossen sind
+  (der Übertrag baut aufeinander auf).
+- In abgeschlossenen Perioden sind Anlegen, Ändern und Löschen von Zeiteinträgen gesperrt (`PERIOD_CLOSED`,
+  Prüfung in `periodGuard.assertDateOpen`, innerhalb der Eintrags-Transaktion).
+- Für abgeschlossene Perioden gelten die **eingefrorenen** Zahlen – spätere Änderungen an Minijob-Grenzen verändern
+  Auszahlung und Übertrag nicht.
+- Wiedereröffnen nur durch Admins, **mit Begründung** (mind. 5 Zeichen) und nur für die **jüngste** abgeschlossene
+  Periode. Der Vorgang inkl. Begründung steht im Protokoll.
+- Konten mit Zeiteinträgen oder Abschlüssen können nicht gelöscht, nur deaktiviert werden (Nachweise bleiben erhalten).
+
 ## Tests
 
 - `npm test` führt alles aus: `npm run test:unit` (`test/*.test.js`, Node-Testrunner) und
@@ -102,4 +136,6 @@ ersten Änderung eine Sicherungskopie der DB-Datei an).
 - `test/billing.test.js`: tabellengetriebene Tests der reinen Rechenlogik.
 - `test/timeEntryService.test.js`: Integrationstests gegen eine temporäre SQLite-DB (Pause,
   eingefrorener Stundensatz, Grenze je Periode, Monatsende, Periode 22.–21., Fachregeln).
+- `test/audit-closure.test.js`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
+  eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung.
 - Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.

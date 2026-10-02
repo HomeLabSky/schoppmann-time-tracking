@@ -26,7 +26,7 @@ process.env.ALLOW_REGISTRATION = 'true';
 
 const app = require('../app');
 const config = require('../config');
-const { initDatabase, sequelize, User } = require('../models');
+const { initDatabase, sequelize, User, TimeEntry } = require('../models');
 
 const ADMIN_EMAIL = 'smoke.admin@schoppmann.de';
 const ADMIN_PASSWORD = 'SmokeAdmin1x';
@@ -238,6 +238,60 @@ async function main() {
 
     const delSetting = await api('DELETE', `/api/admin/minijob/settings/${settingId}`, { token: adminToken });
     check('Minijob gelöscht 200', delSetting.status === 200 && delSetting.json?.data?.deletedSetting?.id === settingId, delSetting.json);
+
+    // ---- Monatsabschluss & Änderungsprotokoll ----
+    console.log('\n[Monatsabschluss & Protokoll]');
+    const empId = login.json?.data?.user?.id;
+    const [ty, tm] = today().split('-').map(Number);
+    const py = tm === 1 ? ty - 1 : ty;
+    const pm = tm === 1 ? 12 : tm - 1;
+    const prevMonth = `${py}-${String(pm).padStart(2, '0')}`;
+    const currentMonthParam = today().slice(0, 7);
+    const pastEntry = await TimeEntry.create({
+      userId: empId, date: `${prevMonth}-01`, startTime: '09:00:00', endTime: '17:00:00', breakMinutes: 0, hourlyRateCents: 1200
+    });
+
+    const auditForbidden = await api('GET', '/api/admin/audit', { token: empToken });
+    check('Protokoll: Mitarbeiter abgewiesen 403', auditForbidden.status === 403, auditForbidden.status);
+    const audit = await api('GET', '/api/admin/audit?action=time_entry', { token: adminToken });
+    check(
+      'Protokoll: Admin sieht Zeiteintrag-Änderungen',
+      audit.status === 200 && audit.json?.data?.entries?.some((e) => e.action === 'time_entry.create' && e.actorEmail === empCreds.email),
+      audit.json
+    );
+
+    const sheetForbidden = await api('GET', `/api/admin/timesheets/${empId}?month=${prevMonth}`, { token: empToken });
+    check('Zeitnachweis: Mitarbeiter abgewiesen 403', sheetForbidden.status === 403, sheetForbidden.status);
+    const sheet = await api('GET', `/api/admin/timesheets/${empId}?month=${prevMonth}`, { token: adminToken });
+    check('Zeitnachweis: Admin sieht Mitarbeiter-Periode', sheet.status === 200 && sheet.json?.data?.records?.length === 1 && sheet.json.data.period.status === 'open', sheet.json);
+
+    const closeRunning = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: currentMonthParam } });
+    check('Abschluss laufender Periode 409 PERIOD_NOT_ENDED', closeRunning.status === 409 && closeRunning.json?.code === 'PERIOD_NOT_ENDED', closeRunning.json);
+
+    const closed = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: prevMonth } });
+    check('Periode abgeschlossen 201', closed.status === 201 && closed.json?.data?.closure?.earningsCents === 9600, closed.json);
+
+    const editClosed = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
+    check('Bearbeiten in geschlossener Periode 409 PERIOD_CLOSED', editClosed.status === 409 && editClosed.json?.code === 'PERIOD_CLOSED', editClosed.json);
+    const deleteClosed = await api('DELETE', `/api/timetracking/${pastEntry.id}`, { token: empToken });
+    check('Löschen in geschlossener Periode 409 PERIOD_CLOSED', deleteClosed.status === 409 && deleteClosed.json?.code === 'PERIOD_CLOSED', deleteClosed.json);
+    const empMonthClosed = await api('GET', `/api/timetracking?month=${prevMonth}`, { token: empToken });
+    check('Mitarbeiter sieht Status "closed"', empMonthClosed.json?.data?.period?.status === 'closed', empMonthClosed.json?.data?.period);
+
+    const noReason = await api('POST', `/api/admin/timesheets/${empId}/reopen`, { token: adminToken, body: { month: prevMonth } });
+    check('Wiedereröffnen ohne Begründung 400', noReason.status === 400, noReason.json);
+    const reopened = await api('POST', `/api/admin/timesheets/${empId}/reopen`, { token: adminToken, body: { month: prevMonth, reason: 'Smoke-Test: Korrektur' } });
+    check('Wiedereröffnen mit Begründung 200', reopened.status === 200, reopened.json);
+    const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
+    check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
+
+    const periodAudit = await api('GET', `/api/admin/audit?userId=${empId}&action=period`, { token: adminToken });
+    check(
+      'Protokoll enthält Abschluss und Wiedereröffnung mit Begründung',
+      periodAudit.json?.data?.entries?.some((e) => e.action === 'period.close') &&
+        periodAudit.json.data.entries.some((e) => e.action === 'period.reopen' && e.meta?.reason === 'Smoke-Test: Korrektur'),
+      periodAudit.json
+    );
   } finally {
     server.close();
     await sequelize.close();

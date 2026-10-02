@@ -1,16 +1,33 @@
-const { TimeEntry, User, MinijobSetting, sequelize } = require('../models');
+const { TimeEntry, User, MinijobSetting, PeriodClosure, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const DateService = require('./dateService');
+const AuditService = require('./auditService');
+const { assertDateOpen, overlaps } = require('./periodGuard');
 const billing = require('../utils/billing');
 const { todayString } = require('../utils/clock');
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year, month) => `${year}-${String(month).padStart(2, '0')}-15`;
 
+/** Für das Änderungsprotokoll: nur fachlich relevante Felder, Zeiten als HH:mm. */
+const entrySnapshot = (entry) => ({
+  date: entry.date,
+  startTime: String(entry.startTime).substring(0, 5),
+  endTime: String(entry.endTime).substring(0, 5),
+  breakMinutes: entry.breakMinutes,
+  description: entry.description || null,
+  hourlyRateCents: entry.hourlyRateCents
+});
+
+/** Auslöser für das Protokoll; ohne Angabe gilt der Mitarbeiter selbst. */
+const resolveActor = (actor, userId) => actor || { id: userId };
+
 /**
  * ✅ Time Entry Service - Zeiterfassung Business Logic
  * Enthält alle Zeiterfassungs-bezogenen Operationen und Minijob-Berechnungen.
  * Die reine Rechenlogik (Cent-Beträge, Übertrag, Fachregeln) liegt in utils/billing.js.
+ * Jede Änderung wird in derselben Transaktion im Änderungsprotokoll festgehalten
+ * und ist in abgeschlossenen Perioden gesperrt.
  */
 class TimeEntryService {
 
@@ -19,13 +36,14 @@ class TimeEntryService {
    * Zielperiode (chronologisch). Ohne frühere Einträge nur die Zielperiode.
    * @returns {Promise<Array<{startDate:string,endDate:string,description:string}>>}
    */
-  static async listPeriodsUpTo(userId, startDay, endDay, year, month) {
+  static async listPeriodsUpTo(userId, startDay, endDay, year, month, options = {}) {
     const target = DateService.createBillingPeriod(startDay, endDay, referenceDate(year, month));
 
     const first = await TimeEntry.findOne({
       where: { userId, date: { [Op.lt]: target.startDate } },
       order: [['date', 'ASC']],
-      attributes: ['date']
+      attributes: ['date'],
+      transaction: options.transaction
     });
     if (!first) return [target];
 
@@ -62,16 +80,20 @@ class TimeEntryService {
    * Holt alle Zeiteinträge für einen User und eine Abrechnungsperiode inkl.
    * Minijob-Übersicht. Der Übertrag wird über alle früheren Perioden mit jeweils
    * der damals gültigen Minijob-Grenze und den damals eingefrorenen Stundensätzen
-   * berechnet – mit zwei Datenbankabfragen statt einer je Periode.
+   * berechnet. Für abgeschlossene Perioden gelten die beim Abschluss eingefrorenen
+   * Zahlen (spätere Änderungen an Grenzen verändern sie nicht).
    * @param {number} userId - User ID
    * @param {number} year - Referenzjahr
    * @param {number} month - Referenzmonat (1-12)
+   * @param {{transaction?: Object}} [options]
    * @returns {Promise<Object>} Zeiteinträge mit Minijob-Übersicht
    */
-  static async getMonthlyTimeRecords(userId, year, month) {
+  static async getMonthlyTimeRecords(userId, year, month, options = {}) {
+    const { transaction } = options;
     try {
       const user = await User.findByPk(userId, {
-        attributes: ['id', 'name', 'email', 'stundenlohn', 'abrechnungStart', 'abrechnungEnde']
+        attributes: ['id', 'name', 'email', 'stundenlohn', 'abrechnungStart', 'abrechnungEnde'],
+        transaction
       });
 
       if (!user) {
@@ -81,29 +103,38 @@ class TimeEntryService {
       const startDay = user.abrechnungStart || 1;
       const endDay = user.abrechnungEnde || 31;
 
-      const periods = await this.listPeriodsUpTo(userId, startDay, endDay, year, month);
+      const periods = await this.listPeriodsUpTo(userId, startDay, endDay, year, month, { transaction });
       const target = periods[periods.length - 1];
 
-      const settings = await MinijobSetting.findAll({ raw: true });
+      const settings = await MinijobSetting.findAll({ raw: true, transaction });
+      const closures = await PeriodClosure.findAll({ where: { userId }, raw: true, transaction });
       const entries = await TimeEntry.findAll({
         where: { userId, date: { [Op.between]: [periods[0].startDate, target.endDate] } },
-        order: [['date', 'ASC']]
+        order: [['date', 'ASC']],
+        transaction
       });
+
+      const closureFor = (period) =>
+        closures.find((c) => overlaps(period.startDate, period.endDate, c.periodStart, c.periodEnd)) || null;
 
       const rows = periods.map((period) => {
         const own = entries.filter((e) => e.date >= period.startDate && e.date <= period.endDate);
+        const closure = closureFor(period);
         return {
           period,
+          closure,
           entries: own,
-          minutes: own.reduce((sum, e) => sum + e.workMinutes, 0),
-          earningsCents: own.reduce((sum, e) => sum + e.earningsCents, 0),
-          limitCents: billing.limitCentsForDate(settings, period.endDate)
+          // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
+          minutes: closure ? closure.totalMinutes : own.reduce((sum, e) => sum + e.workMinutes, 0),
+          earningsCents: closure ? closure.earningsCents : own.reduce((sum, e) => sum + e.earningsCents, 0),
+          limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate)
         };
       });
       const folded = billing.foldCarry(rows);
 
       const current = rows[rows.length - 1];
       const result = folded[folded.length - 1];
+      const closure = current.closure;
       const hourlyRate = user.stundenlohn == null ? billing.toEuros(billing.DEFAULT_HOURLY_RATE_CENTS) : Number(user.stundenlohn);
 
       // Display-Werte (Benennung nach End- bzw. Referenzmonat)
@@ -133,8 +164,17 @@ class TimeEntryService {
           monthName: periodInfo.monthName,
           startDate: target.startDate,
           endDate: target.endDate,
-          description: target.description
-        }
+          description: target.description,
+          status: closure ? 'closed' : 'open'
+        },
+        closure: closure
+          ? {
+            closedAt: closure.closedAt,
+            closedBy: closure.closedBy,
+            periodStart: closure.periodStart,
+            periodEnd: closure.periodEnd
+          }
+          : null
       };
     } catch (error) {
       throw new Error(`MONTHLY_RECORDS_ERROR:${error.message}`);
@@ -145,9 +185,10 @@ class TimeEntryService {
    * Erstellt einen neuen Zeiteintrag. Der aktuelle Stundenlohn des Mitarbeiters wird
    * im Eintrag eingefroren; spätere Lohnänderungen wirken nicht rückwirkend.
    * @param {Object} entryData - { userId, date, startTime, endTime, breakMinutes?, description? }
+   * @param {{id:number,email?:string}} [actor] Auslöser für das Protokoll
    * @returns {Promise<Object>} Erstellter Zeiteintrag
    */
-  static async createTimeEntry(entryData) {
+  static async createTimeEntry(entryData, actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -168,6 +209,8 @@ class TimeEntryService {
       if (ruleErrors.length > 0) {
         throw new Error(`VALIDATION_ERROR:${ruleErrors.join(', ')}`);
       }
+
+      await assertDateOpen(entryData.userId, entryData.date, { transaction });
 
       const existingEntry = await TimeEntry.findOne({
         where: { userId: entryData.userId, date: entryData.date },
@@ -194,6 +237,15 @@ class TimeEntryService {
           : billing.toCents(user.stundenlohn)
       }, { transaction });
 
+      await AuditService.record({
+        actor: resolveActor(actor, entryData.userId),
+        action: 'time_entry.create',
+        entityType: 'TimeEntry',
+        entityId: newEntry.id,
+        targetUserId: entryData.userId,
+        after: entrySnapshot(newEntry)
+      }, { transaction });
+
       await transaction.commit();
 
       return newEntry.toSafeJSON();
@@ -208,9 +260,10 @@ class TimeEntryService {
    * @param {number} entryId - Eintrag ID
    * @param {Object} updateData - { startTime?, endTime?, breakMinutes?, description? }
    * @param {number} userId - User ID (für Sicherheit)
+   * @param {{id:number,email?:string}} [actor] Auslöser für das Protokoll
    * @returns {Promise<Object>} Aktualisierter Zeiteintrag
    */
-  static async updateTimeEntry(entryId, updateData, userId) {
+  static async updateTimeEntry(entryId, updateData, userId, actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -222,6 +275,8 @@ class TimeEntryService {
       if (!entry) {
         throw new Error('ENTRY_NOT_FOUND:Zeiteintrag nicht gefunden');
       }
+
+      await assertDateOpen(userId, entry.date, { transaction });
 
       const merged = {
         userId,
@@ -242,11 +297,23 @@ class TimeEntryService {
         throw new Error(`VALIDATION_ERROR:${ruleErrors.join(', ')}`);
       }
 
+      const before = entrySnapshot(entry);
+
       await entry.update({
         startTime: merged.startTime,
         endTime: merged.endTime,
         breakMinutes: merged.breakMinutes,
         ...(updateData.description !== undefined && { description: updateData.description || null })
+      }, { transaction });
+
+      await AuditService.record({
+        actor: resolveActor(actor, userId),
+        action: 'time_entry.update',
+        entityType: 'TimeEntry',
+        entityId: entry.id,
+        targetUserId: userId,
+        before,
+        after: entrySnapshot(entry)
       }, { transaction });
 
       await transaction.commit();
@@ -259,12 +326,13 @@ class TimeEntryService {
   }
 
   /**
-   * Löscht einen Zeiteintrag
+   * Löscht einen Zeiteintrag (der gelöschte Zustand bleibt im Änderungsprotokoll erhalten)
    * @param {number} entryId - Eintrag ID
    * @param {number} userId - User ID (für Sicherheit)
+   * @param {{id:number,email?:string}} [actor] Auslöser für das Protokoll
    * @returns {Promise<boolean>} True bei Erfolg
    */
-  static async deleteTimeEntry(entryId, userId) {
+  static async deleteTimeEntry(entryId, userId, actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -280,7 +348,20 @@ class TimeEntryService {
         throw new Error('ENTRY_NOT_FOUND:Zeiteintrag nicht gefunden');
       }
 
+      await assertDateOpen(userId, entry.date, { transaction });
+
+      const before = entrySnapshot(entry);
       await entry.destroy({ transaction });
+
+      await AuditService.record({
+        actor: resolveActor(actor, userId),
+        action: 'time_entry.delete',
+        entityType: 'TimeEntry',
+        entityId: entryId,
+        targetUserId: userId,
+        before
+      }, { transaction });
+
       await transaction.commit();
 
       return true;
@@ -390,6 +471,7 @@ class TimeEntryService {
 
   /**
    * Erzeugt überlappungsfreie Abrechnungsperioden für das Dropdown
+   * (inkl. Kennzeichen `isClosed` für abgeschlossene Perioden).
    */
   static async generateBillingPeriods(userId, monthsBack = 12, monthsForward = 3) {
     try {
@@ -425,6 +507,11 @@ class TimeEntryService {
       );
 
       uniquePeriods.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+      const closures = await PeriodClosure.findAll({ where: { userId }, raw: true });
+      uniquePeriods.forEach((p) => {
+        p.isClosed = closures.some((c) => overlaps(p.startDate, p.endDate, c.periodStart, c.periodEnd));
+      });
 
       return uniquePeriods;
     } catch (error) {

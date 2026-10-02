@@ -15,6 +15,9 @@ const config = require('../config');
 
 const router = express.Router();
 
+// Auslöser für das Änderungsprotokoll
+const actorOf = (req) => ({ id: req.user.userId, email: req.user.email });
+
 // ✅ ZEITEINTRÄGE FÜR MONAT ABRUFEN
 router.get('/',
   authenticateToken,
@@ -84,7 +87,7 @@ router.post('/',
         date: req.body.date.toISOString().split('T')[0] // Datum normalisieren
       };
 
-      const newEntry = await TimeEntryService.createTimeEntry(entryData);
+      const newEntry = await TimeEntryService.createTimeEntry(entryData, actorOf(req));
 
       console.log(`➕ ${req.user.email} hat Zeiteintrag erstellt: ${entryData.date} (${entryData.startTime}-${entryData.endTime})`);
       res.status(201).json({ success: true, message: 'Zeiteintrag erfolgreich erstellt', data: { entry: newEntry } });
@@ -108,7 +111,7 @@ router.put('/:id',
       delete updateData.date;
       delete updateData.userId;
 
-      const updatedEntry = await TimeEntryService.updateTimeEntry(parseInt(req.params.id), updateData, req.user.userId);
+      const updatedEntry = await TimeEntryService.updateTimeEntry(parseInt(req.params.id), updateData, req.user.userId, actorOf(req));
 
       console.log(`✏️ ${req.user.email} hat Zeiteintrag ${req.params.id} aktualisiert`);
       res.json({ success: true, message: 'Zeiteintrag erfolgreich aktualisiert', data: { entry: updatedEntry } });
@@ -127,7 +130,7 @@ router.delete('/:id',
   ],
   async (req, res) => {
     try {
-      await TimeEntryService.deleteTimeEntry(parseInt(req.params.id), req.user.userId);
+      await TimeEntryService.deleteTimeEntry(parseInt(req.params.id), req.user.userId, actorOf(req));
 
       console.log(`🗑️ ${req.user.email} hat Zeiteintrag ${req.params.id} gelöscht`);
       res.json({ success: true, message: 'Zeiteintrag erfolgreich gelöscht' });

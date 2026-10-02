@@ -222,6 +222,8 @@ export default function EmployeeDashboard() {
     setCurrentMonth(newMonth)
   }
 
+  const isClosed = monthlyData?.period?.status === 'closed'
+
   if (loading && !monthlyData) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -252,6 +254,13 @@ export default function EmployeeDashboard() {
             </svg>
             <p className="text-red-700 text-sm">{error}</p>
           </div>
+        </div>
+      )}
+
+      {isClosed && (
+        <div role="status" className="mb-6 rounded-lg border border-slate-300 bg-slate-100 p-4 text-sm text-slate-800">
+          <strong>Diese Periode ist abgeschlossen.</strong> Einträge können nicht mehr angelegt, geändert oder gelöscht werden.
+          Wenn etwas korrigiert werden muss, wenden Sie sich bitte an Ihren Administrator.
         </div>
       )}
 
@@ -342,7 +351,7 @@ export default function EmployeeDashboard() {
                 >
                   {availablePeriods.map(period => (
                     <option key={period.value} value={period.value}>
-                      {period.label}  {/* ✅ Zeigt vollständige Abrechnungsperioden-Info */}
+                      {period.label}{period.isClosed ? ' – abgeschlossen' : ''}
                     </option>
                   ))}
                 </select>
@@ -351,7 +360,9 @@ export default function EmployeeDashboard() {
               {/* Add Button */}
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                disabled={isClosed}
+                title={isClosed ? 'Die Periode ist abgeschlossen' : undefined}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -364,7 +375,7 @@ export default function EmployeeDashboard() {
 
         {/* Rest des Codes bleibt gleich... */}
         {/* Add Form */}
-        {showAddForm && (
+        {showAddForm && !isClosed && (
           <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
@@ -492,7 +503,9 @@ export default function EmployeeDashboard() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {editingRecord?.id === record.id ? (
+                      {isClosed ? (
+                        <span className="text-xs text-slate-400">gesperrt</span>
+                      ) : editingRecord?.id === record.id ? (
                         <div className="flex justify-end space-x-2">
                           <button
                             onClick={handleSaveEdit}

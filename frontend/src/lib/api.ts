@@ -14,9 +14,10 @@ import type {
   MinijobSetting,
   NewMinijobSetting
 } from '@/types/api'
+import type { AuditEntry, AuditQuery, Pagination, Timesheet, TimesheetPeriod } from '@/types/audit'
 
 // API Base URL
-const API_BASE_URL = 'http://localhost:5000'
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 // Token Management
 class TokenManager {
@@ -292,6 +293,29 @@ export const adminApi = {
 
   getMinijobStats: (): Promise<{ success: boolean, data: any, message: string }> =>
     apiClient.get('/api/admin/minijob/stats'),
+
+  // Zeitnachweise & Monatsabschluss
+  getTimesheetPeriods: (userId: number): Promise<{ success: boolean, data: { periods: TimesheetPeriod[], currentPeriod?: TimesheetPeriod }, message: string }> =>
+    apiClient.get(`/api/admin/timesheets/${userId}/periods`),
+
+  getTimesheet: (userId: number, month: string): Promise<{ success: boolean, data: Timesheet, message: string }> =>
+    apiClient.get(`/api/admin/timesheets/${userId}?month=${month}`),
+
+  closePeriod: (userId: number, month: string): Promise<{ success: boolean, data: { closure: unknown }, message: string }> =>
+    apiClient.post(`/api/admin/timesheets/${userId}/close`, { month }),
+
+  reopenPeriod: (userId: number, month: string, reason: string): Promise<{ success: boolean, message: string }> =>
+    apiClient.post(`/api/admin/timesheets/${userId}/reopen`, { month, reason }),
+
+  // Änderungsprotokoll (nur lesend)
+  getAuditLog: (params: AuditQuery = {}): Promise<{ success: boolean, data: { entries: AuditEntry[], pagination: Pagination }, message: string }> => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== '' && value !== null) query.set(key, String(value))
+    })
+    const qs = query.toString()
+    return apiClient.get(`/api/admin/audit${qs ? '?' + qs : ''}`)
+  },
 }
 
 // ===== EMPLOYEE API - KORRIGIERTE ENDPUNKTE =====
