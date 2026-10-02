@@ -2,6 +2,7 @@ const { sequelize } = require('../config/database');
 const User = require('./User');
 const MinijobSetting = require('./MinijobSetting');
 const TimeEntry = require('./TimeEntry'); // ✅ TimeEntry importieren
+const { runMigrations } = require('./migrations');
 
 // ✅ Beziehungen zwischen Models definieren
 User.hasMany(MinijobSetting, {
@@ -37,6 +38,9 @@ const initDatabase = async () => {
     // Tabellen synchronisieren
     await sequelize.sync();
     console.log('✅ Datenbank-Tabellen synchronisiert');
+
+    // Schema-Änderungen für bestehende Datenbanken nachziehen
+    await runMigrations(sequelize);
 
     // Aktive Minijob-Einstellungen beim Start aktualisieren
     try {

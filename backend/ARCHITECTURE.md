@@ -75,7 +75,31 @@ geändert werden** – sie sind Teil des öffentlichen Vertrags.
 - **Kein Debug-`console.log`** im Request-Pfad; Start-/Lifecycle-Logs gehören in
   `server.js`.
 
+## Rechenlogik (Abrechnung)
+
+Die Geldlogik liegt als **reine Funktionen** in `utils/billing.js` (kein DB-Zugriff, keine
+Systemzeit): Arbeitsminuten, Verdienst, Fachregeln für Zeiteinträge, Auflösung der
+Minijob-Grenze zu einem Stichtag und die Übertrag-Verrechnung (`foldCarry`). Beträge werden
+in **ganzen Cent** gerechnet; erst die API-Antwort wandelt in Euro um. `utils/clock.js`
+liefert den Kalendertag in `Europe/Berlin` (nie `toISOString()` für „heute“ verwenden).
+
+Wichtige Regeln:
+
+- Jeder Zeiteintrag friert beim Anlegen den Stundensatz ein (`TimeEntry.hourlyRateCents`);
+  spätere Lohnänderungen wirken nur auf neue Einträge.
+- Für jede Periode gilt die Minijob-Grenze, die an ihrem Enddatum gültig war.
+- Pause: nur wenn *keine* Angabe vorliegt, gilt der Standard (30 min); ein ausdrückliches `0`
+  bleibt `0`.
+- Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
+
+Schema-Änderungen für bestehende Datenbanken: `models/migrations.js` (idempotent, legt vor der
+ersten Änderung eine Sicherungskopie der DB-Datei an).
+
 ## Tests
 
-`npm run smoke` bootet die App gegen eine temporäre SQLite-DB und prüft die
-Kern-Flows jeder Domäne. Nach strukturellen Änderungen ausführen.
+- `npm test` führt alles aus: `npm run test:unit` (`test/*.test.js`, Node-Testrunner) und
+  `npm run smoke` (End-to-End gegen die HTTP-API).
+- `test/billing.test.js`: tabellengetriebene Tests der reinen Rechenlogik.
+- `test/timeEntryService.test.js`: Integrationstests gegen eine temporäre SQLite-DB (Pause,
+  eingefrorener Stundensatz, Grenze je Periode, Monatsende, Periode 22.–21., Fachregeln).
+- Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.

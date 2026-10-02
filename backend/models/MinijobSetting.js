@@ -1,5 +1,6 @@
 const { DataTypes, Op } = require('sequelize');
 const { sequelize } = require('../config/database');
+const { todayString } = require('../utils/clock');
 
 // MinijobSetting Model Definition
 const MinijobSetting = sequelize.define('MinijobSetting', {
@@ -87,7 +88,7 @@ const MinijobSetting = sequelize.define('MinijobSetting', {
 // Helper-Funktion: Aktuelle Minijob-Einstellung ermitteln
 MinijobSetting.getCurrentSetting = async function () {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayString();
 
     return await this.findOne({
       where: {
@@ -112,7 +113,7 @@ MinijobSetting.updateActiveStatus = async function () {
   const transaction = await sequelize.transaction();
 
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayString();
 
     // Alle als inaktiv markieren
     await this.update(
@@ -151,7 +152,7 @@ MinijobSetting.updateActiveStatus = async function () {
 
 // ✅ Instance Methods
 MinijobSetting.prototype.isCurrentlyActive = function () {
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayString();
   return this.validFrom <= today &&
     (this.validUntil === null || this.validUntil >= today);
 };

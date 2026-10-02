@@ -106,3 +106,15 @@ export function removeStorageItem(key: string): void {
   if (!isClient()) return
   localStorage.removeItem(key)
 }
+/**
+ * Lokales Kalenderdatum als YYYY-MM-DD.
+ * `date.toISOString().split('T')[0]` liefert das UTC-Datum – in Deutschland zwischen
+ * 0:00 und 1:00/2:00 Uhr noch "gestern" und bei `new Date(jahr, monat, 0)` (Monatsletzter,
+ * lokale Mitternacht) einen Tag zu früh.
+ */
+export function toLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}

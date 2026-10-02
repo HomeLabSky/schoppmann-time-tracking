@@ -48,7 +48,8 @@ standardmäßig **aus** (`ALLOW_REGISTRATION=false`).
 ## Tests
 
 ```bash
-cd backend  && npm run smoke              # End-to-End-Smoke-Test der API gegen temporäre DB
+cd backend  && npm test                   # Unit-/Integrationstests (node:test) + End-to-End-Smoke-Test der API
+cd backend  && npm run test:unit          # nur die Unit-/Integrationstests (Rechenlogik, Zeiterfassung)
 cd frontend && npx tsc --noEmit && npm run lint && npm run build
 ```
 
