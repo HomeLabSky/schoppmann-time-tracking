@@ -236,3 +236,24 @@ cd frontend && npm install && npx tsc --noEmit && npx eslint src && npm run buil
 ```
 
 Die drei Fachlogik-Fehler stammen aus einem eigenen Probe-Skript, das `TimeEntryService` gegen eine temporäre SQLite-Datei aufruft (nicht im Repo abgelegt). Falls gewünscht, überführe ich es in reguläre Tests.
+
+---
+
+## Status Phase 0 (umgesetzt, Branch `claude/phase0-hygiene`)
+
+| Punkt | Stand |
+|---|---|
+| S1 Produktions-Build | behoben: `next build` läuft (Typfehler gefixt, `/employee` leitet nur noch weiter) |
+| S2 Next.js | auf 15.5.27 angehoben; `npm audit` Frontend: 3 Funde (1 kritisch) → 2 (0 kritisch). Rest (`next`, `postcss`) nur mit Next 16 → Phase 3 |
+| S3 Lockfiles | eingecheckt (PR #2), CI nutzt `npm ci` |
+| S4 `dev-reset` | Endpunkt und kompletter Setup-Router entfernt; `NODE_ENV` ist standardmäßig `production` |
+| S5 Standardpasswörter | `create-first-admin` (2×), `reset-database` (2×) entfernt; Ersatz: `npm run admin:create`, `npm run user:reset-password` |
+| S6 Secret-Fallbacks | entfernt; Backend startet ohne `JWT_SECRET`/`JWT_REFRESH_SECRET` (≥ 32 Zeichen) nicht |
+| S7 Registrierung | standardmäßig aus (`ALLOW_REGISTRATION`), Domain-Liste konfigurierbar (`ALLOWED_EMAIL_DOMAINS`) statt fest verdrahtet inkl. `example.com`; Login-Seite blendet den Link aus |
+| S8 Info-Leck | `/health`, `/`, `/api/` ohne Versionen, Pfade, Speicher; `/api/version`, `/api/setup/*`, `/api/dev/*` entfernt |
+| S11 Proxy | `TRUST_PROXY` konfigurierbar |
+| S13 Passwort-Reset | CLI vorhanden; im Portal weiterhin über *Benutzer → Bearbeiten* |
+| Weitere | DB-Pfad relativ zu `backend/` statt Startverzeichnis; Request-Body-Limit 10 MB → 1 MB; Klartext-Passwort-Logging im Admin-Frontend entfernt; ungenutztes `axios` entfernt; 11 tote Funktionen entfernt; CI-Workflow ergänzt |
+| Smoke-Test | 44 Prüfungen grün (inkl. neuer Checks, dass entfernte Routen 404 liefern und Registrierung 403 ist) |
+
+Bewusst offen (Phase 1–3): S9 Tokens im `localStorage`, S10 Benutzerprüfung pro Request, S11 Konto-Sperre, S12 PII im Log, Fachlogik F1–F3, ESLint-Altlasten (`no-explicit-any` ist übergangsweise Warnung).

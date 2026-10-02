@@ -17,8 +17,20 @@ const { sendServiceError } = require('../utils/serviceErrors');
 
 const router = express.Router();
 
-// ✅ REGISTRIERUNG
+// ✅ REGISTRIERUNG (nur wenn ALLOW_REGISTRATION aktiviert ist; sonst legt ein Admin Konten an)
+const requireRegistrationEnabled = (req, res, next) => {
+  if (!config.allowRegistration) {
+    return res.status(403).json({
+      success: false,
+      error: 'Selbstregistrierung ist deaktiviert. Bitte wenden Sie sich an einen Administrator.',
+      code: 'REGISTRATION_DISABLED'
+    });
+  }
+  next();
+};
+
 router.post('/register',
+  requireRegistrationEnabled,
   ...validateRegistration,
   handleValidationErrors,
   async (req, res) => {

@@ -5,7 +5,7 @@
  * HTTP-Listeners und Prozess-Lifecycle (Graceful Shutdown, globale
  * Fehler-Handler). Der eigentliche App-Aufbau liegt in app.js.
  */
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const config = require('./config');
 const { initDatabase } = require('./models');
 const app = require('./app');
@@ -52,10 +52,6 @@ const startServer = async () => {
     console.log(`📡 Server: http://localhost:${config.port}`);
     console.log(`📊 Health: http://localhost:${config.port}/health`);
     console.log(`🔌 API: http://localhost:${config.port}/api/`);
-    if (config.nodeEnv === 'development') {
-      console.log(`🔧 API Routes: http://localhost:${config.port}/api/dev/routes`);
-      console.log(`🔧 Middleware: http://localhost:${config.port}/api/dev/middleware`);
-    }
     console.log(`🔒 Environment: ${config.nodeEnv}`);
     console.log(`📊 Database: ${dbConnected ? '✅ Connected' : '❌ Disconnected'}`);
     console.log(`📦 Models: ${dbConnected ? '✅ Loaded (User, MinijobSetting)' : '❌ Not Loaded'}`);
@@ -70,12 +66,7 @@ const startServer = async () => {
     console.log('🚀 ===================================');
     console.log('');
 
-    // Erste Admin-Erstellung Hinweis
-    if (config.nodeEnv === 'development') {
-      console.log('💡 TIPP: Ersten Admin erstellen mit:');
-      console.log(`   GET http://localhost:${config.port}/api/setup/create-first-admin`);
-      console.log('');
-    }
+    // Erster Admin: npm run admin:create (siehe README)
   });
 
   // Graceful Shutdown

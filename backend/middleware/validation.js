@@ -8,10 +8,10 @@ const validateRegistration = [
     .withMessage('Bitte eine gültige Email-Adresse eingeben')
     .normalizeEmail()
     .custom(async (email) => {
-      // Optional: Email-Domain Whitelist für Production
-      if (config.nodeEnv === 'production') {
-        const allowedDomains = ['schoppmann.de', 'example.com']; // Anpassen nach Bedarf
-        const domain = email.split('@')[1];
+      // Optionale Domain-Einschränkung über ALLOWED_EMAIL_DOMAINS (leer = alle erlaubt)
+      const allowedDomains = config.allowedEmailDomains;
+      if (allowedDomains.length > 0) {
+        const domain = String(email).split('@')[1];
         if (!allowedDomains.includes(domain)) {
           throw new Error('Email-Domain nicht erlaubt');
         }
@@ -206,36 +206,6 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// ✅ Custom validation helpers
-const customValidations = {
-  // Prüft ob Datum nicht in der Vergangenheit liegt
-  isNotPastDate: (value) => {
-    const today = new Date().toISOString().split('T')[0];
-    if (value < today) {
-      throw new Error('Datum darf nicht in der Vergangenheit liegen');
-    }
-    return true;
-  },
-
-  // Prüft ob End-Datum nach Start-Datum liegt
-  isAfterStartDate: (endDate, { req }) => {
-    if (req.body.validFrom && endDate <= req.body.validFrom) {
-      throw new Error('Enddatum muss nach dem Startdatum liegen');
-    }
-    return true;
-  },
-
-  // Email-Domain Validierung
-  isDomainAllowed: (email, allowedDomains = []) => {
-    if (allowedDomains.length === 0) return true;
-    const domain = email.split('@')[1];
-    if (!allowedDomains.includes(domain)) {
-      throw new Error(`Email-Domain ${domain} ist nicht erlaubt`);
-    }
-    return true;
-  }
-};
-
 // ✅ Sanitization Middleware (für zusätzliche Sicherheit)
 const sanitizeInput = (req, res, next) => {
   // Trim all string inputs
@@ -255,6 +225,5 @@ module.exports = {
   validateMinijobSetting,
   validateTimeEntry,
   handleValidationErrors,
-  customValidations,
   sanitizeInput
 };

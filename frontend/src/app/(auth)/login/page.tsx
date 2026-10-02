@@ -107,18 +107,24 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Register Link */}
-        <div className="mt-8 text-center">
-          <p className="text-gray-600 mb-2">
-            Noch kein Zugang?
+        {/* Register Link (nur wenn Selbstregistrierung aktiviert ist) */}
+        {process.env.NEXT_PUBLIC_ALLOW_REGISTRATION === 'true' ? (
+          <div className="mt-8 text-center">
+            <p className="text-gray-600 mb-2">
+              Noch kein Zugang?
+            </p>
+            <Link
+              href="/register"
+              className="text-slate-700 hover:text-slate-900 font-medium hover:underline"
+            >
+              Konto erstellen
+            </Link>
+          </div>
+        ) : (
+          <p className="mt-8 text-center text-sm text-gray-500">
+            Zugang erhalten Sie von Ihrem Administrator.
           </p>
-          <Link
-            href="/register"
-            className="text-slate-700 hover:text-slate-900 font-medium hover:underline"
-          >
-            Konto erstellen
-          </Link>
-        </div>
+        )}
 
         {/* Message */}
         {message && (

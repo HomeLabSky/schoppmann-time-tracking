@@ -50,7 +50,7 @@ utils/         Einheitliche Response-Helfer (responses.js) und zentrales
 | Mitarbeiter (Self-Service) | `routes/employee.js` (`/api/employee`) | `services/userService.js`, `services/minijobService.js` | `User`, `MinijobSetting` |
 | Administration | `routes/admin.js` (`/api/admin`) | `services/userService.js` | `User`, `MinijobSetting` |
 | Minijob-Grenzen | `routes/minijob.js` (`/api/admin/minijob`) | `services/minijobService.js` | `MinijobSetting` |
-| Ersteinrichtung | `routes/setup.js` (`/api/setup`) | `services/userService.js` | `User` |
+| Wartung (nur lokal, kein HTTP) | `scripts/create-admin.js`, `scripts/reset-password.js` (`npm run admin:create` / `user:reset-password`) | `models/` direkt | `User` |
 
 ## API-Vertrag (verbindlich)
 
