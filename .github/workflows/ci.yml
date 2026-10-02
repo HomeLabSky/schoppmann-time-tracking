@@ -22,8 +22,7 @@ jobs:
       - name: Unit-, Integrations- und Smoke-Tests (temporäre SQLite-DB)
         run: npm test
       - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
-        run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high || echo "::warning::npm audit meldet Funde (siehe Log)"
 
   frontend:
     runs-on: ubuntu-latest
@@ -45,5 +44,4 @@ jobs:
       - name: Produktions-Build
         run: npm run build
       - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
-        run: npm audit --omit=dev --audit-level=high
-        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high || echo "::warning::npm audit meldet Funde (siehe Log)"
