@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { authManager, useAuth } from '@/lib/auth'
+import { adminApi } from '@/lib/api'
+import { ACTION_LABELS } from '@/lib/auditLabels'
+import { formatDate, formatRelativeTime } from '@/lib/utils'
+import type { BackupStatus } from '@/types/audit'
 import type { 
   User, 
   MinijobSetting, 
@@ -43,6 +47,7 @@ export default function AdminDashboard() {
     systemStatus: 'online'
   })
   const [recentActivities, setRecentActivities] = useState<Activity[]>([])
+  const [backup, setBackup] = useState<BackupStatus | null>(null)
   const [message, setMessage] = useState<string>('')
   const [loading, setLoading] = useState<boolean>(true)
 
@@ -92,14 +97,27 @@ export default function AdminDashboard() {
         console.log('No current minijob setting found')
       }
 
-      // Mock recent activities (in real app, this would come from audit logs)
-      const mockActivities: Activity[] = [
-        { id: 1, action: 'Benutzer erstellt', target: 'Max Mustermann', time: '2 Stunden', type: 'user' },
-        { id: 2, action: 'Minijob-Limit aktualisiert', target: '600€', time: '1 Tag', type: 'minijob' },
-        { id: 3, action: 'Benutzer deaktiviert', target: 'test@example.com', time: '3 Tage', type: 'user' },
-        { id: 4, action: 'System-Backup erstellt', target: 'Vollständig', time: '1 Woche', type: 'system' }
-      ]
-      setRecentActivities(mockActivities)
+      // Letzte Aktivitäten aus dem Änderungsprotokoll
+      try {
+        const audit = await adminApi.getAuditLog({ limit: 5 })
+        setRecentActivities(audit.data.entries.map((entry) => ({
+          id: entry.id,
+          action: ACTION_LABELS[entry.action] ?? entry.action,
+          target: entry.actorEmail,
+          time: formatRelativeTime(entry.createdAt),
+          type: entry.entityType === 'MinijobSetting' ? 'minijob' : 'user'
+        })))
+      } catch {
+        setRecentActivities([])
+      }
+
+      // Zustand der Datensicherung
+      try {
+        const res = await adminApi.getBackupStatus()
+        setBackup(res.data)
+      } catch {
+        setBackup(null)
+      }
 
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
@@ -201,6 +219,20 @@ export default function AdminDashboard() {
             Hier ist eine Übersicht über Ihr System und die neuesten Aktivitäten.
           </p>
         </div>
+
+        {backup && (backup.state === 'error' || backup.state === 'warning') && (
+          <div
+            role="alert"
+            className={`mb-6 rounded-lg border p-4 text-sm ${
+              backup.state === 'error'
+                ? 'border-red-200 bg-red-50 text-red-800'
+                : 'border-yellow-200 bg-yellow-50 text-yellow-800'
+            }`}
+          >
+            <strong>{backup.state === 'error' ? 'Datensicherung gestört: ' : 'Hinweis zur Datensicherung: '}</strong>
+            {backup.message}
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -417,7 +449,7 @@ export default function AdminDashboard() {
                           {activity.target}
                         </div>
                         <div className="text-xs text-gray-400 mt-1">
-                          vor {activity.time}
+                          {activity.time}
                         </div>
                       </div>
                     </div>
@@ -425,10 +457,10 @@ export default function AdminDashboard() {
                 </div>
                 <div className="mt-6 pt-4 border-t border-gray-200">
                   <Link
-                    href="/admin/logs"
+                    href="/admin/audit"
                     className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                   >
-                    Alle Aktivitäten anzeigen →
+                    Gesamtes Protokoll anzeigen →
                   </Link>
                 </div>
               </div>
@@ -436,18 +468,39 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* System Status */}
+        {/* Datensicherung */}
         <div className="mt-8">
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900">System-Status</h3>
-                  <p className="text-sm text-gray-600">Alle Systeme funktionieren normal</p>
+                  <h3 className="text-lg font-semibold text-gray-900">Datensicherung</h3>
+                  <p className="text-sm text-gray-600">{backup ? backup.message : 'Der Sicherungsstatus konnte nicht geladen werden.'}</p>
+                  {backup?.lastSuccessAt && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      Letzte Sicherung: {formatDate(backup.lastSuccessAt.slice(0, 10))}{' '}
+                      {new Date(backup.lastSuccessAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr
+                      {backup.offsiteConfigured && backup.offsiteLastSuccessAt && (
+                        <> · NAS: {formatDate(backup.offsiteLastSuccessAt.slice(0, 10))}{' '}
+                        {new Date(backup.offsiteLastSuccessAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr</>
+                      )}
+                    </p>
+                  )}
                 </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                  <span className="text-sm font-medium text-gray-900">Online</span>
+                <div className="flex shrink-0 items-center space-x-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      backup?.state === 'ok' ? 'bg-green-500'
+                        : backup?.state === 'warning' ? 'bg-yellow-500'
+                          : backup?.state === 'error' ? 'bg-red-500' : 'bg-gray-400'
+                    }`}
+                    aria-hidden="true"
+                  ></div>
+                  <span className="text-sm font-medium text-gray-900">
+                    {backup?.state === 'ok' ? 'Aktuell'
+                      : backup?.state === 'warning' ? 'Hinweis'
+                        : backup?.state === 'error' ? 'Störung' : 'Unbekannt'}
+                  </span>
                 </div>
               </div>
             </div>

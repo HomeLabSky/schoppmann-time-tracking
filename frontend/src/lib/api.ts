@@ -14,7 +14,7 @@ import type {
   MinijobSetting,
   NewMinijobSetting
 } from '@/types/api'
-import type { AuditEntry, AuditQuery, Pagination, Timesheet, TimesheetPeriod } from '@/types/audit'
+import type { AuditEntry, AuditQuery, BackupStatus, Pagination, Timesheet, TimesheetPeriod } from '@/types/audit'
 
 // API Base URL
 import { API_BASE_URL } from './config'
@@ -306,6 +306,10 @@ export const adminApi = {
 
   reopenPeriod: (userId: number, month: string, reason: string): Promise<{ success: boolean, message: string }> =>
     apiClient.post(`/api/admin/timesheets/${userId}/reopen`, { month, reason }),
+
+  // Systemstatus: Datensicherung
+  getBackupStatus: (): Promise<{ success: boolean, data: BackupStatus, message: string }> =>
+    apiClient.get('/api/admin/system/backup'),
 
   // Änderungsprotokoll (nur lesend)
   getAuditLog: (params: AuditQuery = {}): Promise<{ success: boolean, data: { entries: AuditEntry[], pagination: Pagination }, message: string }> => {

@@ -12,7 +12,8 @@
     "user:reset-password": "node scripts/reset-password.js",
     "test:unit": "node --test \"test/**/*.test.js\"",
     "db:backup": "node scripts/backup-db.js",
-    "db:restore": "node scripts/restore-db.js"
+    "db:restore": "node scripts/restore-db.js",
+    "db:backup:loop": "node scripts/backup-loop.js"
   },
   "keywords": [],
   "author": "",

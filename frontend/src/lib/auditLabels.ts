@@ -1,0 +1,21 @@
+// Lesbare Bezeichnungen der Protokoll-Vorgänge (Änderungsprotokoll und Admin-Startseite)
+
+export const ACTION_LABELS: Record<string, string> = {
+  'time_entry.create': 'Zeiteintrag angelegt',
+  'time_entry.update': 'Zeiteintrag geändert',
+  'time_entry.delete': 'Zeiteintrag gelöscht',
+  'period.close': 'Periode abgeschlossen',
+  'period.reopen': 'Periode wieder geöffnet',
+  'user.create': 'Benutzer angelegt',
+  'user.update': 'Benutzer geändert',
+  'user.profile_update': 'Profil geändert',
+  'user.settings_update': 'Arbeitseinstellungen geändert',
+  'user.password_change': 'Passwort geändert',
+  'user.activate': 'Benutzer aktiviert',
+  'user.deactivate': 'Benutzer deaktiviert',
+  'user.delete': 'Benutzer gelöscht',
+  'minijob_setting.create': 'Minijob-Grenze angelegt',
+  'minijob_setting.update': 'Minijob-Grenze geändert',
+  'minijob_setting.delete': 'Minijob-Grenze gelöscht',
+  'minijob_setting.recalculate': 'Minijob-Zeiträume neu berechnet',
+}

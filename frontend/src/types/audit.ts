@@ -43,3 +43,16 @@ export interface AuditQuery {
   from?: string
   to?: string
 }
+
+export interface BackupStatus {
+  state: 'ok' | 'warning' | 'error' | 'unknown'
+  message: string
+  localAgeHours: number | null
+  offsiteAgeHours: number | null
+  offsiteConfigured: boolean
+  lastSuccessAt: string | null
+  offsiteLastSuccessAt: string | null
+  lastAttemptAt: string | null
+  lastFile: string | null
+  lastError: string | null
+}
