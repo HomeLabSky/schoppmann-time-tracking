@@ -10,6 +10,8 @@ const adminRoutes = require('./admin');
 const employeeRoutes = require('./employee');
 const minijobRoutes = require('./minijob');
 const timeTrackingRoutes = require('./timetracking');
+const timesheetRoutes = require('./timesheets');
+const auditRoutes = require('./audit');
 
 const router = express.Router();
 
@@ -40,6 +42,12 @@ router.use('/admin', adminAPI, adminRoutes);
 
 // ✅ MINIJOB ROUTES (Teil der Admin-Routes)
 router.use('/admin/minijob', adminAPI, minijobRoutes);
+
+// ✅ ZEITNACHWEISE & MONATSABSCHLUSS (Admin)
+router.use('/admin/timesheets', adminAPI, timesheetRoutes);
+
+// ✅ ÄNDERUNGSPROTOKOLL (Admin, nur lesend)
+router.use('/admin/audit', adminAPI, auditRoutes);
 
 // ✅ API Status Route (für Health Checks, ohne Details)
 router.get('/status', (req, res) => {

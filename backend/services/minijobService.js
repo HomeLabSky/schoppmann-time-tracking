@@ -1,6 +1,15 @@
 const { MinijobSetting, User, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const DateService = require('./dateService');
+const AuditService = require('./auditService');
+
+/** Für das Änderungsprotokoll: fachlich relevante Felder einer Minijob-Einstellung. */
+const settingSnapshot = (setting) => ({
+  monthlyLimit: Number(setting.monthlyLimit),
+  description: setting.description,
+  validFrom: setting.validFrom,
+  validUntil: setting.validUntil || null
+});
 
 /**
  * ✅ Minijob Service - Minijob-spezifische Business Logic
@@ -95,7 +104,7 @@ class MinijobService {
    * @param {number} createdBy - ID des erstellenden Admins
    * @returns {Promise<Object>} { setting, autoAdjustedSettings }
    */
-  static async createSetting(settingData, createdBy) {
+  static async createSetting(settingData, createdBy, actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -129,6 +138,15 @@ class MinijobService {
         createdBy
       }, { transaction });
 
+      await AuditService.record({
+        actor,
+        action: 'minijob_setting.create',
+        entityType: 'MinijobSetting',
+        entityId: newSetting.id,
+        after: settingSnapshot(newSetting),
+        meta: autoAdjustedSettings.length > 0 ? { autoAdjustedSettings } : null
+      }, { transaction });
+
       await transaction.commit();
 
       // Aktive Einstellungen aktualisieren
@@ -150,7 +168,7 @@ class MinijobService {
    * @param {Object} updateData - Update-Daten
    * @returns {Promise<Object>} Aktualisierte Einstellung
    */
-  static async updateSetting(settingId, updateData) {
+  static async updateSetting(settingId, updateData, actor) {
     try {
       const setting = await MinijobSetting.findByPk(settingId);
       if (!setting) {
@@ -168,12 +186,23 @@ class MinijobService {
       const fromDate = DateService.normalizeToDateString(validFrom);
       const untilDate = validUntil ? DateService.normalizeToDateString(validUntil) : null;
 
-      // Aktualisieren
-      await setting.update({
-        monthlyLimit: parseFloat(monthlyLimit),
-        description,
-        validFrom: fromDate,
-        validUntil: untilDate
+      // Aktualisieren (zusammen mit dem Protokolleintrag in einer Transaktion)
+      const before = settingSnapshot(setting);
+      await sequelize.transaction(async (transaction) => {
+        await setting.update({
+          monthlyLimit: parseFloat(monthlyLimit),
+          description,
+          validFrom: fromDate,
+          validUntil: untilDate
+        }, { transaction });
+        await AuditService.record({
+          actor,
+          action: 'minijob_setting.update',
+          entityType: 'MinijobSetting',
+          entityId: setting.id,
+          before,
+          after: settingSnapshot(setting)
+        }, { transaction });
       });
 
       // Aktive Einstellungen aktualisieren
@@ -190,7 +219,7 @@ class MinijobService {
    * @param {number} settingId - Einstellungs-ID
    * @returns {Promise<Object>} { deletedSetting, adjustedSettings }
    */
-  static async deleteSetting(settingId) {
+  static async deleteSetting(settingId, actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -216,7 +245,16 @@ class MinijobService {
         validUntil: settingToDelete.validUntil
       };
 
+      const before = settingSnapshot(settingToDelete);
       await settingToDelete.destroy({ transaction });
+      await AuditService.record({
+        actor,
+        action: 'minijob_setting.delete',
+        entityType: 'MinijobSetting',
+        entityId: deletedSettingData.id,
+        before,
+        meta: adjustedSettings.length > 0 ? { adjustedSettings } : null
+      }, { transaction });
       await transaction.commit();
 
       // Aktive Einstellungen aktualisieren
@@ -236,7 +274,7 @@ class MinijobService {
    * Alle Minijob-Zeiträume neu berechnen
    * @returns {Promise<Object>} { adjustedCount, adjustments }
    */
-  static async recalculateAllPeriods() {
+  static async recalculateAllPeriods(actor) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -279,6 +317,15 @@ class MinijobService {
             newValidUntil: newValidUntil || 'unbegrenzt'
           });
         }
+      }
+
+      if (adjustedCount > 0) {
+        await AuditService.record({
+          actor,
+          action: 'minijob_setting.recalculate',
+          entityType: 'MinijobSetting',
+          meta: { adjustedCount, adjustments }
+        }, { transaction });
       }
 
       await transaction.commit();

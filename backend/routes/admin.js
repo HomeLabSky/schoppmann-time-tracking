@@ -13,6 +13,9 @@ const { sendServiceError } = require('../utils/serviceErrors');
 
 const router = express.Router();
 
+// Auslöser für das Änderungsprotokoll
+const actorOf = (req) => ({ id: req.user.userId, email: req.user.email });
+
 // ✅ ALLE USER AUFLISTEN (nur Admin)
 router.get('/users', requireAdmin, async (req, res) => {
   try {
@@ -49,7 +52,7 @@ router.post('/users',
   async (req, res) => {
     try {
       const { email, password, name, role = 'mitarbeiter' } = req.body;
-      const user = await UserService.createUser({ email, password, name, role });
+      const user = await UserService.createUser({ email, password, name, role }, actorOf(req));
 
       console.log(`➕ Admin ${req.user.email} hat neuen User erstellt: ${user.email} (${user.role})`);
       res.status(201).json({ success: true, message: 'Benutzer erfolgreich erstellt', data: { user } });
@@ -66,7 +69,7 @@ router.put('/users/:id',
   handleValidationErrors,
   async (req, res) => {
     try {
-      const user = await UserService.adminUpdateUser(req.params.id, req.body);
+      const user = await UserService.adminUpdateUser(req.params.id, req.body, actorOf(req));
 
       console.log(`✏️ Admin ${req.user.email} hat User ${user.email} bearbeitet`);
       res.json({ success: true, message: 'Benutzer erfolgreich aktualisiert', data: { user } });
@@ -83,7 +86,7 @@ router.put('/users/:id/settings',
   handleValidationErrors,
   async (req, res) => {
     try {
-      const user = await UserService.adminUpdateUserSettings(req.params.id, req.body);
+      const user = await UserService.adminUpdateUserSettings(req.params.id, req.body, actorOf(req));
 
       console.log(`⚙️ Admin ${req.user.email} hat Einstellungen für ${user.email} aktualisiert`);
       res.json({ success: true, message: 'Einstellungen erfolgreich aktualisiert', data: { user } });
@@ -96,7 +99,7 @@ router.put('/users/:id/settings',
 // ✅ USER DEAKTIVIEREN/AKTIVIEREN (nur Admin)
 router.patch('/users/:id/toggle-status', requireAdmin, async (req, res) => {
   try {
-    const user = await UserService.toggleUserStatus(req.params.id, req.user.userId);
+    const user = await UserService.toggleUserStatus(req.params.id, actorOf(req));
 
     console.log(`🔄 Admin ${req.user.email} hat User ${user.email} ${user.isActive ? 'aktiviert' : 'deaktiviert'}`);
     res.json({
@@ -112,7 +115,7 @@ router.patch('/users/:id/toggle-status', requireAdmin, async (req, res) => {
 // ✅ USER LÖSCHEN (nur Admin)
 router.delete('/users/:id', requireAdmin, async (req, res) => {
   try {
-    const deletedUser = await UserService.deleteUser(req.params.id, req.user.userId);
+    const deletedUser = await UserService.deleteUser(req.params.id, actorOf(req));
 
     console.log(`🗑️ Admin ${req.user.email} hat User ${deletedUser.email} (${deletedUser.name}) gelöscht`);
     res.json({ success: true, message: 'Benutzer erfolgreich gelöscht', data: { deletedUser } });

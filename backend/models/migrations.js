@@ -54,8 +54,21 @@ const addHourlyRateSnapshot = async (sequelize) => {
   }
 };
 
+/**
+ * Das Änderungsprotokoll ist auch auf Datenbankebene schreibgeschützt: SQLite-Trigger
+ * brechen jedes UPDATE und DELETE auf AuditLogs ab (zusätzlich zu den Model-Hooks), auch
+ * bei direktem SQL-Zugriff. Für eine gewollte Bereinigung müssen die Trigger bewusst entfernt werden.
+ */
+const protectAuditLog = async (sequelize) => {
+  await sequelize.query(`CREATE TRIGGER IF NOT EXISTS auditlogs_no_update BEFORE UPDATE ON AuditLogs
+    BEGIN SELECT RAISE(ABORT, 'AuditLogs sind unveränderlich'); END`);
+  await sequelize.query(`CREATE TRIGGER IF NOT EXISTS auditlogs_no_delete BEFORE DELETE ON AuditLogs
+    BEGIN SELECT RAISE(ABORT, 'AuditLogs sind unveränderlich'); END`);
+};
+
 const runMigrations = async (sequelize) => {
   await addHourlyRateSnapshot(sequelize);
+  await protectAuditLog(sequelize);
 };
 
 module.exports = { runMigrations };

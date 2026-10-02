@@ -278,3 +278,23 @@ Bewusst offen (Phase 1–3): S9 Tokens im `localStorage`, S10 Benutzerprüfung p
 | Tests | 24 Unit-/Integrationstests (`npm run test:unit`) + 44 Smoke-Checks; per Mutation geprüft, dass jeder der alten Fehler einen Test rot färbt |
 
 Bewusst offen: Monatsabschluss/Änderungsprotokoll und mehrere Einträge pro Tag (Phase 2), Nachtschicht im Frontend-Formular (Phase 3), Bereinigung der Pausen-Altdaten (Entscheidung nötig, siehe PR).
+
+---
+
+## Status Änderungsprotokoll & Monatsabschluss (Branch `claude/phase2a-audit-closure`)
+
+Vorgezogener Teil von Phase 2, weil die Anwendung produktiv gehen soll und Arbeitszeitnachweise nachvollziehbar sein müssen.
+
+| Punkt | Stand |
+|---|---|
+| Änderungsprotokoll | `AuditLogs`: wer, wann, was, Vorher/Nachher; für Zeiteinträge, Abschlüsse, Benutzer (inkl. Passwortwechsel ohne Wert), Arbeitseinstellungen und Minijob-Grenzen |
+| Unveränderlich | Model-Hooks **und** SQLite-Trigger (auch gegen direktes SQL); in derselben Transaktion wie die Änderung |
+| Monatsabschluss | je Mitarbeiter und Periode; erst nach Periodenende, frühere Perioden mit Einträgen zuerst; Zahlen werden eingefroren |
+| Sperre | Anlegen/Ändern/Löschen in abgeschlossenen Perioden → `PERIOD_CLOSED` (409) |
+| Wiedereröffnen | nur Admin, Begründung Pflicht, nur jüngste abgeschlossene Periode; im Protokoll |
+| Konto löschen | blockiert, sobald Zeiteinträge oder Abschlüsse existieren (stattdessen deaktivieren) |
+| Oberfläche | neue Admin-Seiten *Zeitnachweise* und *Protokoll*; Mitarbeiter sehen "abgeschlossen" und gesperrte Aktionen |
+| Tests | 42 Unit-/Integrationstests, 57 Smoke-Checks; Mutationen (Sperre, Einfrieren, Reihenfolge, Geheimnisse) färben je einen Test rot |
+
+Bewusst offen: Admin-Korrekturen direkt an Einträgen (heute: Periode öffnen, Mitarbeiter korrigiert), Export/PDF des Abschlusses,
+Login-Ereignisse im Protokoll, Aufbewahrungs-/Löschfristen (DSGVO) – fachlich/rechtlich zu klären.

@@ -13,6 +13,9 @@ const { sendServiceError } = require('../utils/serviceErrors');
 
 const router = express.Router();
 
+// Auslöser für das Änderungsprotokoll
+const actorOf = (req) => ({ id: req.user.userId, email: req.user.email });
+
 // express-validator wandelt Datumsfelder per `.toDate()` in Date-Objekte um;
 // der Service erwartet YYYY-MM-DD-Strings → hier normalisieren.
 const toDateString = (value) =>
@@ -69,7 +72,8 @@ router.post('/settings',
     try {
       const { setting, autoAdjustedSettings } = await MinijobService.createSetting(
         normalizeSettingBody(req.body),
-        req.user.userId
+        req.user.userId,
+        actorOf(req)
       );
 
       console.log(`➕ Admin ${req.user.email} hat neue Minijob-Einstellung erstellt: ${setting.monthlyLimit}€ ab ${setting.validFrom}`);
@@ -92,7 +96,7 @@ router.put('/settings/:id',
   handleValidationErrors,
   async (req, res) => {
     try {
-      const setting = await MinijobService.updateSetting(req.params.id, normalizeSettingBody(req.body));
+      const setting = await MinijobService.updateSetting(req.params.id, normalizeSettingBody(req.body), actorOf(req));
 
       console.log(`✏️ Admin ${req.user.email} hat Minijob-Einstellung ${req.params.id} bearbeitet`);
       res.json({ success: true, message: 'Minijob-Einstellung erfolgreich aktualisiert', data: { setting } });
@@ -105,7 +109,7 @@ router.put('/settings/:id',
 // ✅ MINIJOB-EINSTELLUNG LÖSCHEN (nur Admin)
 router.delete('/settings/:id', requireAdmin, async (req, res) => {
   try {
-    const { deletedSetting, adjustedSettings } = await MinijobService.deleteSetting(req.params.id);
+    const { deletedSetting, adjustedSettings } = await MinijobService.deleteSetting(req.params.id, actorOf(req));
 
     console.log(`🗑️ Admin ${req.user.email} hat Minijob-Einstellung ${req.params.id} gelöscht`);
 
@@ -122,7 +126,7 @@ router.delete('/settings/:id', requireAdmin, async (req, res) => {
 // ✅ ALLE MINIJOB-ZEITRÄUME NEU BERECHNEN (nur Admin)
 router.post('/settings/recalculate-periods', requireAdmin, async (req, res) => {
   try {
-    const { adjustedCount, adjustments } = await MinijobService.recalculateAllPeriods();
+    const { adjustedCount, adjustments } = await MinijobService.recalculateAllPeriods(actorOf(req));
 
     console.log(`✅ Admin ${req.user.email} – Neuberechnung abgeschlossen: ${adjustedCount} Anpassungen`);
     res.json({

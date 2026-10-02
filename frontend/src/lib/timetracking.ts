@@ -16,6 +16,7 @@ export interface TimeRecord {
   totalHours: number
   earnings: number
   formattedEarnings: string
+  hourlyRate?: number
   createdAt: string
   updatedAt: string
 }
@@ -45,6 +46,7 @@ export interface BillingPeriod {
   startDate: string
   endDate: string
   isCurrent: boolean
+  isClosed?: boolean
 }
 
 export interface MonthlyTimeRecords {
@@ -57,7 +59,9 @@ export interface MonthlyTimeRecords {
     startDate: string
     endDate: string
     description: string
+    status?: 'open' | 'closed'
   }
+  closure?: { closedAt: string, periodStart: string, periodEnd: string } | null
 }
 
 export interface CreateTimeRecordRequest {
