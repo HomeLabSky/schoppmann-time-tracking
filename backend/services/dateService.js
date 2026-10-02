@@ -2,6 +2,8 @@
  * ✅ Date Service - Zentralisierte Datum/Zeit-Verwaltung
  * Enthält alle Datum-bezogenen Berechnungen und Utilities
  */
+const { todayString } = require('../utils/clock');
+
 class DateService {
     /**
      * Sichere Datums-Berechnung: Gibt das Datum einen Tag vor dem gegebenen Datum zurück
@@ -26,11 +28,11 @@ class DateService {
     }
 
     /**
-     * Heutiges Datum im Format YYYY-MM-DD
+     * Heutiges Datum (Europe/Berlin) im Format YYYY-MM-DD
      * @returns {string} Heutiges Datum
      */
     static getTodayString() {
-        return new Date().toISOString().split('T')[0];
+        return todayString();
     }
 
     /**

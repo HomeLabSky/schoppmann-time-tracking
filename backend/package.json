@@ -7,9 +7,10 @@
     "start": "node server.js",
     "build": "echo 'Backend build complete'",
     "smoke": "node scripts/smoke-test.js",
-    "test": "node scripts/smoke-test.js",
+    "test": "node --test test/ && node scripts/smoke-test.js",
     "admin:create": "node scripts/create-admin.js",
-    "user:reset-password": "node scripts/reset-password.js"
+    "user:reset-password": "node scripts/reset-password.js",
+    "test:unit": "node --test test/"
   },
   "keywords": [],
   "author": "",

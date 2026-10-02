@@ -257,3 +257,24 @@ Die drei Fachlogik-Fehler stammen aus einem eigenen Probe-Skript, das `TimeEntry
 | Smoke-Test | 44 Prüfungen grün (inkl. neuer Checks, dass entfernte Routen 404 liefern und Registrierung 403 ist) |
 
 Bewusst offen (Phase 1–3): S9 Tokens im `localStorage`, S10 Benutzerprüfung pro Request, S11 Konto-Sperre, S12 PII im Log, Fachlogik F1–F3, ESLint-Altlasten (`no-explicit-any` ist übergangsweise Warnung).
+
+---
+
+## Status Phase 1 (umgesetzt, Branch `claude/phase1-fachlogik`)
+
+| Punkt | Stand |
+|---|---|
+| F1 Pause | behoben: ausdrückliches `0` bleibt `0` (Anlegen = Bearbeiten); Standard 30 min nur ohne Angabe |
+| F2 Stundenlohn rückwirkend | behoben: Stundensatz wird pro Eintrag eingefroren (`hourlyRateCents`); Lohnänderung wirkt nur auf neue Einträge |
+| F3 Minijob-Grenze | behoben: je Periode gilt die am Periodenende gültige Grenze, auch für den Übertrag |
+| **Neu gefunden: Monatsletzter** | behoben: Einträge am 30./31. fehlten in der Kalendermonat-Ansicht (Zeitzonenfehler `new Date(y, m, 0).toISOString()` → Vortag) |
+| **Neu gefunden: Übertrag-Limit** | behoben: Übertrag brach nach 50 Monaten ab (jetzt 600) |
+| Geld in Cent | `utils/billing.js`: ganzzahlige Cent-Beträge, keine Fließkomma-Summen |
+| Performance | Übertrag mit 2 statt 1 Abfrage je Periode (N+1 entfernt) |
+| Regeln serverseitig | nicht in der Zukunft, höchstens 1 Monat zurück (nur beim Anlegen), 15 min – 12 h; Nachtschichten erlaubt |
+| Mass-Assignment | Einträge werden per Whitelist übernommen; ein Client kann `hourlyRateCents` nicht setzen |
+| „Heute“ in Berliner Zeit | Backend `utils/clock.js`, Frontend `toLocalDateString()` (6 Stellen mit UTC-Datum ersetzt) |
+| Migration | `models/migrations.js`: Spalte anlegen, Bestandseinträge mit aktuellem Stundenlohn versehen, vorher automatische DB-Sicherung; an einer Kopie der echten DB geprüft |
+| Tests | 24 Unit-/Integrationstests (`npm run test:unit`) + 44 Smoke-Checks; per Mutation geprüft, dass jeder der alten Fehler einen Test rot färbt |
+
+Bewusst offen: Monatsabschluss/Änderungsprotokoll und mehrere Einträge pro Tag (Phase 2), Nachtschicht im Frontend-Formular (Phase 3), Bereinigung der Pausen-Altdaten (Entscheidung nötig, siehe PR).

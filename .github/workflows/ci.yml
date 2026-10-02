@@ -19,8 +19,8 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - name: Smoke-Test (API gegen temporäre SQLite-DB)
-        run: npm run smoke
+      - name: Unit-, Integrations- und Smoke-Tests (temporäre SQLite-DB)
+        run: npm test
       - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
         run: npm audit --omit=dev --audit-level=high
         continue-on-error: true

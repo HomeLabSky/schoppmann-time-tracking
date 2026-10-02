@@ -9,6 +9,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth'
 import { TimeTrackingService } from '@/lib/timetracking'
+import { toLocalDateString } from '@/lib/utils'
 import type {
   TimeRecord,
   MonthlyTimeRecords,
@@ -32,7 +33,7 @@ export default function EmployeeDashboard() {
   const [availablePeriods, setAvailablePeriods] = useState<BillingPeriod[]>([])
 
   const [formData, setFormData] = useState<FormData>({
-    date: new Date().toISOString().split('T')[0],
+    date: toLocalDateString(),
     startTime: '09:00',
     endTime: '17:00',
     breakMinutes: 0,
@@ -126,7 +127,7 @@ export default function EmployeeDashboard() {
           month,
           monthName,
           startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-          endDate: new Date(year, month, 0).toISOString().split('T')[0],
+          endDate: toLocalDateString(new Date(year, month, 0)),
           isCurrent: i === 0
         })
       }
@@ -197,7 +198,7 @@ export default function EmployeeDashboard() {
 
   const resetForm = () => {
     setFormData({
-      date: new Date().toISOString().split('T')[0],
+      date: toLocalDateString(),
       startTime: '09:00',
       endTime: '17:00',
       breakMinutes: 0, // Pausenzeit deaktiviert
@@ -472,7 +473,7 @@ export default function EmployeeDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-slate-900">{record.workTime}</span>
-                      <span className="text-xs text-slate-500 block">{record.totalHours}</span>
+                      <span className="text-xs text-slate-500 block">{record.totalHours.toFixed(2).replace('.', ',')} Std.</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {record.formattedEarnings}

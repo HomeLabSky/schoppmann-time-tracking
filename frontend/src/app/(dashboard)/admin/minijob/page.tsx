@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { authManager, useAuth } from '@/lib/auth'
+import { toLocalDateString } from '@/lib/utils'
 
 // TypeScript Interfaces
 interface MinijobSetting {
@@ -325,7 +326,7 @@ export default function MinijobSettingsPage() {
   }
 
   const getStatusBadge = (setting: MinijobSetting) => {
-    const today = new Date().toISOString().split('T')[0]
+    const today = toLocalDateString()
 
     if (setting.isActive) {
       return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Aktiv</span>
@@ -522,7 +523,7 @@ export default function MinijobSettingsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
-                        {!setting.isActive && setting.validFrom > new Date().toISOString().split('T')[0] && (
+                        {!setting.isActive && setting.validFrom > toLocalDateString() && (
                           <button
                             onClick={() => deleteSetting(setting.id)}
                             className="text-red-600 hover:text-red-900 p-1.5 hover:bg-red-50 rounded transition-colors"
@@ -601,7 +602,7 @@ export default function MinijobSettingsPage() {
                   value={newSettingForm.validFrom}
                   onChange={(e) => setNewSettingForm({ ...newSettingForm, validFrom: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  min={new Date().toISOString().split('T')[0]}
+                  min={toLocalDateString()}
                   required
                 />
               </div>
