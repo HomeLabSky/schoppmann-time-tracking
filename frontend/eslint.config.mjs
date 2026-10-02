@@ -11,6 +11,15 @@ const compat = new FlatCompat({
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+  {
+    // Übergangsweise Warnungen statt Fehler: ~70 Altlasten in lib/ und types/.
+    // Werden mit dem Frontend-Umbau (Phase 3 im Modernisierungsbericht) behoben,
+    // danach wieder auf "error" stellen.
+    rules: {
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-empty-object-type": "warn",
+    },
+  },
 ];
 
 export default eslintConfig;

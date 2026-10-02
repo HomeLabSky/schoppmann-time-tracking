@@ -292,16 +292,6 @@ export const adminApi = {
 
   getMinijobStats: (): Promise<{ success: boolean, data: any, message: string }> =>
     apiClient.get('/api/admin/minijob/stats'),
-
-  // System
-  createFirstAdmin: (): Promise<{ success: boolean, data: any, message: string }> =>
-    apiClient.get('/api/admin/create-first-admin'),
-
-  resetDatabase: (): Promise<{ success: boolean, data: any, message: string }> =>
-    apiClient.post('/api/admin/reset-database'),
-
-  resetDatabaseConfirm: (confirmation: string): Promise<{ success: boolean, data: any, message: string }> =>
-    apiClient.post('/api/admin/reset-database-confirm', { confirmation }),
 }
 
 // ===== EMPLOYEE API - KORRIGIERTE ENDPUNKTE =====

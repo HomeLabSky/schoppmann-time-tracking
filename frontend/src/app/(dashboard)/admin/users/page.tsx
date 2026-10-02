@@ -194,10 +194,14 @@ export default function UsersPage() {
     setLoadingAction(true)
     setMessage('')
 
-    console.log('📝 Bearbeite Benutzer:', editingUser)
-
     // Bereinige die Daten - entferne leeres Passwort
-    const updateData = {
+    const updateData: {
+      name: string
+      email: string
+      role: 'admin' | 'mitarbeiter'
+      isActive: boolean
+      password?: string
+    } = {
       name: editingUser.name,
       email: editingUser.email,
       role: editingUser.role,
@@ -208,8 +212,6 @@ export default function UsersPage() {
     if (editingUser.password && editingUser.password.trim() !== '') {
       updateData.password = editingUser.password
     }
-
-    console.log('📦 Sende Daten:', updateData)
 
     try {
       const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/users/${editingUser.id}`, {
@@ -379,7 +381,7 @@ export default function UsersPage() {
                   setMessage(`🧪 Admin API: ${response.ok ? 'OK' : 'FEHLER'} - Status: ${response.status}`)
                 } catch (error) {
                   console.error('🧪 Admin API Test Fehler:', error)
-                  setMessage(`🧪 Admin API Fehler: ${error.message}`)
+                  setMessage(`🧪 Admin API Fehler: ${error instanceof Error ? error.message : String(error)}`)
                 }
               }}
               className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"

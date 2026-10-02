@@ -10,7 +10,7 @@
  * Der DB-Verbindungsstatus wird über `app.locals.dbConnected` bereitgestellt
  * und vom jeweiligen Starter (server.js / Test) gesetzt.
  */
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 const express = require('express');
 const config = require('./config');
 
@@ -19,6 +19,11 @@ const apiRoutes = require('./routes');
 
 const app = express();
 
+// Hinter einem Reverse-Proxy muss die echte Client-IP für Rate-Limits ermittelt werden.
+if (config.trustProxy !== false) {
+  app.set('trust proxy', config.trustProxy);
+}
+
 // Wird vom Starter (server.js) nach erfolgreicher DB-Initialisierung gesetzt.
 app.locals.dbConnected = false;
 
@@ -26,7 +31,7 @@ app.locals.dbConnected = false;
 app.use(basicSecurity);
 
 // ✅ Body Parser mit Größenlimit
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '1mb' }));
 
 // ✅ General Rate Limiting
 app.use(generalLimiter);
@@ -34,75 +39,18 @@ app.use(generalLimiter);
 // ✅ API Routes verwenden
 app.use('/api', apiRoutes);
 
-// ✅ Root Route
+// ✅ Root Route (öffentlich, ohne Interna)
 app.get('/', (req, res) => {
-  const dbConnected = req.app.locals.dbConnected;
-  res.json({
-    message: '🚀 Schoppmann Time Tracking Server',
-    version: '2.0.0',
-    environment: config.nodeEnv,
-    status: 'online',
-    timestamp: new Date().toISOString(),
-    database: {
-      connected: dbConnected,
-      dialect: config.database.dialect,
-      models: dbConnected ? ['User', 'MinijobSetting'] : []
-    },
-    api: {
-      version: '2.0.0',
-      baseUrl: '/api',
-      documentation: '/api/',
-      endpoints: {
-        auth: '/api/auth/*',
-        employee: '/api/employee/*',
-        admin: '/api/admin/*',
-        minijob: '/api/admin/minijob/*'
-      }
-    },
-    middleware: {
-      security: 'active',
-      auth: 'ready',
-      validation: 'ready',
-      rateLimit: 'active'
-    },
-    links: {
-      api: '/api/',
-      health: '/api/status',
-      version: '/api/version'
-    }
-  });
+  res.json({ message: 'Schoppmann Time Tracking Server', status: 'online' });
 });
 
-// ✅ Health Check Route
+// ✅ Health Check Route (öffentlich, ohne Versions-, Pfad- oder Speicherangaben)
 app.get('/health', (req, res) => {
   const dbConnected = req.app.locals.dbConnected;
-  res.json({
-    message: '✅ Schoppmann Time Tracking Server läuft!',
-    timestamp: new Date().toISOString(),
-    status: 'OK',
-    environment: config.nodeEnv,
-    uptime: Math.floor(process.uptime()),
-    memory: {
-      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024 * 100) / 100,
-      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100
-    },
-    version: {
-      api: '2.0.0',
-      express: require('express/package.json').version,
-      node: process.version
-    },
-    database: {
-      dialect: config.database.dialect,
-      storage: config.database.storage,
-      connected: dbConnected,
-      models: dbConnected ? ['User', 'MinijobSetting'] : []
-    },
-    security: {
-      jwtConfigured: !!config.jwt.secret,
-      corsOrigins: config.cors.origin.length,
-      helmet: true,
-      rateLimiting: true
-    }
+  res.status(dbConnected ? 200 : 503).json({
+    status: dbConnected ? 'OK' : 'DEGRADED',
+    database: dbConnected ? 'connected' : 'disconnected',
+    uptime: Math.floor(process.uptime())
   });
 });
 
@@ -111,22 +59,7 @@ app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
     error: 'Route nicht gefunden',
-    code: 'ROUTE_NOT_FOUND',
-    path: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString(),
-    availableRoutes: {
-      root: '/',
-      health: '/health',
-      api: '/api/',
-      endpoints: {
-        auth: '/api/auth/*',
-        employee: '/api/employee/*',
-        admin: '/api/admin/*',
-        minijob: '/api/admin/minijob/*'
-      }
-    },
-    suggestion: 'Überprüfen Sie die verfügbaren Endpunkte unter /api/'
+    code: 'ROUTE_NOT_FOUND'
   });
 });
 
@@ -141,6 +74,16 @@ app.use((error, req, res, next) => {
       error: 'Rate Limit überschritten',
       code: 'RATE_LIMIT_EXCEEDED',
       retryAfter: error.retryAfter,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // Ungültiges JSON im Request-Body
+  if (error.type === 'entity.parse.failed') {
+    return res.status(400).json({
+      success: false,
+      error: 'Ungültiger Request-Body',
+      code: 'INVALID_JSON',
       timestamp: new Date().toISOString()
     });
   }

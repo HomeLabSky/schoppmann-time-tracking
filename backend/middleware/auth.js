@@ -116,39 +116,8 @@ const requireEmployee = (req, res, next) => {
   });
 };
 
-// ✅ Optional: JWT Token extrahieren (ohne Validierung)
-const extractTokenInfo = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  
-  if (token) {
-    try {
-      const decoded = jwt.decode(token);
-      req.tokenInfo = decoded;
-    } catch (error) {
-      // Token ungültig, aber kein Fehler werfen
-      req.tokenInfo = null;
-    }
-  }
-  
-  next();
-};
-
-// ✅ Development-only: Auth-Debug Middleware
-const debugAuth = (req, res, next) => {
-  if (config.nodeEnv === 'development') {
-    const authHeader = req.headers['authorization'];
-    console.log(`🔍 Auth Debug: ${req.method} ${req.path}`);
-    console.log(`🔍 Token: ${authHeader ? 'Present' : 'Missing'}`);
-    console.log(`🔍 User: ${req.user ? `${req.user.email} (${req.user.role})` : 'Not authenticated'}`);
-  }
-  next();
-};
-
 module.exports = { 
   authenticateToken, 
   requireAdmin, 
-  requireEmployee,
-  extractTokenInfo,
-  debugAuth
+  requireEmployee
 };

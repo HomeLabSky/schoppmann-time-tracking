@@ -1,76 +1,91 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ quiet: true });
 
-// Validation Helper
-const requireEnv = (key, defaultValue = null) => {
-  const value = process.env[key] || defaultValue;
-  if (!value && defaultValue === null) {
-    throw new Error(`❌ Environment variable ${key} ist erforderlich`);
+/**
+ * Zentrale Konfiguration.
+ *
+ * Bewusst OHNE Fallback-Geheimnisse: fehlen JWT_SECRET / JWT_REFRESH_SECRET,
+ * startet das Backend nicht. NODE_ENV ist standardmäßig "production", damit
+ * ein vergessener Eintrag nie Entwicklungsfunktionen freischaltet.
+ */
+
+const nodeEnv = process.env.NODE_ENV || 'production';
+
+const requireSecret = (key) => {
+  const value = process.env[key];
+  if (!value || value.length < 32) {
+    throw new Error(
+      `❌ ${key} fehlt oder ist kürzer als 32 Zeichen. ` +
+      `In backend/.env setzen (Vorlage: backend/.env.example). ` +
+      `Erzeugen z. B. mit: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+    );
   }
   return value;
 };
 
-// Sichere JWT Secret Validierung
-const validateJWTSecret = (secret, name) => {
-  if (!secret || secret.length < 32) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(`❌ ${name} muss mindestens 32 Zeichen haben (Production)`);
-    } else {
-      console.warn(`⚠️ ${name} sollte stärker sein (Development OK)`);
-    }
-  }
-  return secret;
-};
+const asBool = (value, defaultValue = false) =>
+  value === undefined ? defaultValue : ['true', '1', 'yes'].includes(String(value).toLowerCase());
+
+const asList = (value) =>
+  value ? value.split(',').map((s) => s.trim()).filter(Boolean) : [];
+
+// Relative DB-Pfade beziehen sich auf den backend-Ordner, nicht auf das
+// aktuelle Arbeitsverzeichnis – sonst entsteht beim Start aus einem anderen
+// Ordner unbemerkt eine neue, leere Datenbank.
+const resolveStorage = (storage) =>
+  storage === ':memory:' ? storage : path.resolve(__dirname, '..', storage);
 
 const config = {
   // Server
   port: parseInt(process.env.PORT) || 5000,
-  nodeEnv: process.env.NODE_ENV || 'development',
-  
+  nodeEnv,
+  // Hinter einem Reverse-Proxy (nginx, Traefik …) auf die Anzahl Proxys setzen,
+  // damit Rate-Limits die echte Client-IP verwenden.
+  trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY) : false,
+
   // JWT Configuration
   jwt: {
-    secret: validateJWTSecret(
-      requireEnv('JWT_SECRET', 'dev_fallback_secret_not_for_production'), 
-      'JWT_SECRET'
-    ),
-    refreshSecret: validateJWTSecret(
-      requireEnv('JWT_REFRESH_SECRET', 'dev_fallback_refresh_not_for_production'), 
-      'JWT_REFRESH_SECRET'
-    ),
+    secret: requireSecret('JWT_SECRET'),
+    refreshSecret: requireSecret('JWT_REFRESH_SECRET'),
     expiresIn: '15m',
     refreshExpiresIn: '7d'
   },
-  
+
   // Database
   database: {
     dialect: process.env.DB_DIALECT || 'sqlite',
-    storage: process.env.DB_STORAGE || './database/timetracking.db',
+    storage: resolveStorage(process.env.DB_STORAGE || './database/timetracking.db'),
     logging: process.env.DB_LOGGING === 'true' || false
   },
-  
+
   // CORS
   cors: {
-    origin: process.env.CORS_ORIGIN ? 
-      process.env.CORS_ORIGIN.split(',') : 
+    origin: process.env.CORS_ORIGIN ?
+      process.env.CORS_ORIGIN.split(',') :
       ['http://localhost:3000'],
     credentials: true
   },
-  
+
+  // Selbstregistrierung (Standard: aus – Konten legt ein Admin an)
+  allowRegistration: asBool(process.env.ALLOW_REGISTRATION, false),
+  // Optional: nur diese E-Mail-Domains zulassen (leer = keine Einschränkung)
+  allowedEmailDomains: asList(process.env.ALLOWED_EMAIL_DOMAINS),
+
   // Rate Limiting
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
     general: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
     login: parseInt(process.env.RATE_LIMIT_LOGIN_MAX) || 5
   },
-  
+
   // Logging
   logLevel: process.env.LOG_LEVEL || 'info'
 };
 
-// Development Info
+// Development Info (keine Secret-Längen oder -Werte ausgeben)
 if (config.nodeEnv === 'development') {
   console.log('🔧 Development Configuration loaded');
   console.log(`📊 Database: ${config.database.dialect} (${config.database.storage})`);
-  console.log(`🔐 JWT Secrets: ${config.jwt.secret.length} / ${config.jwt.refreshSecret.length} chars`);
 }
 
 module.exports = config;

@@ -21,9 +21,15 @@ process.env.DB_STORAGE = dbFile;
 process.env.DB_LOGGING = 'false';
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'smoke_test_jwt_secret_min_32_chars_long_value';
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'smoke_test_refresh_secret_min_32_chars_long_value';
+// Selbstregistrierung ist produktiv standardmäßig aus; der Test schaltet sie gezielt ein.
+process.env.ALLOW_REGISTRATION = 'true';
 
 const app = require('../app');
-const { initDatabase, sequelize } = require('../models');
+const config = require('../config');
+const { initDatabase, sequelize, User } = require('../models');
+
+const ADMIN_EMAIL = 'smoke.admin@schoppmann.de';
+const ADMIN_PASSWORD = 'SmokeAdmin1x';
 
 let passed = 0;
 let failed = 0;
@@ -69,10 +75,18 @@ async function main() {
     const apiInfo = await api('GET', '/api/');
     check('GET /api/ liefert version', apiInfo.json && apiInfo.json.version === '2.0.0', apiInfo.json);
 
-    // ---- Setup: erster Admin ----
-    console.log('\n[Setup]');
-    const firstAdmin = await api('GET', '/api/setup/create-first-admin');
-    check('Setup erster Admin erstellt', firstAdmin.json && firstAdmin.json.success === true, firstAdmin.json);
+    // ---- Entfernte Wartungs-/Setup-Routen dürfen nicht mehr erreichbar sein ----
+    console.log('\n[Sicherheit]');
+    const gone1 = await api('GET', '/api/setup/create-first-admin');
+    check('GET /api/setup/create-first-admin entfernt (404)', gone1.status === 404, gone1.status);
+    const gone2 = await api('POST', '/api/setup/dev-reset');
+    check('POST /api/setup/dev-reset entfernt (404)', gone2.status === 404, gone2.status);
+    const gone3 = await api('GET', '/api/version');
+    check('GET /api/version entfernt (404)', gone3.status === 404, gone3.status);
+    check('GET /health ohne Versions-/Pfad-Details', health.json && health.json.version === undefined && health.json.database?.storage === undefined, health.json);
+
+    // Der erste Admin entsteht per CLI (npm run admin:create) – hier direkt über das Model.
+    await User.create({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD, name: 'Smoke Admin', role: 'admin', isActive: true });
 
     // ---- Auth: Mitarbeiter registrieren + login ----
     console.log('\n[Auth]');
@@ -92,6 +106,11 @@ async function main() {
     check('Profil mit Token 200', profile.status === 200 && profile.json?.data?.user?.email === empCreds.email, profile.json);
 
     // Fehlerpfade (Vertrag: Status + code)
+    config.allowRegistration = false;
+    const regOff = await api('POST', '/api/auth/register', { body: { ...empCreds, email: 'nope@schoppmann.de' } });
+    check('Registrierung deaktiviert → 403 REGISTRATION_DISABLED', regOff.status === 403 && regOff.json?.code === 'REGISTRATION_DISABLED', regOff.json);
+    config.allowRegistration = true;
+
     const dupReg = await api('POST', '/api/auth/register', { body: empCreds });
     check('Doppelte Registrierung 409 EMAIL_EXISTS', dupReg.status === 409 && dupReg.json?.code === 'EMAIL_EXISTS', dupReg.json);
     const badLogin = await api('POST', '/api/auth/login', { body: { email: empCreds.email, password: 'Falsch123' } });
@@ -146,7 +165,7 @@ async function main() {
 
     // ---- Admin-Routen ----
     console.log('\n[Admin]');
-    const adminLogin = await api('POST', '/api/auth/login', { body: { email: 'admin@schoppmann.de', password: 'Admin123!' } });
+    const adminLogin = await api('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
     check('Admin-Login 200', adminLogin.status === 200 && adminLogin.json?.data?.user?.role === 'admin', adminLogin.json?.data?.user);
     const adminToken = adminLogin.json?.data?.accessToken;
 

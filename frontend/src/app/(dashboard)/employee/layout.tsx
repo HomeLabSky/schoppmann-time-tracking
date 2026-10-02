@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
+import type { User } from '@/types/api'
 
 export default function EmployeeLayout({
   children,
@@ -12,7 +13,7 @@ export default function EmployeeLayout({
 }) {
   const router = useRouter()
   const { logout } = useAuth()
-  const [currentUser, setCurrentUser] = useState(null)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

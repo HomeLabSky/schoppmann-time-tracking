@@ -63,29 +63,6 @@ const requestId = (req, res, next) => {
   next();
 };
 
-// ✅ IP Whitelist Middleware (optional, für Production)
-const ipWhitelist = (allowedIPs = []) => {
-  return (req, res, next) => {
-    if (config.nodeEnv !== 'production' || allowedIPs.length === 0) {
-      return next(); // In Development oder ohne Whitelist durchlassen
-    }
-    
-    const clientIP = req.ip || req.connection.remoteAddress;
-    
-    if (allowedIPs.includes(clientIP)) {
-      next();
-    } else {
-      console.log(`🚫 IP blocked: ${clientIP}`);
-      res.status(403).json({
-        success: false,
-        error: 'IP-Adresse nicht autorisiert',
-        code: 'IP_NOT_ALLOWED',
-        timestamp: new Date().toISOString()
-      });
-    }
-  };
-};
-
 // ✅ Content-Type Validation Middleware
 const validateContentType = (req, res, next) => {
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
@@ -105,29 +82,6 @@ const validateContentType = (req, res, next) => {
   next();
 };
 
-// ✅ Request Size Limiting
-const requestSizeLimit = (limit = '10mb') => {
-  return (req, res, next) => {
-    const contentLength = req.get('Content-Length');
-    
-    if (contentLength) {
-      const maxBytes = parseSize(limit);
-      if (parseInt(contentLength) > maxBytes) {
-        return res.status(413).json({
-          success: false,
-          error: `Request zu groß. Maximum: ${limit}`,
-          code: 'PAYLOAD_TOO_LARGE',
-          maxSize: limit,
-          receivedSize: formatBytes(parseInt(contentLength)),
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-    
-    next();
-  };
-};
-
 // ✅ Security Headers Middleware
 const securityHeaders = (req, res, next) => {
   // Zusätzliche Security Headers
@@ -143,40 +97,11 @@ const securityHeaders = (req, res, next) => {
   next();
 };
 
-// ✅ Development Security Override
-const developmentSecurity = (req, res, next) => {
-  if (config.nodeEnv === 'development') {
-    // In Development weniger strenge Sicherheit
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    console.log(`🔓 Development: Relaxed security for ${req.path}`);
-  }
-  next();
-};
-
-// Helper Functions
-const parseSize = (size) => {
-  const units = { b: 1, kb: 1024, mb: 1024 * 1024, gb: 1024 * 1024 * 1024 };
-  const match = size.toString().match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)$/i);
-  if (!match) return 10 * 1024 * 1024; // Default 10MB
-  return Math.floor(parseFloat(match[1]) * units[match[2].toLowerCase()]);
-};
-
-const formatBytes = (bytes) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
 module.exports = {
   corsMiddleware,
   helmetMiddleware,
   requestId,
-  ipWhitelist,
   validateContentType,
-  requestSizeLimit,
   securityHeaders,
-  developmentSecurity,
   corsOptions
 };

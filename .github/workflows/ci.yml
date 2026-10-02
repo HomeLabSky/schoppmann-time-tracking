@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Smoke-Test (API gegen temporäre SQLite-DB)
+        run: npm run smoke
+      - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Produktions-Build
+        run: npm run build
+      - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true

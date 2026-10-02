@@ -2,12 +2,10 @@
  * Admin-Routen (/api/admin) – nur für Admins.
  *
  * User-Verwaltung (CRUD, Status, Statistiken) delegiert an UserService.
- * Die Ops-Routen (ersten Admin anlegen, Datenbank-Reset) greifen bewusst
- * direkt auf die Models zu – seltene, klar abgegrenzte Wartungsaktionen.
+ * Wartungsaktionen (ersten Admin anlegen, Passwort zurücksetzen) laufen bewusst
+ * NICHT über HTTP, sondern als CLI-Skripte (npm run admin:create / user:reset-password).
  */
 const express = require('express');
-const { Op } = require('sequelize');
-const { User, MinijobSetting } = require('../models');
 const UserService = require('../services/userService');
 const { validateRegistration, validateUserUpdate, validateUserSettings, handleValidationErrors } = require('../middleware/validation');
 const { requireAdmin } = require('../middleware/auth');
@@ -132,139 +130,6 @@ router.get('/stats/users', requireAdmin, async (req, res) => {
     res.json({ success: true, message: 'User-Statistiken erfolgreich geladen', data: stats });
   } catch (error) {
     sendServiceError(res, error, { status: 500, code: 'USER_STATS_ERROR', error: 'User-Statistiken konnten nicht geladen werden' });
-  }
-});
-
-// ============================================================================
-// Ops-/Wartungsrouten – direkter Model-Zugriff bewusst beibehalten.
-// ============================================================================
-
-// ✅ ERSTEN ADMIN ERSTELLEN (Legacy; öffentlicher Weg: /api/setup/create-first-admin)
-router.get('/create-first-admin', async (req, res) => {
-  try {
-    const existingAdmin = await User.findOne({ where: { role: 'admin' } });
-    if (existingAdmin) {
-      return res.status(400).json({
-        success: false,
-        error: 'Admin bereits vorhanden',
-        code: 'ADMIN_EXISTS',
-        data: { existingAdmin: { email: existingAdmin.email, name: existingAdmin.name, role: existingAdmin.role } }
-      });
-    }
-
-    const admin = await User.create({
-      email: 'admin@schoppmann.de',
-      password: 'Admin123!',
-      name: 'Administrator',
-      role: 'admin',
-      isActive: true
-    });
-
-    console.log('🔑 Erster Admin wurde erstellt!');
-    res.json({
-      success: true,
-      message: 'Erster Admin erfolgreich erstellt',
-      data: {
-        admin: admin.toSafeJSON(),
-        loginDaten: { email: 'admin@schoppmann.de', passwort: 'Admin123!' }
-      }
-    });
-  } catch (error) {
-    console.error('Fehler beim Erstellen des Admins:', error);
-    res.status(500).json({ success: false, error: 'Admin konnte nicht erstellt werden', code: 'ADMIN_CREATE_ERROR' });
-  }
-});
-
-// ✅ DATABASE RESET (nur Admin) - VORSICHT!
-router.post('/reset-database', requireAdmin, async (req, res) => {
-  try {
-    console.log(`🔄 Admin ${req.user.email} startet Database Reset...`);
-
-    await MinijobSetting.destroy({ where: {} });
-    await User.destroy({ where: { id: { [Op.ne]: req.user.userId } } });
-
-    const currentAdmin = await User.findByPk(req.user.userId);
-    if (currentAdmin) {
-      await currentAdmin.update({
-        stundenlohn: 12.00,
-        abrechnungStart: 1,
-        abrechnungEnde: 31,
-        lohnzettelEmail: null
-      });
-    }
-
-    const standardMinijobSetting = await MinijobSetting.create({
-      monthlyLimit: 538.00,
-      description: 'Standard Minijob-Grenze (Stand 2024)',
-      validFrom: '2024-01-01',
-      validUntil: null,
-      createdBy: req.user.userId
-    });
-
-    await MinijobSetting.updateActiveStatus();
-
-    console.log(`🎉 Database Reset abgeschlossen von Admin ${req.user.email}`);
-    res.json({
-      success: true,
-      message: 'Datenbank erfolgreich zurückgesetzt',
-      data: {
-        adminBeibehalten: { id: currentAdmin?.id, email: currentAdmin?.email, name: currentAdmin?.name },
-        standardMinijobSetting: { limit: standardMinijobSetting.monthlyLimit, description: standardMinijobSetting.description },
-        timestamp: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('❌ Fehler beim Database Reset:', error);
-    res.status(500).json({ success: false, error: 'Database Reset fehlgeschlagen', code: 'DATABASE_RESET_ERROR', details: error.message });
-  }
-});
-
-// ✅ SICHERE DATABASE RESET ROUTE MIT BESTÄTIGUNG
-router.post('/reset-database-confirm', requireAdmin, async (req, res) => {
-  const { confirmation } = req.body;
-
-  if (confirmation !== 'RESET_ALL_DATA_CONFIRM') {
-    return res.status(400).json({
-      success: false,
-      error: 'Bestätigung erforderlich',
-      code: 'CONFIRMATION_REQUIRED',
-      data: { requiredConfirmation: 'RESET_ALL_DATA_CONFIRM' }
-    });
-  }
-
-  try {
-    console.log(`🔄 BESTÄTIGTER Database Reset von Admin ${req.user.email}`);
-
-    await MinijobSetting.destroy({ where: {} });
-    await User.destroy({ where: {} });
-
-    const newAdmin = await User.create({
-      email: 'admin@schoppmann.de',
-      password: 'Admin123!',
-      name: 'Administrator',
-      role: 'admin',
-      isActive: true
-    });
-
-    await MinijobSetting.create({
-      monthlyLimit: 538.00,
-      description: 'Standard Minijob-Grenze (Stand 2024)',
-      validFrom: '2024-01-01',
-      validUntil: null,
-      createdBy: newAdmin.id
-    });
-
-    await MinijobSetting.updateActiveStatus();
-
-    console.log('🎉 Kompletter Database Reset mit neuem Admin abgeschlossen');
-    res.json({
-      success: true,
-      message: 'Datenbank komplett zurückgesetzt - Bitte erneut einloggen',
-      data: { newAdminCredentials: { email: 'admin@schoppmann.de', password: 'Admin123!' } }
-    });
-  } catch (error) {
-    console.error('❌ Fehler beim kompletten Reset:', error);
-    res.status(500).json({ success: false, error: 'Reset fehlgeschlagen', code: 'COMPLETE_RESET_ERROR' });
   }
 });
 
