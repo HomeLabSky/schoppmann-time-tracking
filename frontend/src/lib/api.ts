@@ -17,7 +17,7 @@ import type {
 import type { AuditEntry, AuditQuery, Pagination, Timesheet, TimesheetPeriod } from '@/types/audit'
 
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+import { API_BASE_URL } from './config'
 
 // Token Management
 class TokenManager {

@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react'
 import { authManager, useAuth } from '@/lib/auth'
+import { API_BASE_URL } from '@/lib/config'
 
 // TypeScript Interfaces
 interface User {
@@ -91,7 +92,7 @@ export default function UsersPage() {
     console.log('🔍 Starte Benutzer-Laden...')
     
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/users')
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`)
       
       console.log('📡 Response Status:', response.status)
       console.log('📡 Response OK:', response.ok)
@@ -130,7 +131,7 @@ export default function UsersPage() {
     setMessage('')
     
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/users', {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -214,7 +215,7 @@ export default function UsersPage() {
     }
 
     try {
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/users/${editingUser.id}`, {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users/${editingUser.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -263,7 +264,7 @@ export default function UsersPage() {
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/users/${userSettings.id}/settings`, {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users/${userSettings.id}/settings`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -298,7 +299,7 @@ export default function UsersPage() {
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/users/${userId}/toggle-status`, {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users/${userId}/toggle-status`, {
         method: 'PATCH'
       })
 
@@ -375,7 +376,7 @@ export default function UsersPage() {
               onClick={async () => {
                 console.log('🧪 Test Admin API-Verbindung...')
                 try {
-                  const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/users')
+                  const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`)
                   const data = await response.json()
                   console.log('🧪 Admin API Test:', { status: response.status, data })
                   setMessage(`🧪 Admin API: ${response.ok ? 'OK' : 'FEHLER'} - Status: ${response.status}`)
