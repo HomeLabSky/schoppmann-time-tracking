@@ -59,13 +59,20 @@ jobs:
         working-directory: deploy
         env:
           DOMAIN: zeit.example.de
+          NAS_BACKUP_DIR: /mnt/nas-test
           JWT_SECRET: ${{ env.TEST_JWT_SECRET }}
           JWT_REFRESH_SECRET: ${{ env.TEST_JWT_REFRESH }}
         run: docker compose config --quiet
 
-      - name: Caddyfile prüfen
+      - name: Caddyfile prüfen (interne CA, Standard)
         run: >
           docker run --rm -e DOMAIN=zeit.example.de
+          -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2 caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Caddyfile prüfen (mit E-Mail für Let's Encrypt)
+        run: >
+          docker run --rm -e DOMAIN=zeit.example.de -e TLS_MODE=admin@example.de
           -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
           caddy:2 caddy validate --config /etc/caddy/Caddyfile
 
@@ -77,7 +84,10 @@ jobs:
 
       - name: Images starten und prüfen
         run: |
+          mkdir -p "$PWD/nas-test" && chmod 777 "$PWD/nas-test"
+          touch "$PWD/nas-test/.zeiterfassung-offsite" && chmod 666 "$PWD/nas-test/.zeiterfassung-offsite"
           docker run -d --name be -p 5000:5000 \
+            -v "$PWD/nas-test:/nas" -e OFFSITE_DIR=/nas -e BACKUP_DIR=/backups \
             -e JWT_SECRET="$TEST_JWT_SECRET" -e JWT_REFRESH_SECRET="$TEST_JWT_REFRESH" zeit-backend
           docker run -d --name fe -p 3000:3000 zeit-frontend
           for i in $(seq 1 30); do curl -fs http://localhost:5000/health && break; sleep 2; done
@@ -85,11 +95,29 @@ jobs:
           curl -fs -o /dev/null http://localhost:3000/login
           echo "Backend- und Frontend-Container antworten"
 
-      - name: Admin anlegen und Sicherung im Container
+      - name: Admin anlegen, Sicherung auf simuliertes NAS, Status
         run: |
           docker exec be node scripts/create-admin.js --email=ci@example.de --name=CI --generate
           docker exec be node scripts/backup-db.js
-          docker exec be ls /backups
+          echo "--- Inhalt des simulierten NAS:"; ls -la nas-test
+          ls nas-test | grep -q '^timetracking-.*\.db$'
+          docker exec be node scripts/backup-healthcheck.js
+
+      - name: NAS nicht eingebunden → Fehler wird erkannt (Markierungsdatei fehlt)
+        run: |
+          rm nas-test/.zeiterfassung-offsite
+          if docker exec be node scripts/backup-db.js; then
+            echo "FEHLER: Sicherung meldete Erfolg, obwohl das NAS nicht eingebunden war"; exit 1
+          fi
+          # die lokale Sicherung bleibt erhalten, der Zustand ist aber nicht mehr gesund oder zumindest gewarnt
+          docker exec be sh -c 'cat /backups/status.json'
+          docker exec be sh -c 'grep -q "\"ok\": false" /backups/status.json'
+
+      - name: Backup-Dienst läuft als Dauerprozess
+        run: |
+          docker run --rm -v "$PWD/nas-test:/nas" -e OFFSITE_DIR=/nas -e BACKUP_DIR=/backups -e TZ=Europe/Berlin zeit-backend \
+            timeout 20 node scripts/backup-loop.js 2>&1 | tee loop.log || true
+          grep -q "Nächste Sicherung um 02:30" loop.log
 
       - name: Container-Logs bei Fehlern
         if: failure()

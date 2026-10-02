@@ -315,3 +315,21 @@ Login-Ereignisse im Protokoll, Aufbewahrungs-/Löschfristen (DSGVO) – fachlich
 
 Bewusst offen: Lauf auf einem echten Server (Docker war lokal nicht verfügbar), automatische externe Ablage der Sicherungen
 (Ziel ist eine Entscheidung: NAS/Cloud), Monitoring/Alarmierung, Tokens im `localStorage` (Phase 2: Cookie-Login).
+
+---
+
+## Status Betrieb im internen Netz mit NAS-Sicherung (Branch `claude/betrieb-nas`)
+
+Anpassung des Betriebs-Setups an: eigener Docker-Server im Firmennetz, Sicherung zusätzlich auf das NAS.
+
+| Punkt | Stand |
+|---|---|
+| HTTPS intern | `TLS_MODE=internal` (Standard): Caddy mit eigener interner CA; Verteilen des Stammzertifikats (GPO/`certutil`) in der Anleitung. Alternativen: eigenes Zertifikat (`deploy/certs`, nie im Git) oder Let's Encrypt |
+| NAS-Kopie | Täglich 02:30 (`BACKUP_TIME`): lokal (30) und geprüft auf das auf dem Host eingebundene NAS (90, `NAS_KEEP`); Zwischendatei + Integritätsprüfung + Umbenennen |
+| Schutz vor "NAS nicht eingebunden" | Kopie nur, wenn im NAS-Ordner `.zeiterfassung-offsite` liegt; sonst Fehler statt stiller Ablage auf der lokalen Platte |
+| Fehler sichtbar | `status.json` nach jedem Lauf → Container-Healthcheck (`docker compose ps`), `GET /api/admin/system/backup`, Banner und Karte *Datensicherung* auf der Admin-Startseite |
+| Admin-Startseite | fest eingebautes „Alle Systeme funktionieren normal“ und Beispiel-Aktivitäten durch echten Sicherungsstatus und die letzten Protokolleinträge ersetzt |
+| Tests | 62 Unit-/Integrationstests (12 neu: NAS, Status, Zeitplan, Skript-Exitcodes), 59 Smoke-Checks; Mutationen (Markierungsprüfung, NAS-Alter, Erfolgs-Zeitpunkt) färben je einen Test rot; Dashboard in allen Zuständen im Browser geprüft |
+
+Bewusst offen: Lauf auf dem echten Server/NAS (Abnahme-Liste in `deploy/README.md`), Benachrichtigung per E-Mail bei Störung
+(heute: Banner und Healthcheck), Tokens im `localStorage` (Cookie-Login).

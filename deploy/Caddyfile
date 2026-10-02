@@ -1,10 +1,13 @@
-# Caddy: automatisches HTTPS (Let's Encrypt) und Weiterleitung an Frontend/Backend.
-# Die Adresse kommt aus deploy/.env (DOMAIN), z. B. zeit.firma.de
-#
-# Nur im internen Netz ohne öffentlichen DNS-Eintrag (selbst signiertes Zertifikat):
-# in der Datei ganz oben einen Block  { local_certs }  einfügen – siehe deploy/README.md.
+# Caddy: HTTPS und Weiterleitung an Frontend/Backend.
+# Adresse und Zertifikatsart kommen aus deploy/.env:
+#   DOMAIN    z. B. zeit.firma.de (interner DNS-Name, der auf diesen Server zeigt)
+#   TLS_MODE  internal                                   → eigene interne Zertifizierungsstelle (Standard)
+#             /certs/fullchain.pem /certs/privkey.pem    → eigenes Zertifikat (Dateien in deploy/certs)
+#             admin@firma.de                             → Let's Encrypt (nur mit öffentlich erreichbarem Server)
 
 {$DOMAIN} {
+	tls {$TLS_MODE:internal}
+
 	encode zstd gzip
 
 	header {

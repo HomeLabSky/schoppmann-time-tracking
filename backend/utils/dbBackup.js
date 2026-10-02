@@ -127,4 +127,49 @@ const restoreBackup = async ({ backup, target, now = new Date() }) => {
   }
 };
 
-module.exports = { createBackup, restoreBackup, verifyDatabase, rotateBackups, BACKUP_PATTERN };
+/** Name der Markierungsdatei, die auf dem NAS-Ordner liegen muss (siehe copyToOffsite). */
+const OFFSITE_MARKER = '.zeiterfassung-offsite';
+
+/**
+ * Kopiert eine fertige Sicherung in eine externe Ablage (z. B. ein auf dem Server eingebundenes NAS).
+ *
+ * Schutz vor dem klassischen Fehler "NAS ist gar nicht eingebunden": Ein nicht eingebundener Ordner
+ * ist nur ein leerer lokaler Ordner – die Kopie würde unbemerkt auf der lokalen Platte landen.
+ * Deshalb muss im Zielordner eine Markierungsdatei (.zeiterfassung-offsite) liegen, die man einmalig
+ * auf dem NAS anlegt. Fehlt sie, wird nicht kopiert und ein Fehler gemeldet.
+ *
+ * Die Kopie wird in eine Zwischendatei geschrieben, auf Integrität geprüft und erst dann umbenannt.
+ * @param {{file:string, dir:string, keep?:number}} options
+ * @returns {Promise<{file:string, removed:string[]}>}
+ */
+const copyToOffsite = async ({ file, dir, keep = 90 }) => {
+  if (!fs.existsSync(dir)) {
+    throw new Error(`NAS-Ordner nicht gefunden: ${dir}`);
+  }
+  if (!fs.existsSync(path.join(dir, OFFSITE_MARKER))) {
+    throw new Error(
+      `NAS nicht eingebunden oder falscher Ordner: die Markierungsdatei ${OFFSITE_MARKER} fehlt in ${dir}`
+    );
+  }
+
+  const target = path.join(dir, path.basename(file));
+  const partial = `${target}.partial`;
+  try {
+    fs.copyFileSync(file, partial);
+    await verifyDatabase(partial);
+    fs.renameSync(partial, target);
+  } finally {
+    fs.rmSync(partial, { force: true });
+  }
+  return { file: target, removed: rotateBackups(dir, keep) };
+};
+
+module.exports = {
+  createBackup,
+  restoreBackup,
+  copyToOffsite,
+  verifyDatabase,
+  rotateBackups,
+  BACKUP_PATTERN,
+  OFFSITE_MARKER
+};

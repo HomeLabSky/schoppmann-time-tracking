@@ -208,3 +208,8 @@ backups/
 # Development database dumps
 *.sql
 *.dump
+# ============================================
+# Betrieb: Zertifikate/Schlüssel gehören nie ins Git
+# ============================================
+deploy/certs/*
+!deploy/certs/.gitkeep

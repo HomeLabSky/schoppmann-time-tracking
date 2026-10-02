@@ -129,3 +129,14 @@ export function getErrorMessage(error: unknown, fallback = 'Unbekannter Fehler')
   }
   return fallback
 }
+
+/** "vor 5 Minuten", "vor 3 Stunden", "vor 2 Tagen" – für Aktivitätslisten. */
+export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+  const minutes = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 60000))
+  if (minutes < 1) return 'gerade eben'
+  if (minutes < 60) return `vor ${minutes} ${minutes === 1 ? 'Minute' : 'Minuten'}`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `vor ${hours} ${hours === 1 ? 'Stunde' : 'Stunden'}`
+  const days = Math.round(hours / 24)
+  return `vor ${days} ${days === 1 ? 'Tag' : 'Tagen'}`
+}

@@ -285,6 +285,16 @@ async function main() {
     const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
 
+    // ---- Sicherungsstatus ----
+    const backupForbidden = await api('GET', '/api/admin/system/backup', { token: empToken });
+    check('Sicherungsstatus: Mitarbeiter abgewiesen 403', backupForbidden.status === 403, backupForbidden.status);
+    const backupStatus = await api('GET', '/api/admin/system/backup', { token: adminToken });
+    check(
+      'Sicherungsstatus: Admin erhält Bewertung',
+      backupStatus.status === 200 && ['ok', 'warning', 'error', 'unknown'].includes(backupStatus.json?.data?.state) && typeof backupStatus.json.data.message === 'string',
+      backupStatus.json
+    );
+
     const periodAudit = await api('GET', `/api/admin/audit?userId=${empId}&action=period`, { token: adminToken });
     check(
       'Protokoll enthält Abschluss und Wiedereröffnung mit Begründung',

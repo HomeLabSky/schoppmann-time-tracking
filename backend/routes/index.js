@@ -12,6 +12,7 @@ const minijobRoutes = require('./minijob');
 const timeTrackingRoutes = require('./timetracking');
 const timesheetRoutes = require('./timesheets');
 const auditRoutes = require('./audit');
+const systemRoutes = require('./system');
 
 const router = express.Router();
 
@@ -48,6 +49,9 @@ router.use('/admin/timesheets', adminAPI, timesheetRoutes);
 
 // ✅ ÄNDERUNGSPROTOKOLL (Admin, nur lesend)
 router.use('/admin/audit', adminAPI, auditRoutes);
+
+// ✅ SYSTEMSTATUS (Admin): Datensicherung
+router.use('/admin/system', adminAPI, systemRoutes);
 
 // ✅ API Status Route (für Health Checks, ohne Details)
 router.get('/status', (req, res) => {

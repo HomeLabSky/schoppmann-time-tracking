@@ -1,8 +1,9 @@
-# Produktivbetrieb: Caddy (HTTPS) + Frontend + Backend + tägliche Datenbank-Sicherung.
+# Produktivbetrieb im internen Netz:
+#   Caddy (HTTPS) + Frontend + Backend + Backup-Dienst (lokal + NAS).
 # Anleitung: deploy/README.md
 #
 #   cd deploy
-#   cp .env.example .env        # Werte eintragen
+#   cp .env.example .env        # Werte eintragen (u. a. DOMAIN und NAS_BACKUP_DIR)
 #   docker compose up -d --build
 
 name: schoppmann-zeiterfassung
@@ -16,6 +17,8 @@ services:
       NODE_ENV: production
       PORT: "5000"
       DB_STORAGE: /data/timetracking.db
+      # Der Backup-Ordner wird nur gelesen: für den Sicherungsstatus auf der Admin-Startseite
+      BACKUP_DIR: /backups
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET fehlt in deploy/.env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET fehlt in deploy/.env}
       CORS_ORIGIN: https://${DOMAIN:?DOMAIN fehlt in deploy/.env}
@@ -25,7 +28,7 @@ services:
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
     volumes:
       - db-data:/data
-      # nur lesend: für die Wiederherstellung (npm run db:restore) aus dem Backend-Container
+      # nur lesend: Statusdatei und Wiederherstellung (npm run db:restore) aus dem Backend-Container
       - backups:/backups:ro
     expose:
       - "5000"
@@ -49,32 +52,47 @@ services:
       - backend
     environment:
       DOMAIN: ${DOMAIN}
+      # "internal" = eigene interne Zertifizierungsstelle (Standard im internen Netz),
+      # oder "/certs/fullchain.pem /certs/privkey.pem" für ein eigenes Zertifikat (Ordner deploy/certs)
+      TLS_MODE: ${TLS_MODE:-internal}
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
       - caddy-data:/data
       - caddy-config:/config
 
-  # Sicherung der Datenbank beim Start und danach alle 24 Stunden (aufbewahrt: BACKUP_KEEP Stück).
-  # Die Dateien liegen im Volume "backups" auf dem Server – regelmäßig extern ablegen (deploy/README.md)!
+  # Sicherung sofort beim Start und danach täglich um BACKUP_TIME:
+  #   1) lokal im Volume "backups" (letzte BACKUP_KEEP Stück)
+  #   2) zusätzlich auf das NAS (letzte NAS_KEEP Stück)
+  # Der Zustand steht in status.json: Container-Healthcheck und Admin-Startseite zeigen Störungen an.
   backup:
     build:
       context: ../backend
     restart: unless-stopped
-    command:
-      - sh
-      - -c
-      - while true; do node scripts/backup-db.js || echo "Sicherung fehlgeschlagen"; sleep 86400; done
+    command: ["node", "scripts/backup-loop.js"]
     environment:
+      TZ: ${TZ:-Europe/Berlin}
       DB_STORAGE: /data/timetracking.db
       BACKUP_DIR: /backups
       BACKUP_KEEP: ${BACKUP_KEEP:-30}
+      BACKUP_TIME: ${BACKUP_TIME:-02:30}
+      OFFSITE_DIR: /nas
+      OFFSITE_KEEP: ${NAS_KEEP:-90}
     volumes:
       - db-data:/data
       - backups:/backups
+      # Auf dem Docker-Host eingebundene NAS-Freigabe (siehe deploy/README.md, Abschnitt 3)
+      - ${NAS_BACKUP_DIR:?NAS_BACKUP_DIR fehlt in deploy/.env (Ordner der eingebundenen NAS-Freigabe)}:/nas
+    healthcheck:
+      test: ["CMD", "node", "scripts/backup-healthcheck.js"]
+      interval: 1h
+      timeout: 10s
+      start_period: 2m
+      retries: 1
 
 volumes:
   db-data:
