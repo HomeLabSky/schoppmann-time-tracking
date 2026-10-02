@@ -1,0 +1,28 @@
+# Caddy: automatisches HTTPS (Let's Encrypt) und Weiterleitung an Frontend/Backend.
+# Die Adresse kommt aus deploy/.env (DOMAIN), z. B. zeit.firma.de
+#
+# Nur im internen Netz ohne öffentlichen DNS-Eintrag (selbst signiertes Zertifikat):
+# in der Datei ganz oben einen Block  { local_certs }  einfügen – siehe deploy/README.md.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+
+	# API
+	handle /api/* {
+		reverse_proxy backend:5000
+	}
+
+	# alles andere: Oberfläche
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log*
+# Datenbanken, Sicherungen und Zugangsdaten gehören nie ins Image
+database
+backups
+*.db
+*.sqlite
+.env
+.env.*
+!.env.example
+test
+Dockerfile
+.dockerignore

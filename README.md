@@ -58,6 +58,19 @@ Im Admin-Bereich:
 Mitarbeiterkonten mit Zeiteinträgen lassen sich nicht löschen, nur deaktivieren (Nachweise bleiben erhalten).
 Technische Details: [`backend/ARCHITECTURE.md`](backend/ARCHITECTURE.md).
 
+## Betrieb (Server, HTTPS, Sicherung)
+
+Für den Produktivbetrieb liegt ein Docker-Setup mit automatischem HTTPS (Caddy), täglicher Datenbank-Sicherung und
+Wiederherstellung bereit. Schritt-für-Schritt-Anleitung, Sicherheits-Checkliste und Hinweise zu Datenschutz:
+[`deploy/README.md`](deploy/README.md).
+
+Sicherung und Wiederherstellung funktionieren auch ohne Docker (im Ordner `backend`):
+
+```bash
+npm run db:backup                                   # konsistente, geprüfte Sicherung (auch bei laufendem Backend)
+npm run db:restore -- backups/timetracking-JJJJMMTT-HHMMSS.db   # Backend vorher stoppen
+```
+
 ## Tests
 
 ```bash

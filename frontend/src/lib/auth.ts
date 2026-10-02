@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useContext, createContext, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
 import type { User, LoginCredentials, RegisterData, ApiError, AuthResponse } from '@/types/api'
+import { API_BASE_URL } from './config'
 
 // ===== AUTH CONTEXT TYPES =====
 
@@ -61,7 +62,7 @@ class TokenManager {
 // ===== API CLIENT =====
 
 class ApiClient {
-  private baseURL: string = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+  private baseURL: string = API_BASE_URL
   private refreshPromise: Promise<boolean> | null = null
 
   async request<T = any>(

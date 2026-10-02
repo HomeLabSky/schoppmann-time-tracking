@@ -10,6 +10,7 @@ import type {
   UsersResponse, 
   CurrentMinijobSettingResponse 
 } from '@/types/api'
+import { API_BASE_URL } from '@/lib/config'
 
 // Lokale Interfaces für Dashboard-spezifische Daten
 interface DashboardStats {
@@ -61,7 +62,7 @@ export default function AdminDashboard() {
   const loadDashboardData = async (): Promise<void> => {
     try {
       // Load user stats
-      const usersResponse = await authManager.authenticatedFetch('http://localhost:5000/api/admin/users')
+      const usersResponse = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`)
       const usersData = await usersResponse.json() as UsersResponse
       
       if (usersResponse.ok && usersData.data?.users) {
@@ -77,7 +78,7 @@ export default function AdminDashboard() {
 
       // Load current minijob setting
       try {
-        const minijobResponse = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/current')
+        const minijobResponse = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings/current`)
         const minijobData = await minijobResponse.json() as CurrentMinijobSettingResponse
         
         if (minijobResponse.ok && minijobData.data?.setting) {
@@ -116,7 +117,7 @@ export default function AdminDashboard() {
 
   const testProtectedRoute = async (): Promise<void> => {
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/auth/profile')
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/auth/profile`)
       const data = await response.json()
 
       if (response.ok) {

@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react'
 import { authManager, useAuth } from '@/lib/auth'
 import { toLocalDateString } from '@/lib/utils'
+import { API_BASE_URL } from '@/lib/config'
 
 // TypeScript Interfaces
 interface MinijobSetting {
@@ -75,7 +76,7 @@ export default function MinijobSettingsPage() {
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings')
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings`)
       const data = await response.json()
 
       if (response.ok) {
@@ -102,7 +103,7 @@ export default function MinijobSettingsPage() {
   // Aktuelle Minijob-Einstellung laden
   const loadCurrentSetting = async () => {
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/current')
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings/current`)
       const data = await response.json()
 
       if (response.ok) {
@@ -130,7 +131,7 @@ export default function MinijobSettingsPage() {
         ...(newSettingForm.validUntil && { validUntil: newSettingForm.validUntil })
       }
 
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings', {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -200,7 +201,7 @@ export default function MinijobSettingsPage() {
         ...(newSettingForm.validUntil && { validUntil: newSettingForm.validUntil })
       }
 
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob/settings/${editingSetting.id}`, {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings/${editingSetting.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json'
@@ -240,7 +241,7 @@ export default function MinijobSettingsPage() {
     setAutoAdjustmentInfo([])
 
     try {
-      const response = await authManager.authenticatedFetch(`http://localhost:5000/api/admin/minijob/settings/${settingId}`, {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings/${settingId}`, {
         method: 'DELETE'
       })
 
@@ -283,7 +284,7 @@ export default function MinijobSettingsPage() {
     setMessage('')
 
     try {
-      const response = await authManager.authenticatedFetch('http://localhost:5000/api/admin/minijob/settings/recalculate-periods', {
+      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/minijob/settings/recalculate-periods`, {
         method: 'POST'
       })
 

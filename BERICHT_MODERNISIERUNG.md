@@ -298,3 +298,20 @@ Vorgezogener Teil von Phase 2, weil die Anwendung produktiv gehen soll und Arbei
 
 Bewusst offen: Admin-Korrekturen direkt an Einträgen (heute: Periode öffnen, Mitarbeiter korrigiert), Export/PDF des Abschlusses,
 Login-Ereignisse im Protokoll, Aufbewahrungs-/Löschfristen (DSGVO) – fachlich/rechtlich zu klären.
+
+---
+
+## Status Betrieb (Branch `claude/betrieb`)
+
+| Punkt | Stand |
+|---|---|
+| Container | `backend/Dockerfile`, `frontend/Dockerfile` (Next.js Standalone), Laufzeit ohne Root-Rechte, Healthcheck |
+| HTTPS | Caddy mit automatischem Let's Encrypt, HSTS und Sicherheits-Header, `/api` → Backend, Rest → Frontend; Variante für internes Netz (`local_certs`) |
+| Sicherung | `npm run db:backup` (`VACUUM INTO`, konsistent im laufenden Betrieb, Integritätsprüfung, Rotation); Dienst `backup` täglich |
+| Wiederherstellung | `npm run db:restore`: prüft die Sicherung, ersetzt die DB erst nach Prüfung, behält die alte als Kopie |
+| Konfiguration | Eine Datei `deploy/.env`; Compose verweigert den Start ohne Geheimnisse und Adresse |
+| Fix | 15 fest eingebaute `http://localhost:5000`-Adressen in den Admin-Seiten → zentrale `NEXT_PUBLIC_API_URL` (ohne das wären *Benutzer* und *Minijob* auf einem Server leer geblieben) |
+| Prüfung | 50 Unit-/Integrationstests; Standalone-Frontend und Produktions-Backend einzeln gestartet; CI-Job `docker` baut beide Images, validiert Compose/Caddyfile, startet die Container |
+
+Bewusst offen: Lauf auf einem echten Server (Docker war lokal nicht verfügbar), automatische externe Ablage der Sicherungen
+(Ziel ist eine Entscheidung: NAS/Cloud), Monitoring/Alarmierung, Tokens im `localStorage` (Phase 2: Cookie-Login).
