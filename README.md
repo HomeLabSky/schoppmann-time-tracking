@@ -45,6 +45,14 @@ npm run user:reset-password -- admin@schoppmann.de --generate
 Weitere Konten legt ein Admin im Portal unter *Benutzer* an. Die Selbstregistrierung ist
 standardmäßig **aus** (`ALLOW_REGISTRATION=false`).
 
+## Anmeldung
+
+Die Anmeldung läuft über **httpOnly-Cookies** mit Sitzungen in der Datenbank (kein `localStorage`, keine Tokens im
+Browser-Code). Abmelden, Sperren und Passwortwechsel beenden Sitzungen sofort; ein wiederverwendetes (gestohlenes)
+Erneuerungs-Token beendet die ganze Sitzung. Details: [`backend/ARCHITECTURE.md`](backend/ARCHITECTURE.md).
+
+Lokal müssen Frontend und Backend unter demselben Hostnamen laufen (`http://localhost:3000` und `http://localhost:5000`).
+
 ## Monatsabschluss und Änderungsprotokoll
 
 Im Admin-Bereich:

@@ -198,6 +198,9 @@ Volume erhalten; bei einer defekten Sicherung bricht der Vorgang ab, ohne etwas 
 
 ## 8. Updates
 
+> **Einmalig nach dem Update auf die Cookie-Anmeldung:** Alle Benutzer müssen sich einmal neu anmelden (die alten
+> Anmeldungen im Browser sind ungültig). Das ist erwartet.
+
 ```bash
 cd schoppmann-time-tracking
 git pull
@@ -226,6 +229,8 @@ größeren Updates zusätzlich: `docker compose exec backup node scripts/backup-
 - [ ] `deploy/.env` nur für Administratoren lesbar, nirgends veröffentlicht.
 - [ ] NAS-Benutzer hat nur Zugriff auf die Backup-Freigabe; Snapshots auf dem NAS aktiv.
 - [ ] `ALLOW_REGISTRATION=false`; Admin-Passwort geändert; keine Test-/Standardkonten.
+- [ ] Anmeldung läuft über `https://` (die Cookies sind in Produktion `Secure` und funktionieren nur über HTTPS).
+- [ ] Verdacht auf ein gestohlenes Konto: im Portal das Passwort zurücksetzen (beendet alle Sitzungen sofort) bzw. das Konto deaktivieren.
 - [ ] Server-Updates (Betriebssystem, Docker) werden eingespielt.
 - [ ] Wiederherstellung wurde getestet.
 - [ ] Wer Docker auf dem Server steuern darf, kann alle Daten lesen – Zugang entsprechend begrenzen.

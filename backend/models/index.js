@@ -4,6 +4,7 @@ const MinijobSetting = require('./MinijobSetting');
 const TimeEntry = require('./TimeEntry'); // ✅ TimeEntry importieren
 const AuditLog = require('./AuditLog');
 const PeriodClosure = require('./PeriodClosure');
+const Session = require('./Session');
 const { runMigrations } = require('./migrations');
 
 // ✅ Beziehungen zwischen Models definieren
@@ -31,6 +32,10 @@ TimeEntry.belongsTo(User, {
 // Monatsabschluss
 User.hasMany(PeriodClosure, { foreignKey: 'userId', as: 'PeriodClosures' });
 PeriodClosure.belongsTo(User, { foreignKey: 'userId', as: 'User' });
+
+// Anmelde-Sitzungen (werden mit dem Benutzer gelöscht)
+User.hasMany(Session, { foreignKey: 'userId', as: 'Sessions', onDelete: 'CASCADE' });
+Session.belongsTo(User, { foreignKey: 'userId', as: 'User' });
 
 // ✅ Datenbank initialisieren (ersetzt die alte database.js Funktion)
 const initDatabase = async () => {
@@ -72,6 +77,7 @@ module.exports = {
   TimeEntry,
   AuditLog,
   PeriodClosure,
+  Session,
 
   // Database
   sequelize,

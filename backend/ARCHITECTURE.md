@@ -60,8 +60,9 @@ Das Frontend (`frontend/src/lib/api.ts`) hängt fest an diesem Format:
 
 - Erfolg: `{ success: true, message, data }`
 - Fehler: `{ success: false, error, code }` mit passendem HTTP-Status
-- Auth: `Authorization: Bearer <accessToken>`; bei 401/403 versucht das
-  Frontend automatisch einen Refresh über `POST /api/auth/refresh`.
+- Auth: httpOnly-Cookies (siehe *Anmeldung*), keine Tokens im Body. Bei `401` versucht das Frontend still
+  `POST /api/auth/refresh` und wiederholt die Anfrage einmal. `403` heißt: angemeldet, aber nicht berechtigt.
+- Ändernde Anfragen (POST/PUT/PATCH/DELETE) brauchen den Header `X-CSRF-Protection: 1`.
 
 **Statuscodes und `code`-Werte dürfen bei Refactorings nicht stillschweigend
 geändert werden** – sie sind Teil des öffentlichen Vertrags.
@@ -76,6 +77,34 @@ geändert werden** – sie sind Teil des öffentlichen Vertrags.
   Code in Status + Response.
 - **Kein Debug-`console.log`** im Request-Pfad; Start-/Lifecycle-Logs gehören in
   `server.js`.
+
+## Anmeldung (Cookies und Sitzungen)
+
+Tokens liegen ausschließlich in **httpOnly-Cookies** – JavaScript im Browser kann sie nicht lesen; ein Skript-Angriff
+(XSS) kann sie daher nicht stehlen. Es gibt kein `localStorage` und keinen `Authorization`-Header mehr.
+
+| Cookie | Inhalt | Pfad | Laufzeit |
+|---|---|---|---|
+| `zeit_access` | JWT mit nur Benutzer- und Sitzungs-ID | `/api` | 15 Minuten |
+| `zeit_refresh` | zufälliges Erneuerungs-Token `<Sitzungs-ID>.<Geheimnis>` | `/api/auth` | gleitend 7 Tage, höchstens 30 Tage je Sitzung |
+
+Beide Cookies: `HttpOnly`, `SameSite=Strict`, in Produktion `Secure`.
+
+- **Sitzungen in der Datenbank** (`Sessions`): Jede Anmeldung ist eine Sitzung. Gespeichert wird nur ein HMAC-Prüfwert
+  des Erneuerungs-Tokens (mit `JWT_REFRESH_SECRET`), nie das Token selbst.
+- **Prüfung bei jeder Anfrage** (`middleware/auth.js`): Sitzung nicht beendet, Benutzer aktiv; Rolle, Name und E-Mail
+  kommen aus der Datenbank. **Abmelden, Sperren und Rollenänderungen wirken sofort** (früher bis zu 15 Minuten).
+- **Rotation mit Wiederverwendungs-Erkennung** (`services/sessionService.js`): Jede Erneuerung ersetzt das Token.
+  Taucht ein bereits ausgetauschtes Token später wieder auf, gilt es als gestohlen → die ganze Sitzung wird beendet
+  (`REFRESH_TOKEN_REUSED`). Innerhalb von 10 Sekunden gilt ein altes Token nur als „Erneuerung läuft“ (`409`, zwei Tabs).
+- **Sitzungen werden beendet** bei Abmeldung, Passwortwechsel (alle *anderen* Geräte), Passwort-Reset durch Admin/CLI,
+  Sperrung und Löschung des Kontos.
+- **CSRF**: `SameSite=Strict` + Pflicht-Header `X-CSRF-Protection` (`middleware/csrf.js`) + JSON-Content-Type + CORS nur
+  für die eigene Oberfläche.
+- **Protokoll**: `auth.login`, `auth.login_failed`, `auth.logout`, `auth.session_reuse_detected` (mit IP).
+
+Entwicklung: Frontend und Backend müssen unter **demselben Hostnamen** laufen (`localhost:3000` und `localhost:5000`,
+nicht `127.0.0.1` und `localhost` mischen), sonst sendet der Browser die `SameSite=Strict`-Cookies nicht mit.
 
 ## Rechenlogik (Abrechnung)
 
@@ -136,6 +165,7 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 - `test/billing.test.js`: tabellengetriebene Tests der reinen Rechenlogik.
 - `test/timeEntryService.test.js`: Integrationstests gegen eine temporäre SQLite-DB (Pause,
   eingefrorener Stundensatz, Grenze je Periode, Monatsende, Periode 22.–21., Fachregeln).
+- `test/sessions.test.js`: Sitzungen – Rotation, Wiederverwendungs-Erkennung, Ablauf, Widerruf, Besitznachweis beim Abmelden.
 - `test/audit-closure.test.js`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
   eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung.
 - Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.

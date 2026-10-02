@@ -3,6 +3,7 @@ const express = require('express');
 // ✅ Middleware importieren
 const { authenticatedAPI, adminAPI } = require('../middleware');
 const { loginLimiter, registrationLimiter } = require('../middleware/rateLimiting');
+const { requireCsrfHeader } = require('../middleware/csrf');
 
 // ✅ Route-Module importieren
 const authRoutes = require('./auth');
@@ -25,6 +26,9 @@ router.get('/', (req, res) => {
 });
 
 // ============ ROUTE REGISTRIERUNGEN ============
+
+// ✅ CSRF-Schutz: ändernde Anfragen brauchen den Header X-CSRF-Protection (Cookie-Anmeldung)
+router.use(requireCsrfHeader);
 
 // ✅ AUTH ROUTES
 // Login und Registration haben spezielle Rate Limits

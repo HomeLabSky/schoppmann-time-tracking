@@ -23,6 +23,9 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'smoke_test_jwt_secret_min_32
 process.env.JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'smoke_test_refresh_secret_min_32_chars_long_value';
 // Selbstregistrierung ist produktiv standardmäßig aus; der Test schaltet sie gezielt ein.
 process.env.ALLOW_REGISTRATION = 'true';
+// Der Test meldet sich oft an: Rate-Limits (pro IP) hochsetzen
+process.env.RATE_LIMIT_LOGIN_MAX = '1000';
+process.env.RATE_LIMIT_MAX_REQUESTS = '10000';
 
 const app = require('../app');
 const config = require('../config');
@@ -53,18 +56,42 @@ async function main() {
   await new Promise((resolve) => server.once('listening', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
 
-  const api = async (method, endpoint, { token, body } = {}) => {
+  // Cookie-Speicher je "Browser-Sitzung"
+  const newSession = () => ({ jar: new Map() });
+  const applySetCookies = (jar, lines) => {
+    for (const line of lines) {
+      const [pair, ...attrs] = line.split(';').map((x) => x.trim());
+      const eq = pair.indexOf('=');
+      const name = pair.slice(0, eq);
+      const value = pair.slice(eq + 1);
+      const maxAge = attrs.find((a) => /^max-age=/i.test(a));
+      const expires = attrs.find((a) => /^expires=/i.test(a));
+      const gone = value === '' ||
+        (maxAge && parseInt(maxAge.split('=')[1], 10) <= 0) ||
+        (expires && new Date(expires.split('=')[1]).getTime() < Date.now());
+      if (gone) jar.delete(name); else jar.set(name, value);
+    }
+  };
+
+  // token/session: Cookie-Speicher; Cookies aus der Antwort werden übernommen (wie im Browser)
+  const api = async (method, endpoint, { token, session, body, csrf = true, headers = {} } = {}) => {
+    const owner = session || token;
+    const cookie = owner ? [...owner.jar].map(([k, v]) => `${k}=${v}`).join('; ') : '';
     const res = await fetch(base + endpoint, {
       method,
       headers: {
         'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
+        ...(csrf ? { 'X-CSRF-Protection': '1' } : {}),
+        ...(cookie ? { Cookie: cookie } : {}),
+        ...headers
       },
       ...(body ? { body: JSON.stringify(body) } : {})
     });
     let json = null;
     try { json = await res.json(); } catch { /* leerer Body */ }
-    return { status: res.status, json };
+    const setCookies = res.headers.getSetCookie();
+    if (owner) applySetCookies(owner.jar, setCookies);
+    return { status: res.status, json, setCookies };
   };
 
   try {
@@ -92,12 +119,12 @@ async function main() {
     console.log('\n[Auth]');
     const empCreds = { email: 'smoke.employee@schoppmann.de', password: 'Test1234', name: 'Smoke Tester' };
     const register = await api('POST', '/api/auth/register', { body: empCreds });
-    check('Registrierung 201 + Tokens', register.status === 201 && !!register.json?.data?.accessToken, register.json);
+    check('Registrierung 201 + Anmelde-Cookies', register.status === 201 && register.setCookies.length === 2, register.json);
 
-    const login = await api('POST', '/api/auth/login', { body: { email: empCreds.email, password: empCreds.password } });
-    check('Login 200 + Tokens', login.status === 200 && !!login.json?.data?.accessToken, login.status);
+    const empToken = newSession();
+    const login = await api('POST', '/api/auth/login', { session: empToken, body: { email: empCreds.email, password: empCreds.password } });
+    check('Login 200 + Anmelde-Cookies', login.status === 200 && login.setCookies.length === 2, login.status);
     check('Login liefert user ohne Passwort', login.json?.data?.user && login.json.data.user.password === undefined, login.json?.data?.user);
-    const empToken = login.json?.data?.accessToken;
 
     const noToken = await api('GET', '/api/auth/profile');
     check('Profil ohne Token abgewiesen (401/403)', noToken.status === 401 || noToken.status === 403, noToken.status);
@@ -165,9 +192,9 @@ async function main() {
 
     // ---- Admin-Routen ----
     console.log('\n[Admin]');
-    const adminLogin = await api('POST', '/api/auth/login', { body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+    const adminToken = newSession();
+    const adminLogin = await api('POST', '/api/auth/login', { session: adminToken, body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
     check('Admin-Login 200', adminLogin.status === 200 && adminLogin.json?.data?.user?.role === 'admin', adminLogin.json?.data?.user);
-    const adminToken = adminLogin.json?.data?.accessToken;
 
     const adminForbidden = await api('GET', '/api/admin/users', { token: empToken });
     check('Mitarbeiter ohne Adminrecht abgewiesen 403', adminForbidden.status === 403, adminForbidden.status);
@@ -284,6 +311,124 @@ async function main() {
     check('Wiedereröffnen mit Begründung 200', reopened.status === 200, reopened.json);
     const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
+
+    // ---- Cookie-Anmeldung & Sitzungen ----
+    console.log('\n[Cookie-Anmeldung & Sitzungen]');
+    const authUser = { email: 'smoke.session@schoppmann.de', password: 'Session123', name: 'Session Tester' };
+    const createdAuthUser = await api('POST', '/api/admin/users', { token: adminToken, body: { ...authUser, role: 'mitarbeiter' } });
+    const authUserId = createdAuthUser.json?.data?.user?.id;
+    const loginAs = async (session, password = authUser.password) =>
+      api('POST', '/api/auth/login', { session, body: { email: authUser.email, password } });
+    const profileOf = (session) => api('GET', '/api/auth/profile', { token: session });
+
+    const s1 = newSession();
+    const l1 = await loginAs(s1);
+    const cookieLine = (name) => l1.setCookies.find((c) => c.startsWith(`${name}=`)) || '';
+    check(
+      'Login: Tokens stehen nicht im Antwort-Body',
+      l1.status === 200 && !JSON.stringify(l1.json).includes('eyJ') && l1.json?.data?.accessToken === undefined && l1.json?.data?.refreshToken === undefined,
+      l1.json
+    );
+    check(
+      'Login-Cookies sind httpOnly und SameSite=Strict',
+      ['zeit_access', 'zeit_refresh'].every((n) => /httponly/i.test(cookieLine(n)) && /samesite=strict/i.test(cookieLine(n))),
+      l1.setCookies
+    );
+    check(
+      'Cookie-Pfade eingeschränkt (/api bzw. /api/auth), Zugriffs-Token 15 Minuten',
+      /path=\/api(;|$)/i.test(cookieLine('zeit_access')) && /path=\/api\/auth/i.test(cookieLine('zeit_refresh')) && /max-age=900/i.test(cookieLine('zeit_access')),
+      l1.setCookies
+    );
+
+    const noCsrf = await api('POST', '/api/auth/login', { csrf: false, body: { email: authUser.email, password: authUser.password } });
+    check('Ändernde Anfrage ohne CSRF-Header 403 CSRF_HEADER_MISSING', noCsrf.status === 403 && noCsrf.json?.code === 'CSRF_HEADER_MISSING', noCsrf.json);
+
+    check('Profil mit Cookie 200', (await profileOf(s1)).status === 200);
+    const noCookie = await api('GET', '/api/auth/profile');
+    check('Ohne Cookie 401 MISSING_TOKEN', noCookie.status === 401 && noCookie.json?.code === 'MISSING_TOKEN', noCookie.json);
+    const forged = newSession();
+    forged.jar.set('zeit_access', 'eyJhbGciOiJIUzI1NiJ9.e30.gefaelscht');
+    const forgedRes = await api('GET', '/api/auth/profile', { token: forged });
+    check('Gefälschtes Token 401 INVALID_TOKEN', forgedRes.status === 401 && forgedRes.json?.code === 'INVALID_TOKEN', forgedRes.json);
+    const bearer = await api('GET', '/api/auth/profile', { headers: { Authorization: `Bearer ${s1.jar.get('zeit_access')}` } });
+    check('Bearer-Header wird nicht mehr akzeptiert (401)', bearer.status === 401 && bearer.json?.code === 'MISSING_TOKEN', bearer.json);
+
+    // Erneuerung rotiert das Erneuerungs-Token
+    const oldRefresh = s1.jar.get('zeit_refresh');
+    const r1 = await api('POST', '/api/auth/refresh', { token: s1 });
+    check(
+      'Erneuerung 200: neues Erneuerungs-Token, keine Tokens im Body',
+      r1.status === 200 && s1.jar.get('zeit_refresh') !== oldRefresh && !JSON.stringify(r1.json).includes('refreshToken'),
+      r1.json
+    );
+    const raceSession = newSession();
+    raceSession.jar.set('zeit_refresh', oldRefresh);
+    const race = await api('POST', '/api/auth/refresh', { token: raceSession });
+    check('Altes Token direkt nach Rotation (zwei Tabs) 409 REFRESH_IN_PROGRESS', race.status === 409 && race.json?.code === 'REFRESH_IN_PROGRESS', race.json);
+    check('… Sitzung bleibt gültig (keine Sperre)', (await profileOf(s1)).status === 200);
+
+    // Wiederverwendung nach der Schonfrist = Diebstahlverdacht → Sitzung wird beendet
+    config.auth.refreshGraceSeconds = 0;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const reuse = await api('POST', '/api/auth/refresh', { token: raceSession });
+    config.auth.refreshGraceSeconds = 10;
+    check('Wiederverwendetes Token 401 REFRESH_TOKEN_REUSED', reuse.status === 401 && reuse.json?.code === 'REFRESH_TOKEN_REUSED', reuse.json);
+    const afterReuse = await profileOf(s1);
+    check('… ganze Sitzung beendet (Zugriff 401 SESSION_ENDED)', afterReuse.status === 401 && afterReuse.json?.code === 'SESSION_ENDED', afterReuse.json);
+    check('… auch das neueste Erneuerungs-Token ist ungültig', (await api('POST', '/api/auth/refresh', { token: s1 })).status === 401);
+
+    // Abmelden wirkt sofort und serverseitig
+    const s2 = newSession();
+    await loginAs(s2);
+    const accessBeforeLogout = s2.jar.get('zeit_access');
+    const out = await api('POST', '/api/auth/logout', { token: s2 });
+    check('Logout 200, Cookies gelöscht', out.status === 200 && !s2.jar.has('zeit_access') && !s2.jar.has('zeit_refresh'), out.setCookies);
+    const replay = newSession();
+    replay.jar.set('zeit_access', accessBeforeLogout);
+    const replayRes = await profileOf(replay);
+    check('Zugriffs-Token nach Logout sofort ungültig (401 SESSION_ENDED)', replayRes.status === 401 && replayRes.json?.code === 'SESSION_ENDED', replayRes.json);
+
+    // Logout fremder Sitzungen ist nicht möglich
+    const s3 = newSession();
+    await loginAs(s3);
+    const foreign = newSession();
+    foreign.jar.set('zeit_refresh', `${s3.jar.get('zeit_refresh').split('.')[0]}.falschesGeheimnis`);
+    await api('POST', '/api/auth/logout', { token: foreign });
+    check('Logout mit falschem Geheimnis beendet die fremde Sitzung nicht', (await profileOf(s3)).status === 200);
+
+    // Passwortwechsel beendet die anderen Sitzungen
+    const sa = newSession();
+    const sb = newSession();
+    await loginAs(sa);
+    await loginAs(sb);
+    const changed = await api('PUT', '/api/auth/change-password', { token: sa, body: { currentPassword: authUser.password, newPassword: 'Neu12345x' } });
+    authUser.password = 'Neu12345x';
+    check('Passwortwechsel 200', changed.status === 200, changed.json);
+    check('… eigene Sitzung bleibt bestehen', (await profileOf(sa)).status === 200);
+    const otherAfterChange = await profileOf(sb);
+    check('… andere Sitzung sofort beendet (SESSION_ENDED)', otherAfterChange.status === 401 && otherAfterChange.json?.code === 'SESSION_ENDED', otherAfterChange.json);
+
+    // Sperren wirkt sofort
+    const sc = newSession();
+    await loginAs(sc);
+    await api('PATCH', `/api/admin/users/${authUserId}/toggle-status`, { token: adminToken });
+    const blocked = await profileOf(sc);
+    check('Gesperrtes Konto: bestehender Zugriff sofort 401', blocked.status === 401, blocked.json);
+    const blockedLogin = await loginAs(newSession());
+    check('Gesperrtes Konto: Login 403 USER_INACTIVE', blockedLogin.status === 403 && blockedLogin.json?.code === 'USER_INACTIVE', blockedLogin.json);
+
+    // Protokoll der Anmelde-Ereignisse
+    const wrongLogin = await loginAs(newSession(), 'FalschesPasswort1');
+    check('Falsches Passwort 401', wrongLogin.status === 401, wrongLogin.json);
+    const authAudit = await api('GET', `/api/admin/audit?action=auth&userId=${authUserId}&limit=100`, { token: adminToken });
+    const authActions = (authAudit.json?.data?.entries || []).map((e) => e.action);
+    check(
+      'Protokoll: Anmeldung, Abmeldung, Fehlversuch, Wiederverwendung',
+      ['auth.login', 'auth.logout', 'auth.login_failed', 'auth.session_reuse_detected'].every((a) => authActions.includes(a)),
+      authActions
+    );
+    const withoutAuth = await api('GET', '/api/admin/audit?exclude=auth&limit=200', { token: adminToken });
+    check('Protokoll: exclude=auth blendet Anmelde-Ereignisse aus', (withoutAuth.json?.data?.entries || []).every((e) => !e.action.startsWith('auth.')) && withoutAuth.json.data.entries.length > 0, withoutAuth.json?.data?.entries?.length);
 
     // ---- Sicherungsstatus ----
     const backupForbidden = await api('GET', '/api/admin/system/backup', { token: empToken });

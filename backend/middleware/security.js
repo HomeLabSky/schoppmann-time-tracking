@@ -12,7 +12,7 @@ const corsOptions = {
     'X-Requested-With', 
     'Content-Type', 
     'Accept', 
-    'Authorization'
+    'X-CSRF-Protection'
   ],
   exposedHeaders: [
     'X-Total-Count',

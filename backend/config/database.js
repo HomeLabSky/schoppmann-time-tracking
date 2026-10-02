@@ -8,4 +8,12 @@ const sequelize = new Sequelize({
   logging: config.database.logging ? console.log : false
 });
 
+// SQLite erlaubt nur einen Schreiber gleichzeitig. Ohne Wartezeit scheitern überlappende Schreibvorgänge
+// (zwei Anfragen, Backup-Dienst) sofort mit SQLITE_BUSY. Mit Wartezeit reihen sie sich kurz ein.
+if (config.database.dialect === 'sqlite') {
+  sequelize.addHook('afterConnect', (connection) => {
+    connection.configure('busyTimeout', 5000);
+  });
+}
+
 module.exports = { sequelize };

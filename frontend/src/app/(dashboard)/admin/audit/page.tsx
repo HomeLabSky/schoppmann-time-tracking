@@ -12,6 +12,7 @@ const ACTION_FILTERS = [
   { value: 'time_entry', label: 'Zeiteinträge' },
   { value: 'period', label: 'Monatsabschluss' },
   { value: 'user', label: 'Benutzer' },
+  { value: 'auth', label: 'Anmeldungen' },
   { value: 'minijob_setting', label: 'Minijob-Grenzen' },
 ]
 
@@ -42,6 +43,8 @@ const FIELD_LABELS: Record<string, string> = {
   carryIn: 'Übertrag Vorperiode',
   paid: 'Auszahlung',
   carryOut: 'Übertrag',
+  reason: 'Grund',
+  ip: 'IP-Adresse',
 }
 
 const MONEY_FIELDS = new Set(['earnings', 'limit', 'carryIn', 'paid', 'carryOut', 'stundenlohn', 'monthlyLimit'])

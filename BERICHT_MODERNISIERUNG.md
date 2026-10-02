@@ -333,3 +333,20 @@ Anpassung des Betriebs-Setups an: eigener Docker-Server im Firmennetz, Sicherung
 
 Bewusst offen: Lauf auf dem echten Server/NAS (Abnahme-Liste in `deploy/README.md`), Benachrichtigung per E-Mail bei Störung
 (heute: Banner und Healthcheck), Tokens im `localStorage` (Cookie-Login).
+
+---
+
+## Status Cookie-Anmeldung (Branch `claude/cookie-login`)
+
+| Punkt | Stand |
+|---|---|
+| S9 Tokens im `localStorage` | behoben: httpOnly-Cookies (`SameSite=Strict`, in Produktion `Secure`), kein `localStorage`, keine Tokens im Antwort-Body |
+| S9 Erneuerungs-Token ohne Rotation/Widerruf | behoben: Sitzungen in der Datenbank, Rotation bei jeder Nutzung, Wiederverwendung beendet die Sitzung, Prüfwert statt Token gespeichert |
+| S10 Sperre wirkt verzögert | behoben: Sitzung und Benutzer werden bei jeder Anfrage geprüft; Abmelden, Sperren, Passwortwechsel/-reset beenden Sitzungen sofort; Rolle kommt aus der Datenbank |
+| CSRF | `SameSite=Strict` + Pflicht-Header `X-CSRF-Protection` + JSON-Content-Type + CORS-Freigabe nur für die eigene Oberfläche |
+| Protokoll | Anmeldung, Fehlversuche (mit IP), Abmeldung und erkannte Token-Wiederverwendung im Änderungsprotokoll |
+| Nebenbei behoben | SQLite-Wartezeit (`busyTimeout`) gegen `SQLITE_BUSY` bei gleichzeitigen Schreibvorgängen; doppelte Token-/API-Client-Logik im Frontend (3 Kopien → 1) entfernt |
+| Tests | 74 Unit-/Integrationstests (12 neu für Sitzungen), 84 Smoke-Checks; Mutationen (Sitzungsprüfung, Wiederverwendungs-Erkennung, Rotation, httpOnly, CSRF) färben je einen Test rot; Anmeldung, stille Erneuerung, Reload, Abmeldung und Seitenschutz im Browser geprüft |
+
+Bewusst offen: Konto-Sperre nach Fehlversuchen (heute nur Begrenzung pro IP), Verwaltung eigener Sitzungen/„überall abmelden“
+in der Oberfläche, Passwort-vergessen-Ablauf per E-Mail.

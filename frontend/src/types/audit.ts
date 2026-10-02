@@ -40,6 +40,8 @@ export interface AuditQuery {
   limit?: number
   userId?: number | string
   action?: string
+  /** kommagetrennte Vorgangs-Präfixe, die ausgeblendet werden, z. B. "auth" */
+  exclude?: string
   from?: string
   to?: string
 }

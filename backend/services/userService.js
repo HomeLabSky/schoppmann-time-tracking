@@ -1,6 +1,6 @@
 const { User, MinijobSetting, TimeEntry, PeriodClosure, sequelize } = require('../models');
 const { Op } = require('sequelize');
-const TokenService = require('./tokenService');
+const SessionService = require('./sessionService');
 const AuditService = require('./auditService');
 
 /** Fachlich relevante Konto-Felder für das Änderungsprotokoll (nie das Passwort). */
@@ -87,7 +87,7 @@ class UserService {
    * Authentifiziert einen User
    * @param {string} email - User Email
    * @param {string} password - User Passwort
-   * @returns {Promise<Object>} { user, tokens }
+   * @returns {Promise<Object>} { user } – Sitzung und Cookies erzeugt die Route
    * @throws {Error} Bei Auth-Fehlern
    */
   static async authenticateUser(email, password) {
@@ -108,12 +108,8 @@ class UserService {
       throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
     }
 
-    // Tokens generieren
-    const tokens = TokenService.generateTokens(user);
-
     return {
-      user: user.toSafeJSON(),
-      tokens
+      user: user.toSafeJSON()
     };
   }
 
@@ -213,10 +209,11 @@ class UserService {
    * @param {string} currentPassword - Aktuelles Passwort
    * @param {string} newPassword - Neues Passwort
    * @param {{id:number,email:string}} [actor] Auslöser (ohne Angabe: der Benutzer selbst)
+   * @param {string} [keepSessionId] aktuelle Sitzung, die bestehen bleibt; alle anderen werden beendet
    * @returns {Promise<boolean>} True bei Erfolg
    * @throws {Error} Bei Passwort-Fehlern
    */
-  static async changeUserPassword(userId, currentPassword, newPassword, actor) {
+  static async changeUserPassword(userId, currentPassword, newPassword, actor, keepSessionId = null) {
     const user = await User.findByPk(userId);
     if (!user) {
       throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
@@ -243,6 +240,8 @@ class UserService {
           targetUserId: user.id
         }, { transaction });
       });
+      // Ein neues Passwort macht gestohlene Sitzungen unbrauchbar: alle anderen Geräte werden abgemeldet
+      await SessionService.revokeAllForUser(user.id, { exceptSid: keepSessionId, reason: 'password_changed' });
       return true;
     } catch (error) {
       throw new Error(`PASSWORD_CHANGE_ERROR:${error.message}`);
@@ -409,6 +408,9 @@ class UserService {
           before,
           after: accountSnapshot(user)
         }, { transaction });
+        if (!user.isActive) {
+          await SessionService.revokeAllForUser(user.id, { reason: 'user_deactivated', transaction });
+        }
         return user.toSafeJSON();
       });
     } catch (error) {
@@ -548,6 +550,9 @@ class UserService {
           after: accountSnapshot(user),
           meta: passwordChanged ? { passwordChanged: true } : null
         }, { transaction });
+        if (passwordChanged || !user.isActive) {
+          await SessionService.revokeAllForUser(user.id, { reason: passwordChanged ? 'password_reset_by_admin' : 'user_deactivated', transaction });
+        }
         return user.toSafeJSON();
       });
     } catch (error) {

@@ -8,6 +8,8 @@
 const express = require('express');
 const { MinijobSetting } = require('../models');
 const UserService = require('../services/userService');
+const SessionService = require('../services/sessionService');
+const { clearAuthCookies } = require('../utils/authCookies');
 const { validateUserSettings, handleValidationErrors, sanitizeInput } = require('../middleware/validation');
 const { requireEmployee, authenticateToken } = require('../middleware/auth');
 const { sendServiceError } = require('../utils/serviceErrors');
@@ -109,7 +111,7 @@ router.put('/change-password',
   async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body;
-      await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword);
+      await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword, undefined, req.user.sid);
 
       console.log(`🔐 Passwort geändert: User ${req.user.userId}`);
       res.json({ success: true, message: 'Passwort erfolgreich geändert' });
@@ -265,8 +267,14 @@ router.get('/account-status', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ LOGOUT (bei JWT clientseitig; Platz für spätere Token-Blacklist)
-router.post('/logout', authenticateToken, (req, res) => {
+// ✅ LOGOUT: beendet die Sitzung serverseitig und löscht die Cookies
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    await SessionService.revoke(req.user.sid, 'logout');
+  } catch (error) {
+    console.error('Logout Fehler:', error);
+  }
+  clearAuthCookies(res);
   console.log(`👋 Logout: ${req.user.email} (${req.user.role})`);
   res.json({
     success: true,
