@@ -100,6 +100,8 @@ jobs:
             -e JWT_SECRET="$TEST_JWT_SECRET" -e JWT_REFRESH_SECRET="$TEST_JWT_REFRESH" zeit-backend
           docker run -d --name fe -p 3000:3000 zeit-frontend
           for i in $(seq 1 30); do curl -fs http://localhost:5000/health && break; sleep 2; done
+          # /health ist erst 200, wenn Datenbank und Migrationen bereit sind (sonst 503) – das muss hier gelten
+          curl -fs http://localhost:5000/health || { echo "Backend ohne Datenbank (Migration fehlgeschlagen?)"; docker logs be; exit 1; }
           curl -fs http://localhost:5000/api/status
           curl -fs -o /dev/null http://localhost:3000/login
           echo "Backend- und Frontend-Container antworten"

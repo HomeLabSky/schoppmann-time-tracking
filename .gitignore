@@ -208,6 +208,9 @@ backups/
 # Development database dumps
 *.sql
 *.dump
+# ... außer versionierten Migrationen und der Test-Fixture (ohne echte Daten)
+!backend/drizzle/*.sql
+!backend/test/fixtures/*.sql
 # ============================================
 # Betrieb: Zertifikate/Schlüssel gehören nie ins Git
 # ============================================
