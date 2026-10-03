@@ -1,8 +1,8 @@
 # Backend-Architektur
 
-Express-API für die Zeiterfassung. Ziel der Struktur: **klare Schichten,
-eine Wahrheit je Domäne, isoliert bearbeitbare Module** – damit gezielt an
-einem Feature gearbeitet werden kann, ohne das ganze Backend zu lesen.
+Express-API für die Zeiterfassung. Die REST-API ist das Produkt: **Web-Oberfläche und (spätere) App sind zwei
+gleichberechtigte Clients**. Ziel der Struktur: klare Schichten, eine Wahrheit je Domäne, ein maschinenlesbarer
+Vertrag (OpenAPI), der aus dem Code entsteht.
 
 ## Schichten (von außen nach innen)
 
@@ -10,14 +10,12 @@ einem Feature gearbeitet werden kann, ohne das ganze Backend zu lesen.
 HTTP-Request
    │
    ▼
-routes/        Pfad-Definition + Middleware-Verkettung. KEINE Geschäftslogik.
-   │           Übersetzt nur HTTP ↔ Service-Aufruf und mappt Domänenfehler
-   │           auf HTTP-Statuscodes/Fehlercodes.
+routes/        Routen-Definition mit Vertrag (lib/route.js): Berechtigung, Eingabe- und Antwort-Schema.
+   │           KEINE Geschäftslogik – übersetzt nur HTTP ↔ Service-Aufruf.
    ▼
-services/      GESAMTE Geschäftslogik. Eine Klasse je Domäne. Wirft
-   │           sprechende Fehler im Format `CODE:Nachricht`.
+services/      GESAMTE Geschäftslogik. Eine Klasse je Domäne. Wirft AppError('CODE', 'Meldung').
    ▼
-models/        Sequelize-Models (Persistenz) + Model-eigene Helfer/Hooks.
+models/        Sequelize-Models (Persistenz) + Model-eigene Hooks.
    ▼
 SQLite (config/database.js)
 ```
@@ -25,88 +23,118 @@ SQLite (config/database.js)
 Querschnitt:
 
 ```
-config/        Zentrale Konfiguration (Env, JWT, DB, CORS, Rate-Limit) + DB-Verbindung.
-middleware/    Auth (JWT), Validierung (express-validator), Security (Helmet/CORS),
-               Rate-Limiting. Wird in routes/ verkettet.
-utils/         Einheitliche Response-Helfer (responses.js) und zentrales
-               Fehler-Mapping (errorHandler.js).
+schemas/       zod-Schemas je Domäne: Eingaben (geprüft, normalisiert) und Antworten (dokumentiert, in Tests geprüft).
+lib/           errors.js (AppError, Statuscode je Fehlercode), route.js (Routen mit Vertrag), openapi.js
+               (OpenAPI-3.1-Dokument), logger.js (pino, ohne personenbezogene Daten).
+middleware/    auth.js (Cookie oder Bearer), csrf.js, errorHandler.js (einziges Fehlerformat), security.js
+               (Helmet/CORS/Content-Type), rateLimiting.js.
+config/        Umgebungsvariablen, mit zod geprüft (ungültig = kein Start) + DB-Verbindung.
+utils/         Reine Hilfen: billing.js (Geldlogik), clock.js, authCookies.js, Sicherung.
 ```
 
 ## Einstiegspunkte
 
 | Datei | Verantwortung |
 |---|---|
-| `app.js` | Baut die Express-App auf (Middleware, Routen, Error-Handler). Kein `listen()`. |
+| `app.js` | Baut die Express-App auf (Request-Log, Sicherheit, Routen, Error-Handler). Kein `listen()`. |
 | `server.js` | DB-Initialisierung, startet den HTTP-Listener, Prozess-Lifecycle. |
-| `routes/index.js` | Registriert alle Domänen-Router unter `/api` + Meta-Routen. |
-| `models/index.js` | Definiert Model-Beziehungen und `initDatabase()`. |
+| `routes/index.js` | Registriert alle Domänen-Router; eingehängt unter `/api/v1` und (Alias) `/api`. |
+| `models/index.js` | Model-Beziehungen und `initDatabase()` (Migrationen vor und nach `sync()`). |
 
 ## Domänen / Modul-Landkarte
 
+Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
+
 | Domäne | Route | Service | Model |
 |---|---|---|---|
-| Authentifizierung | `routes/auth.js` (`/api/auth`) | `services/userService.js`, `services/tokenService.js` | `User` |
-| Zeiterfassung | `routes/timetracking.js` (`/api/timetracking`) | `services/timeEntryService.js`, `services/dateService.js` | `TimeEntry` |
-| Mitarbeiter (Self-Service) | `routes/employee.js` (`/api/employee`) | `services/userService.js`, `services/minijobService.js` | `User`, `MinijobSetting` |
-| Administration | `routes/admin.js` (`/api/admin`) | `services/userService.js` | `User`, `MinijobSetting` |
-| Minijob-Grenzen | `routes/minijob.js` (`/api/admin/minijob`) | `services/minijobService.js` | `MinijobSetting` |
-| Zeitnachweise & Monatsabschluss (Admin) | `routes/timesheets.js` (`/api/admin/timesheets`) | `services/periodService.js`, `services/periodGuard.js` | `PeriodClosure` |
-| Änderungsprotokoll (Admin, nur lesend) | `routes/audit.js` (`/api/admin/audit`) | `services/auditService.js` | `AuditLog` |
-| Wartung (nur lokal, kein HTTP) | `scripts/create-admin.js`, `scripts/reset-password.js` (`npm run admin:create` / `user:reset-password`) | `models/` direkt | `User` |
+| Anmeldung (Web + App) | `routes/auth.js` (`/auth`) | `authService.js`, `sessionService.js`, `loginThrottle.js`, `userService.js` | `User`, `Session`, `LoginThrottle` |
+| Zeiterfassung | `routes/timetracking.js` (`/timetracking`) | `timeEntryService.js`, `dateService.js` | `TimeEntry` |
+| Mitarbeiter (Selbstbedienung) | `routes/employee.js` (`/employee`) | `userService.js` | `User`, `MinijobSetting` |
+| Benutzerverwaltung | `routes/admin.js` (`/admin`) | `userService.js` | `User` |
+| Minijob-Grenzen | `routes/minijob.js` (`/admin/minijob`) | `minijobService.js` | `MinijobSetting` |
+| Zeitnachweise & Monatsabschluss | `routes/timesheets.js` (`/admin/timesheets`) | `periodService.js`, `periodGuard.js` | `PeriodClosure` |
+| Änderungsprotokoll (nur lesend) | `routes/audit.js` (`/admin/audit`) | `auditService.js` | `AuditLog` |
+| Systemstatus | `routes/system.js` (`/admin/system`) | `utils/backupStatus.js` | – |
+| Wartung (nur lokal, kein HTTP) | `scripts/create-admin.js`, `scripts/reset-password.js` | `models/` direkt | `User` |
 
 ## API-Vertrag (verbindlich)
 
-Das Frontend (`frontend/src/lib/api.ts`) hängt fest an diesem Format:
-
+- **Maschinenlesbar**: `GET /api/v1/openapi.json` bzw. die Datei `backend/openapi.json` (`npm run openapi`). Ein
+  Unit-Test schlägt fehl, wenn die Datei nicht zum Code passt. Clients (App, Web) können daraus Typen erzeugen.
+- **Versionierung**: `/api/v1` ist verbindlich. `/api` ist ein Alias für die bestehende Web-Oberfläche. Nicht
+  abwärtskompatible Änderungen kommen unter `/api/v2` – installierte App-Versionen nutzen v1 weiter.
 - Erfolg: `{ success: true, message, data }`
-- Fehler: `{ success: false, error, code }` mit passendem HTTP-Status
-- Auth: httpOnly-Cookies (siehe *Anmeldung*), keine Tokens im Body. Bei `401` versucht das Frontend still
-  `POST /api/auth/refresh` und wiederholt die Anfrage einmal. `403` heißt: angemeldet, aber nicht berechtigt.
-  Fachliche Ablehnungen bei bestehender Sitzung (z. B. falsches aktuelles Passwort, `INVALID_CURRENT_PASSWORD`) sind
-  deshalb **nie 401**, sondern 400 – sonst würde der Client die Sitzung erneuern und abmelden.
-- Ändernde Anfragen (POST/PUT/PATCH/DELETE) brauchen den Header `X-CSRF-Protection: 1`.
-
-**Statuscodes und `code`-Werte dürfen bei Refactorings nicht stillschweigend
-geändert werden** – sie sind Teil des öffentlichen Vertrags.
+- Fehler: `{ success: false, error, code }`, bei Eingabefehlern zusätzlich `fields` (Meldung je Feld) und `details`;
+  bei `ACCOUNT_LOCKED` `retryAfter` (+ Header `Retry-After`); bei `INTERNAL_ERROR` die `requestId`.
+  Alle Codes mit Status stehen in `lib/errors.js` (`ERROR_STATUS`) und im OpenAPI-Schema `Error`.
+- `401` heißt ausschließlich „nicht (mehr) angemeldet“ – der Client erneuert dann still die Sitzung. Fachliche
+  Ablehnungen bei bestehender Sitzung (z. B. `INVALID_CURRENT_PASSWORD`) sind **nie 401**, sondern 400/403/409.
+- **Statuscodes und `code`-Werte dürfen nicht stillschweigend geändert werden** – sie sind Teil des Vertrags.
 
 ## Konventionen
 
-- **Routen bleiben dünn:** keine Sequelize-Queries direkt in Routen; stattdessen
-  Service-Methoden aufrufen.
-- **Validierung zentral:** Validatoren leben in `middleware/validation.js`,
-  nicht inline in den Routen.
-- **Fehler aus Services:** Format `CODE:Nachricht`; die Route übersetzt den
-  Code in Status + Response.
-- **Kein Debug-`console.log`** im Request-Pfad; Start-/Lifecycle-Logs gehören in
-  `server.js`.
+- **Neue Route** = `api.get/post/…(pfad, { summary, auth, params, query, body, response, status, errors }, handler)`
+  in `routes/*.js` (siehe `lib/route.js`). Der Handler bekommt geprüfte Eingaben in `req.valid` und gibt
+  `{ data, message, status }` zurück. Unbekannte Body-Felder werden entfernt (kein Mass-Assignment).
+- **Berechtigung** steht an der Route (`auth: 'public' | 'user' | 'employee' | 'admin'`); `/admin/*` prüft zusätzlich
+  am Einhängepunkt.
+- **Fehler**: `throw new AppError('CODE', 'Meldung')` – neue Codes in `lib/errors.js` mit Status eintragen. Kein
+  try/catch in Routen: Express 5 reicht Fehler an `middleware/errorHandler.js` weiter.
+- **Antwort-Schemas** werden im Smoke-Test (`VALIDATE_RESPONSES=1`) gegen jede echte Antwort geprüft; er listet
+  Endpunkte ohne geprüfte Erfolgsantwort auf.
+- **Logging** nur über `lib/logger.js` bzw. `req.log`; keine E-Mail-Adressen, Namen oder Tokens, Personen als ID.
+  `console` nur in CLI-Skripten.
 
-## Anmeldung (Cookies und Sitzungen)
+## Anmeldung (Web: Cookies, App: Bearer-Token)
 
-Tokens liegen ausschließlich in **httpOnly-Cookies** – JavaScript im Browser kann sie nicht lesen; ein Skript-Angriff
-(XSS) kann sie daher nicht stehlen. Es gibt kein `localStorage` und keinen `Authorization`-Header mehr.
+Beide Wege nutzen dieselbe Sitzungs-Tabelle, dieselbe Rotation und dieselbe Konto-Sperre.
+
+| | Web | App |
+|---|---|---|
+| Anmelden | `POST /auth/login` → Cookies | `POST /auth/token` → `{ accessToken, refreshToken, expiresIn, refreshExpiresAt }` |
+| Anfragen | Cookie `zeit_access` (+ Header `X-CSRF-Protection: 1` bei Änderungen) | `Authorization: Bearer <accessToken>` |
+| Erneuern | `POST /auth/refresh` (Cookie) | `POST /auth/token/refresh` `{ refreshToken }` |
+| Abmelden | `POST /auth/logout` | `POST /auth/token/revoke` `{ refreshToken }` |
+| Laufzeit Erneuerung | gleitend 7 Tage, höchstens 30 | gleitend 30 Tage, höchstens 90 |
 
 | Cookie | Inhalt | Pfad | Laufzeit |
 |---|---|---|---|
 | `zeit_access` | JWT mit nur Benutzer- und Sitzungs-ID | `/api` | 15 Minuten |
-| `zeit_refresh` | zufälliges Erneuerungs-Token `<Sitzungs-ID>.<Geheimnis>` | `/api/auth` | gleitend 7 Tage, höchstens 30 Tage je Sitzung |
+| `zeit_refresh` | zufälliges Erneuerungs-Token `<Sitzungs-ID>.<Geheimnis>` | Auth-Pfad der Anmeldung (`/api/auth` oder `/api/v1/auth`) | gleitend 7 Tage |
 
 Beide Cookies: `HttpOnly`, `SameSite=Strict`, in Produktion `Secure`.
 
-- **Sitzungen in der Datenbank** (`Sessions`): Jede Anmeldung ist eine Sitzung. Gespeichert wird nur ein HMAC-Prüfwert
-  des Erneuerungs-Tokens (mit `JWT_REFRESH_SECRET`), nie das Token selbst.
+- **Sitzungen in der Datenbank** (`Sessions`, Spalte `clientType` = `web`/`app`): Gespeichert wird nur ein
+  HMAC-Prüfwert des Erneuerungs-Tokens (mit `JWT_REFRESH_SECRET`), nie das Token selbst.
+- **Ein Token gilt nur auf seinem Weg**: Ein Web-Erneuerungs-Cookie wird an `/auth/token/refresh` abgelehnt und
+  umgekehrt (`INVALID_REFRESH_TOKEN`).
+- **Authorization-Header hat Vorrang**: Ist er vorhanden, werden Cookies ignoriert (kein Rückfall). Solche Anfragen
+  brauchen keinen CSRF-Header – eine fremde Webseite kann den Header ohne CORS-Freigabe nicht setzen, und
+  `Authorization` ist in CORS nicht freigegeben.
 - **Prüfung bei jeder Anfrage** (`middleware/auth.js`): Sitzung nicht beendet, Benutzer aktiv; Rolle, Name und E-Mail
-  kommen aus der Datenbank. **Abmelden, Sperren und Rollenänderungen wirken sofort** (früher bis zu 15 Minuten).
+  kommen aus der Datenbank. **Abmelden, Sperren und Rollenänderungen wirken sofort.**
 - **Rotation mit Wiederverwendungs-Erkennung** (`services/sessionService.js`): Jede Erneuerung ersetzt das Token.
   Taucht ein bereits ausgetauschtes Token später wieder auf, gilt es als gestohlen → die ganze Sitzung wird beendet
-  (`REFRESH_TOKEN_REUSED`). Innerhalb von 10 Sekunden gilt ein altes Token nur als „Erneuerung läuft“ (`409`, zwei Tabs).
+  (`REFRESH_TOKEN_REUSED`). Innerhalb von 10 Sekunden gilt ein altes Token nur als „Erneuerung läuft“ (`409`).
+- **Konto-Sperre** (`services/loginThrottle.js`): nach 5 Fehlversuchen je E-Mail-Adresse 15 Minuten
+  (`429 ACCOUNT_LOCKED`, `Retry-After`), jede weitere Serie doppelt so lange, höchstens 24 h. Während der Sperre wird
+  das Passwort nicht geprüft. Gezählt wird auch für unbekannte Adressen (die Sperre verrät nicht, ob ein Konto
+  existiert); unbekannte Adressen kosten dieselbe Rechenzeit wie falsche Passwörter. Erfolgreiche Anmeldung und
+  Passwort-Reset durch Admin oder CLI heben die Sperre auf.
 - **Sitzungen werden beendet** bei Abmeldung, Passwortwechsel (alle *anderen* Geräte), Passwort-Reset durch Admin/CLI,
   Sperrung und Löschung des Kontos.
-- **CSRF**: `SameSite=Strict` + Pflicht-Header `X-CSRF-Protection` (`middleware/csrf.js`) + JSON-Content-Type + CORS nur
-  für die eigene Oberfläche.
-- **Protokoll**: `auth.login`, `auth.login_failed`, `auth.logout`, `auth.session_reuse_detected` (mit IP).
+- **Protokoll**: `auth.login`, `auth.login_failed`, `auth.account_locked`, `auth.logout`,
+  `auth.session_reuse_detected` (mit IP und Weg `web`/`app`).
 
 Entwicklung: Frontend und Backend müssen unter **demselben Hostnamen** laufen (`localhost:3000` und `localhost:5000`,
 nicht `127.0.0.1` und `localhost` mischen), sonst sendet der Browser die `SameSite=Strict`-Cookies nicht mit.
+
+## Offline-Erfassung (App)
+
+`POST /timetracking` akzeptiert eine vom Client erzeugte `clientId` (z. B. UUID, eindeutig je Mitarbeiter). Wird
+dieselbe Anfrage wiederholt (Antwort ging verloren), entsteht kein zweiter Eintrag: Die API liefert den bestehenden
+mit `200` statt `201`. Dieselbe `clientId` für einen anderen Tag ist ein Client-Fehler (`409 CLIENT_ID_CONFLICT`).
+Weitere eindeutige Konflikte: `ENTRY_EXISTS` (Tag schon erfasst), `PERIOD_CLOSED` (Periode abgeschlossen).
 
 ## Rechenlogik (Abrechnung)
 
@@ -125,8 +153,8 @@ Wichtige Regeln:
   bleibt `0`.
 - Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
 
-Schema-Änderungen für bestehende Datenbanken: `models/migrations.js` (idempotent, legt vor der
-ersten Änderung eine Sicherungskopie der DB-Datei an).
+Schema-Änderungen für bestehende Datenbanken: `models/migrations.js` (idempotent; neue Spalten vor `sync()`,
+Datenpflege danach; legt vor der ersten Änderung eine Sicherungskopie der DB-Datei an).
 
 ## Änderungsprotokoll (Audit-Log)
 
@@ -170,4 +198,7 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 - `test/sessions.test.js`: Sitzungen – Rotation, Wiederverwendungs-Erkennung, Ablauf, Widerruf, Besitznachweis beim Abmelden.
 - `test/audit-closure.test.js`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
   eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung.
+- `test/phase2-api.test.js`: Konto-Sperre (Eskalation, Verfall), App-Sitzungen (Laufzeit, Weg-Bindung), idempotente
+  Anlage, Fehlerformat, CSRF-Ausnahmen, Konfigurationsprüfung, OpenAPI-Dokument aktuell.
+- Smoke-Test: prüft jede Erfolgsantwort gegen ihr Schema und listet Endpunkte ohne Erfolgsfall auf.
 - Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.

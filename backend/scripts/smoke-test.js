@@ -377,6 +377,8 @@ async function main() {
     check('Gefälschtes Token 401 INVALID_TOKEN', forgedRes.status === 401 && forgedRes.json?.code === 'INVALID_TOKEN', forgedRes.json);
     const badBearer = await api('GET', '/api/auth/profile', { token: s1, headers: { Authorization: 'Bearer kaputt' } });
     check('Authorization-Header hat Vorrang: kein Rückfall auf das Cookie (401 INVALID_TOKEN)', badBearer.status === 401 && badBearer.json?.code === 'INVALID_TOKEN', badBearer.json);
+    const basicAuth = await api('GET', '/api/auth/profile', { token: s1, headers: { Authorization: 'Basic YWRtaW46YWRtaW4=' } });
+    check('… auch bei fremdem Schema (Basic): 401 MISSING_TOKEN statt Cookie', basicAuth.status === 401 && basicAuth.json?.code === 'MISSING_TOKEN', basicAuth.json);
 
     // Erneuerung rotiert das Erneuerungs-Token
     const oldRefresh = s1.jar.get('zeit_refresh');

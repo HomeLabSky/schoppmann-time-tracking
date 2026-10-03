@@ -1,5 +1,6 @@
 const path = require('path');
-require('dotenv').config({ quiet: true });
+// backend/.env – unabhängig vom Startverzeichnis (wie der DB-Pfad)
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
 const { z } = require('zod');
 
 /**
@@ -29,6 +30,10 @@ const bool = (fallback) =>
 const list = () =>
   z.string().optional().transform((value) => (value ? value.split(',').map((s) => s.trim()).filter(Boolean) : []));
 
+// Leere Werte (`KEY=` in der .env) gelten als nicht gesetzt
+const optionalText = (fallback) =>
+  z.preprocess((value) => (value === '' ? undefined : value), z.string().default(fallback));
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['production', 'development', 'test']).default('production'),
   PORT: int(5000, { min: 1 }),
@@ -48,7 +53,7 @@ const EnvSchema = z.object({
   LOGIN_LOCK_MINUTES: int(15, { min: 1 }),
 
   DB_DIALECT: z.literal('sqlite').default('sqlite'),
-  DB_STORAGE: z.string().default('./database/timetracking.db'),
+  DB_STORAGE: optionalText('./database/timetracking.db'),
   DB_LOGGING: bool(false),
 
   CORS_ORIGIN: list(),

@@ -4,7 +4,6 @@
  * Datenbank-Initialisierung, HTTP-Listener und Prozess-Lifecycle (sauberes Beenden, globale Fehler).
  * Der eigentliche App-Aufbau liegt in app.js.
  */
-require('dotenv').config({ quiet: true });
 const config = require('./config');
 const logger = require('./lib/logger');
 const { initDatabase } = require('./models');

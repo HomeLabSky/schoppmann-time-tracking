@@ -13,7 +13,8 @@
     "test:unit": "node --test \"test/**/*.test.js\"",
     "db:backup": "node scripts/backup-db.js",
     "db:restore": "node scripts/restore-db.js",
-    "db:backup:loop": "node scripts/backup-loop.js"
+    "db:backup:loop": "node scripts/backup-loop.js",
+    "openapi": "node scripts/openapi.js"
   },
   "keywords": [],
   "author": "",

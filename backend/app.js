@@ -7,7 +7,6 @@
  *
  * Der DB-Verbindungsstatus wird über `app.locals.dbConnected` bereitgestellt und vom Starter gesetzt.
  */
-require('dotenv').config({ quiet: true });
 const crypto = require('crypto');
 const express = require('express');
 const pinoHttp = require('pino-http');
@@ -44,6 +43,8 @@ app.use(pinoHttp({
     req: (req) => ({ id: req.id, method: req.method, path: req.url.split('?')[0] }),
     res: (res) => ({ statusCode: res.statusCode })
   },
+  // Wer hat angefragt – nur als ID (gesetzt von middleware/auth.js)
+  customProps: (req) => (req.user ? { userId: req.user.userId } : {}),
   customLogLevel: (req, res, error) => {
     if (error || res.statusCode >= 500) return 'error';
     if (res.statusCode >= 400) return 'warn';

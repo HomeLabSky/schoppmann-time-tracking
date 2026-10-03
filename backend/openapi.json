@@ -1,0 +1,6391 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Schoppmann Zeiterfassung API",
+    "version": "2.1.0",
+    "description": "REST-API für Web-Oberfläche und App.\n\n**Anmeldung**\n- Web: `POST /auth/login` setzt httpOnly-Cookies. Ändernde Anfragen brauchen den Header `X-CSRF-Protection: 1`.\n- App: `POST /auth/token` liefert Zugriffs- und Erneuerungs-Token im Body. Anfragen tragen\n  `Authorization: Bearer <accessToken>`; erneuern über `POST /auth/token/refresh` (das Erneuerungs-Token\n  wird dabei ausgetauscht – das alte ist danach ungültig). Kein CSRF-Header nötig.\n\n**Fehler** haben immer die Form `{ success:false, error, code }`. `401` heißt nur \"nicht angemeldet\";\nder Client erneuert dann still die Sitzung. Fachliche Ablehnungen sind 400/403/409.\n\n**Offline-Erfassung**: `POST /timetracking` akzeptiert eine `clientId` (UUID). Eine Wiederholung mit\nderselben `clientId` legt nichts doppelt an, sondern liefert den bestehenden Eintrag (200 statt 201)."
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Anmeldung"
+    },
+    {
+      "name": "Zeiterfassung"
+    },
+    {
+      "name": "Mitarbeiter"
+    },
+    {
+      "name": "Benutzerverwaltung"
+    },
+    {
+      "name": "Minijob-Grenzen"
+    },
+    {
+      "name": "Zeitnachweise"
+    },
+    {
+      "name": "Änderungsprotokoll"
+    },
+    {
+      "name": "System"
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "operationId": "postAuthRegister",
+        "summary": "Selbstregistrierung (nur wenn ALLOW_REGISTRATION aktiv)",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß\\s\\-'.]+$"
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Registrierung erfolgreich",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Registrierung erfolgreich"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "REGISTRATION_DISABLED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_EXISTS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "postAuthLogin",
+        "summary": "Anmelden (Web): setzt httpOnly-Cookies",
+        "description": "Nach 5 Fehlversuchen ist die Anmeldung für die Adresse 15 Minuten gesperrt (ACCOUNT_LOCKED, Header Retry-After); jede weitere Serie verdoppelt die Sperre.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login erfolgreich",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Login erfolgreich"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "USER_INACTIVE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "ACCOUNT_LOCKED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "postAuthRefresh",
+        "summary": "Sitzung erneuern (Web): Erneuerungs-Cookie wird ausgetauscht",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Sitzung erfolgreich erneuert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sitzung erfolgreich erneuert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "MISSING_REFRESH_TOKEN, INVALID_REFRESH_TOKEN, REFRESH_TOKEN_REUSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REFRESH_IN_PROGRESS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "postAuthLogout",
+        "summary": "Abmelden (Web und App): beendet die Sitzung serverseitig",
+        "description": "Bewusst ohne Anmeldeprüfung – auch mit abgelaufenem Zugriffs-Token muss man sich abmelden können. Die App schickt ihr Zugriffs-Token im Authorization-Header oder nutzt POST /auth/token/revoke.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Erfolgreich abgemeldet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Erfolgreich abgemeldet"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "operationId": "postAuthToken",
+        "summary": "Anmelden (App): liefert Zugriffs- und Erneuerungs-Token",
+        "description": "Das Zugriffs-Token (15 min) gehört in den Header `Authorization: Bearer …`. Das Erneuerungs-Token sicher im Gerät speichern (Keychain/Keystore); es gilt gleitend 30 Tage, eine Sitzung höchstens 90 Tage. Gleiche Konto-Sperre wie bei der Web-Anmeldung.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "deviceName": {
+                    "description": "Gerätename für die Sitzungsübersicht, z. B. \"iPhone von Anna\"",
+                    "type": "string",
+                    "maxLength": 100
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login erfolgreich",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Login erfolgreich"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/TokenPair"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "INVALID_CREDENTIALS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "USER_INACTIVE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "ACCOUNT_LOCKED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token/refresh": {
+      "post": {
+        "operationId": "postAuthTokenRefresh",
+        "summary": "Tokens erneuern (App): tauscht das Erneuerungs-Token aus",
+        "description": "Das alte Erneuerungs-Token ist danach ungültig – sofort das neue speichern. Wird ein bereits ausgetauschtes Token erneut vorgelegt, gilt es als gestohlen: die Sitzung endet (REFRESH_TOKEN_REUSED). Bei REFRESH_IN_PROGRESS (409) kurz warten und mit dem zuletzt gespeicherten Token wiederholen.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sitzung erfolgreich erneuert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sitzung erfolgreich erneuert"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/TokenPair"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "INVALID_REFRESH_TOKEN, REFRESH_TOKEN_REUSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "USER_INACTIVE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REFRESH_IN_PROGRESS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token/revoke": {
+      "post": {
+        "operationId": "postAuthTokenRevoke",
+        "summary": "Abmelden (App): beendet die Sitzung des Erneuerungs-Tokens",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 512
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Erfolgreich abgemeldet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Erfolgreich abgemeldet"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "operationId": "getAuthProfile",
+        "summary": "Eigenes Benutzerkonto",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profil erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Profil erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putAuthProfile",
+        "summary": "Name/E-Mail des eigenen Kontos ändern",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß\\s\\-'.]+$"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profil erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Profil erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_EXISTS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/change-password": {
+      "put": {
+        "operationId": "putAuthChangePassword",
+        "summary": "Eigenes Passwort ändern",
+        "description": "Beendet alle anderen Sitzungen des Benutzers (andere Browser und Geräte); die aktuelle bleibt bestehen.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)"
+                  },
+                  "confirmPassword": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "currentPassword",
+                  "newPassword"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Passwort erfolgreich geändert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Passwort erfolgreich geändert"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), INVALID_CURRENT_PASSWORD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users": {
+      "get": {
+        "operationId": "getAdminUsers",
+        "summary": "Benutzer auflisten (Suche, Rollenfilter, Seiten)",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "role",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "mitarbeiter",
+                ""
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User-Liste erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "User-Liste erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "users": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/User"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      },
+                      "required": [
+                        "users",
+                        "pagination"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postAdminUsers",
+        "summary": "Benutzer anlegen",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß\\s\\-'.]+$"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "mitarbeiter"
+                    ]
+                  }
+                },
+                "required": [
+                  "email",
+                  "password",
+                  "name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Benutzer erfolgreich erstellt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Benutzer erfolgreich erstellt"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_EXISTS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}": {
+      "get": {
+        "operationId": "getAdminUsersById",
+        "summary": "Einzelnen Benutzer laden (auch deaktivierte)",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Benutzer erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Benutzer erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putAdminUsersById",
+        "summary": "Benutzer ändern (Name, E-Mail, Rolle, Status, Passwort-Reset)",
+        "description": "Ein neues Passwort oder eine Sperrung beendet alle Sitzungen des Benutzers und hebt eine Konto-Sperre auf.",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß\\s\\-'.]+$"
+                  },
+                  "password": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string",
+                        "minLength": 8,
+                        "maxLength": 128,
+                        "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)"
+                      }
+                    ]
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "admin",
+                      "mitarbeiter"
+                    ]
+                  },
+                  "isActive": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Benutzer erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Benutzer erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_EXISTS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminUsersById",
+        "summary": "Benutzer löschen (nur ohne Zeiteinträge/Abschlüsse; sonst deaktivieren)",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Benutzer erfolgreich gelöscht",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Benutzer erfolgreich gelöscht"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deletedUser": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "email"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "deletedUser"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), CANNOT_DELETE_SELF, USER_HAS_DEPENDENCIES",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/settings": {
+      "put": {
+        "operationId": "putAdminUsersByIdSettings",
+        "summary": "Lohn, Abrechnungszeitraum und Lohnzettel-E-Mail festlegen",
+        "description": "Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein).",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stundenlohn": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999
+                  },
+                  "abrechnungStart": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "abrechnungEnde": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "lohnzettelEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Einstellungen erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Einstellungen erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/toggle-status": {
+      "patch": {
+        "operationId": "patchAdminUsersByIdToggleStatus",
+        "summary": "Benutzer sperren bzw. entsperren",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Erfolg",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), CANNOT_DEACTIVATE_SELF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/stats/users": {
+      "get": {
+        "operationId": "getAdminStatsUsers",
+        "summary": "Benutzer-Kennzahlen",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User-Statistiken erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "User-Statistiken erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "active": {
+                          "type": "integer"
+                        },
+                        "inactive": {
+                          "type": "integer"
+                        },
+                        "byRole": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "role": {
+                                "type": "string"
+                              },
+                              "total": {
+                                "type": "integer"
+                              },
+                              "active": {
+                                "type": "integer"
+                              }
+                            },
+                            "required": [
+                              "role",
+                              "total",
+                              "active"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "active",
+                        "inactive",
+                        "byRole"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/profile": {
+      "get": {
+        "operationId": "getEmployeeProfile",
+        "summary": "Eigenes Profil",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profil erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Profil erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung, USER_INACTIVE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putEmployeeProfile",
+        "summary": "Eigenes Profil ändern (Name, E-Mail)",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 50,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß\\s\\-'.]+$"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Profil erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Profil erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        }
+                      },
+                      "required": [
+                        "user"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "EMAIL_EXISTS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/change-password": {
+      "put": {
+        "operationId": "putEmployeeChangePassword",
+        "summary": "Eigenes Passwort ändern (mit Bestätigung)",
+        "description": "Beendet alle anderen Sitzungen des Benutzers; die aktuelle bleibt bestehen.",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "newPassword": {
+                    "type": "string",
+                    "minLength": 8,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)"
+                  },
+                  "confirmPassword": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "currentPassword",
+                  "newPassword",
+                  "confirmPassword"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Passwort erfolgreich geändert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Passwort erfolgreich geändert"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), INVALID_CURRENT_PASSWORD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/settings": {
+      "get": {
+        "operationId": "getEmployeeSettings",
+        "summary": "Eigene Arbeitseinstellungen (Lohn, Abrechnungszeitraum, Lohnzettel-E-Mail)",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arbeitseinstellungen erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Arbeitseinstellungen erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "$ref": "#/components/schemas/WorkSettings"
+                        },
+                        "userInfo": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "email",
+                            "role"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "settings",
+                        "userInfo"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putEmployeeSettings",
+        "summary": "Eigene Lohnzettel-E-Mail ändern",
+        "description": "Selbstbedienung nur für `lohnzettelEmail`. Stundenlohn oder Abrechnungszeitraum im Body → 403 SETTINGS_ADMIN_ONLY.",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stundenlohn": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999
+                  },
+                  "abrechnungStart": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "abrechnungEnde": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "lohnzettelEmail": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Arbeitseinstellungen erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Arbeitseinstellungen erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "$ref": "#/components/schemas/WorkSettings"
+                        }
+                      },
+                      "required": [
+                        "settings"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung, SETTINGS_ADMIN_ONLY",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/minijob/current": {
+      "get": {
+        "operationId": "getEmployeeMinijobCurrent",
+        "summary": "Heute gültige Minijob-Grenze",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aktuelle Minijob-Einstellung erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Aktuelle Minijob-Einstellung erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "setting": {
+                          "type": "object",
+                          "properties": {
+                            "monthlyLimit": {
+                              "type": [
+                                "number",
+                                "string"
+                              ]
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "validFrom": {
+                              "type": "string"
+                            },
+                            "validUntil": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "id": {
+                              "type": "integer"
+                            },
+                            "isActive": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "monthlyLimit",
+                            "description",
+                            "validFrom",
+                            "validUntil",
+                            "id",
+                            "isActive"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "setting"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NO_CURRENT_SETTING",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/dashboard": {
+      "get": {
+        "operationId": "getEmployeeDashboard",
+        "summary": "Startseite: Konto, Einstellungen, aktuelle Minijob-Grenze",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dashboard-Daten erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Dashboard-Daten erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/User"
+                        },
+                        "minijobSetting": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "monthlyLimit": {
+                                  "type": [
+                                    "number",
+                                    "string"
+                                  ]
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "validFrom": {
+                                  "type": "string"
+                                },
+                                "validUntil": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "monthlyLimit",
+                                "description",
+                                "validFrom",
+                                "validUntil"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "settings": {
+                          "$ref": "#/components/schemas/WorkSettings"
+                        },
+                        "stats": {
+                          "type": "object",
+                          "properties": {
+                            "currentMonth": {
+                              "type": "object",
+                              "properties": {
+                                "hoursWorked": {
+                                  "type": "number"
+                                },
+                                "earnings": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "hoursWorked",
+                                "earnings"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "currentMonth"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "minijobSetting",
+                        "settings",
+                        "stats"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/account-status": {
+      "get": {
+        "operationId": "getEmployeeAccountStatus",
+        "summary": "Status des eigenen Kontos",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account-Status erfolgreich ermittelt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Account-Status erfolgreich ermittelt"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer"
+                            },
+                            "email": {
+                              "type": "string"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "role": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "email",
+                            "name",
+                            "role"
+                          ]
+                        },
+                        "status": {
+                          "type": "object",
+                          "properties": {
+                            "isActive": {
+                              "type": "boolean"
+                            },
+                            "statusCode": {
+                              "type": "string",
+                              "enum": [
+                                "active",
+                                "inactive"
+                              ]
+                            },
+                            "message": {
+                              "type": "string"
+                            },
+                            "memberSince": {
+                              "type": "string",
+                              "description": "Zeitpunkt (ISO 8601)"
+                            },
+                            "lastUpdated": {
+                              "type": "string",
+                              "description": "Zeitpunkt (ISO 8601)"
+                            }
+                          },
+                          "required": [
+                            "isActive",
+                            "statusCode",
+                            "message",
+                            "memberSince",
+                            "lastUpdated"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "status"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/logout": {
+      "post": {
+        "operationId": "postEmployeeLogout",
+        "summary": "Abmelden (veraltet, gleichwertig zu POST /auth/logout)",
+        "tags": [
+          "Mitarbeiter"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Erfolgreich abgemeldet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Erfolgreich abgemeldet"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/settings": {
+      "get": {
+        "operationId": "getAdminMinijobSettings",
+        "summary": "Alle Minijob-Grenzen",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive",
+                ""
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minijob-Einstellungen erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Minijob-Einstellungen erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MinijobSetting"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      },
+                      "required": [
+                        "settings",
+                        "pagination"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postAdminMinijobSettings",
+        "summary": "Minijob-Grenze anlegen",
+        "description": "Eine unbefristete Vorgänger-Grenze wird automatisch zum Vortag beendet. Rückwirkender Beginn ist erlaubt; abgeschlossene Perioden behalten ihre eingefrorene Grenze.",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "monthlyLimit": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999999.99
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß0-9\\s\\-_.,!?()]+$"
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "validUntil": {
+                    "description": "Leer/null = unbegrenzt",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyLimit",
+                  "description",
+                  "validFrom"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Erfolg",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "setting": {
+                          "$ref": "#/components/schemas/MinijobSetting"
+                        },
+                        "autoAdjustedSettings": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MinijobAdjustment"
+                          }
+                        }
+                      },
+                      "required": [
+                        "setting",
+                        "autoAdjustedSettings"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "OVERLAPPING_PERIODS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/settings/current": {
+      "get": {
+        "operationId": "getAdminMinijobSettingsCurrent",
+        "summary": "Heute gültige Minijob-Grenze",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aktuelle Minijob-Einstellung gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Aktuelle Minijob-Einstellung gefunden"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "setting": {
+                          "$ref": "#/components/schemas/MinijobSetting"
+                        }
+                      },
+                      "required": [
+                        "setting"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NO_CURRENT_SETTING",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/settings/{id}": {
+      "put": {
+        "operationId": "putAdminMinijobSettingsById",
+        "summary": "Minijob-Grenze ändern",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "monthlyLimit": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 999999.99
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500,
+                    "pattern": "^[a-zA-ZäöüÄÖÜß0-9\\s\\-_.,!?()]+$"
+                  },
+                  "validFrom": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "validUntil": {
+                    "description": "Leer/null = unbegrenzt",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date"
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "const": ""
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "monthlyLimit",
+                  "description",
+                  "validFrom"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Minijob-Einstellung erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Minijob-Einstellung erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "setting": {
+                          "$ref": "#/components/schemas/MinijobSetting"
+                        }
+                      },
+                      "required": [
+                        "setting"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SETTING_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminMinijobSettingsById",
+        "summary": "Künftige Minijob-Grenze löschen",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Erfolg",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "deletedSetting": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer"
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "validFrom": {
+                              "type": "string"
+                            },
+                            "validUntil": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "description",
+                            "validFrom",
+                            "validUntil"
+                          ]
+                        },
+                        "adjustedSettings": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MinijobAdjustment"
+                          }
+                        }
+                      },
+                      "required": [
+                        "deletedSetting",
+                        "adjustedSettings"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), CANNOT_DELETE_ACTIVE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SETTING_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/settings/recalculate-periods": {
+      "post": {
+        "operationId": "postAdminMinijobSettingsRecalculatePeriods",
+        "summary": "Gültigkeitszeiträume lückenlos neu berechnen",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Erfolg",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "adjustedCount": {
+                          "type": "integer"
+                        },
+                        "adjustments": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MinijobAdjustment"
+                          }
+                        }
+                      },
+                      "required": [
+                        "adjustedCount",
+                        "adjustments"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/settings/refresh-status": {
+      "post": {
+        "operationId": "postAdminMinijobSettingsRefreshStatus",
+        "summary": "Aktiv-Kennzeichen neu setzen",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minijob-Status erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Minijob-Status erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "currentSetting": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "integer"
+                                },
+                                "monthlyLimit": {
+                                  "description": "Grenze in Euro",
+                                  "type": [
+                                    "number",
+                                    "string"
+                                  ]
+                                },
+                                "description": {
+                                  "type": "string"
+                                },
+                                "validFrom": {
+                                  "type": "string"
+                                },
+                                "validUntil": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "isActive": {
+                                  "type": "boolean"
+                                },
+                                "createdBy": {
+                                  "type": "integer"
+                                },
+                                "createdAt": {
+                                  "type": "string",
+                                  "description": "Zeitpunkt (ISO 8601)"
+                                },
+                                "updatedAt": {
+                                  "type": "string",
+                                  "description": "Zeitpunkt (ISO 8601)"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "monthlyLimit",
+                                "description",
+                                "validFrom",
+                                "validUntil",
+                                "isActive",
+                                "createdBy",
+                                "createdAt",
+                                "updatedAt"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "currentSetting"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/minijob/stats": {
+      "get": {
+        "operationId": "getAdminMinijobStats",
+        "summary": "Kennzahlen zu Minijob-Grenzen",
+        "tags": [
+          "Minijob-Grenzen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Minijob-Statistiken erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Minijob-Statistiken erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "overview": {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "integer"
+                            },
+                            "active": {
+                              "type": "integer"
+                            },
+                            "inactive": {
+                              "type": "integer"
+                            },
+                            "currentLimit": {
+                              "type": [
+                                "number",
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "active",
+                            "inactive",
+                            "currentLimit"
+                          ]
+                        },
+                        "current": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/components/schemas/MinijobSetting"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "recent": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MinijobSetting"
+                          }
+                        }
+                      },
+                      "required": [
+                        "overview",
+                        "current",
+                        "recent"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timetracking": {
+      "get": {
+        "operationId": "getTimetracking",
+        "summary": "Zeiteinträge und Abrechnung einer Periode",
+        "description": "Liefert die Einträge der Abrechnungsperiode zum Referenzmonat, Summen, Minijob-Übertrag und den Abschluss-Status.",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zeiteinträge erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeiteinträge erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MonthlyRecords"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postTimetracking",
+        "summary": "Zeiteintrag anlegen",
+        "description": "Regeln: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h, Ende < Start = über Mitternacht. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück.",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$",
+                    "description": "Endzeit (HH:mm); kleiner als Start = über Mitternacht"
+                  },
+                  "breakMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 480
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Pause in Minuten. Ohne Angabe gilt der Standard (30); 0 heißt ausdrücklich keine Pause."
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "clientId": {
+                    "description": "Vom Client erzeugte Kennung (z. B. UUID) für sichere Wiederholung bei Offline-Erfassung",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
+                  }
+                },
+                "required": [
+                  "date",
+                  "startTime",
+                  "endTime"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Zeiteintrag erfolgreich erstellt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeiteintrag erfolgreich erstellt"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/TimeEntry"
+                        }
+                      },
+                      "required": [
+                        "entry"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), VALIDATION_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ENTRY_EXISTS, PERIOD_CLOSED, CLIENT_ID_CONFLICT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timetracking/periods": {
+      "get": {
+        "operationId": "getTimetrackingPeriods",
+        "summary": "Abrechnungsperioden zur Auswahl (12 zurück, 3 voraus)",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Abrechnungsperioden erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Abrechnungsperioden erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "periods": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BillingPeriod"
+                          }
+                        },
+                        "currentPeriod": {
+                          "$ref": "#/components/schemas/BillingPeriod"
+                        }
+                      },
+                      "required": [
+                        "periods"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timetracking/stats/multi-month": {
+      "get": {
+        "operationId": "getTimetrackingStatsMultiMonth",
+        "summary": "Statistik über mehrere Monate",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "months",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 24
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Statistiken erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Statistiken erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "monthlyStats": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "totalHours": {
+                                "type": "number"
+                              },
+                              "totalEarnings": {
+                                "type": "number",
+                                "description": "Verdienst der Periode in Euro"
+                              },
+                              "actualEarnings": {
+                                "type": "number",
+                                "description": "Verdienst + Übertrag aus Vorperioden"
+                              },
+                              "carryIn": {
+                                "type": "number"
+                              },
+                              "carryOut": {
+                                "type": "number",
+                                "description": "Übertrag in die nächste Periode (über der Grenze)"
+                              },
+                              "paidThisMonth": {
+                                "type": "number",
+                                "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+                              },
+                              "minijobLimit": {
+                                "type": "number"
+                              },
+                              "hourlyRate": {
+                                "type": "number"
+                              },
+                              "exceedsLimit": {
+                                "type": "boolean"
+                              },
+                              "minijobLimitMissing": {
+                                "type": "boolean",
+                                "description": "Keine Minijob-Grenze hinterlegt: Werte vorläufig, Abschluss gesperrt"
+                              },
+                              "entryCount": {
+                                "type": "integer"
+                              },
+                              "year": {
+                                "type": "integer"
+                              },
+                              "month": {
+                                "type": "integer"
+                              },
+                              "monthName": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "totalHours",
+                              "totalEarnings",
+                              "actualEarnings",
+                              "carryIn",
+                              "carryOut",
+                              "paidThisMonth",
+                              "minijobLimit",
+                              "hourlyRate",
+                              "exceedsLimit",
+                              "minijobLimitMissing",
+                              "entryCount",
+                              "year",
+                              "month",
+                              "monthName"
+                            ]
+                          }
+                        },
+                        "totalStats": {
+                          "type": "object",
+                          "properties": {
+                            "totalHours": {
+                              "type": "number"
+                            },
+                            "totalEarnings": {
+                              "type": "number"
+                            },
+                            "averageMonthlyHours": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "totalHours",
+                            "totalEarnings",
+                            "averageMonthlyHours"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "monthlyStats",
+                        "totalStats"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timetracking/{id}": {
+      "get": {
+        "operationId": "getTimetrackingById",
+        "summary": "Einzelner Zeiteintrag",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zeiteintrag erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeiteintrag erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/TimeEntry"
+                        }
+                      },
+                      "required": [
+                        "entry"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ENTRY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putTimetrackingById",
+        "summary": "Zeiteintrag ändern (Datum ist nicht änderbar)",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "startTime": {
+                    "type": "string",
+                    "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "pattern": "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+                  },
+                  "breakMinutes": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 480
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "description": "Pause in Minuten. Ohne Angabe gilt der Standard (30); 0 heißt ausdrücklich keine Pause."
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Zeiteintrag erfolgreich aktualisiert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeiteintrag erfolgreich aktualisiert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entry": {
+                          "$ref": "#/components/schemas/TimeEntry"
+                        }
+                      },
+                      "required": [
+                        "entry"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ENTRY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTimetrackingById",
+        "summary": "Zeiteintrag löschen",
+        "description": "Der gelöschte Zustand bleibt im Änderungsprotokoll erhalten.",
+        "tags": [
+          "Zeiterfassung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zeiteintrag erfolgreich gelöscht",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeiteintrag erfolgreich gelöscht"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ENTRY_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}/periods": {
+      "get": {
+        "operationId": "getAdminTimesheetsByUserIdPeriods",
+        "summary": "Abrechnungsperioden eines Mitarbeiters (mit Abschluss-Kennzeichen)",
+        "tags": [
+          "Zeitnachweise"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Abrechnungsperioden erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Abrechnungsperioden erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "periods": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/BillingPeriod"
+                          }
+                        },
+                        "currentPeriod": {
+                          "$ref": "#/components/schemas/BillingPeriod"
+                        }
+                      },
+                      "required": [
+                        "periods"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}": {
+      "get": {
+        "operationId": "getAdminTimesheetsByUserId",
+        "summary": "Zeitnachweis eines Mitarbeiters für eine Periode",
+        "tags": [
+          "Zeitnachweise"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Zeitnachweis erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Zeitnachweis erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/MonthlyRecords"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}/close": {
+      "post": {
+        "operationId": "postAdminTimesheetsByUserIdClose",
+        "summary": "Periode abschließen (Zahlen werden eingefroren)",
+        "description": "Erst nach Periodenende; frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.",
+        "tags": [
+          "Zeitnachweise"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "month": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                    "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)"
+                  }
+                },
+                "required": [
+                  "month"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Periode erfolgreich abgeschlossen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Periode erfolgreich abgeschlossen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "closure": {
+                          "$ref": "#/components/schemas/PeriodClosure"
+                        }
+                      },
+                      "required": [
+                        "closure"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_NOT_ENDED, PERIOD_ALREADY_CLOSED, PERIOD_OVERLAP, PERIOD_PREVIOUS_OPEN, MINIJOB_LIMIT_MISSING",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}/reopen": {
+      "post": {
+        "operationId": "postAdminTimesheetsByUserIdReopen",
+        "summary": "Abgeschlossene Periode wieder öffnen (Begründung Pflicht)",
+        "description": "Nur die jüngste abgeschlossene Periode; die Begründung steht im Änderungsprotokoll.",
+        "tags": [
+          "Zeitnachweise"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "month": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                    "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "month",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Periode wieder geöffnet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Periode wieder geöffnet"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "periodStart": {
+                          "type": "string"
+                        },
+                        "periodEnd": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "periodStart",
+                        "periodEnd"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), REASON_REQUIRED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_NOT_CLOSED, PERIOD_LATER_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "operationId": "getAdminAudit",
+        "summary": "Änderungsprotokoll durchsuchen (neueste zuerst)",
+        "tags": [
+          "Änderungsprotokoll"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "description": "Präfix, z. B. \"time_entry\"",
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "exclude",
+            "in": "query",
+            "required": false,
+            "description": "Kommagetrennte Präfixe, die ausgeblendet werden (z. B. \"auth\")",
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Änderungsprotokoll erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Änderungsprotokoll erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entries": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/AuditEntry"
+                          }
+                        },
+                        "pagination": {
+                          "$ref": "#/components/schemas/Pagination"
+                        }
+                      },
+                      "required": [
+                        "entries",
+                        "pagination"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/system/backup": {
+      "get": {
+        "operationId": "getAdminSystemBackup",
+        "summary": "Zustand der Datensicherung",
+        "tags": [
+          "System"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sicherungsstatus erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sicherungsstatus erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/BackupStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "App: Zugriffs-Token aus POST /auth/token"
+      },
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "zeit_access",
+        "description": "Web: httpOnly-Cookie aus POST /auth/login"
+      }
+    },
+    "schemas": {
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actorEmail": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "entityType": {
+            "type": "string"
+          },
+          "entityId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targetUserId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "before": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "meta": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "actorId",
+          "actorEmail",
+          "action",
+          "entityType",
+          "entityId",
+          "targetUserId",
+          "before",
+          "after",
+          "meta",
+          "createdAt"
+        ],
+        "description": "Eintrag im unveränderlichen Änderungsprotokoll"
+      },
+      "BackupStatus": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "warning",
+              "error",
+              "unknown"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "localAgeHours": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "offsiteAgeHours": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "offsiteConfigured": {
+            "type": "boolean"
+          },
+          "lastSuccessAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "offsiteLastSuccessAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastAttemptAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastFile": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lastError": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "message",
+          "localAgeHours",
+          "offsiteAgeHours",
+          "offsiteConfigured",
+          "lastSuccessAt",
+          "offsiteLastSuccessAt",
+          "lastAttemptAt",
+          "lastFile",
+          "lastError"
+        ]
+      },
+      "BillingPeriod": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "Referenzmonat (YYYY-MM) – für ?month= verwenden"
+          },
+          "label": {
+            "type": "string"
+          },
+          "year": {
+            "type": "integer"
+          },
+          "month": {
+            "type": "integer"
+          },
+          "monthName": {
+            "type": "string"
+          },
+          "startDate": {
+            "type": "string"
+          },
+          "endDate": {
+            "type": "string"
+          },
+          "referenceMonth": {
+            "type": "integer"
+          },
+          "referenceYear": {
+            "type": "integer"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "isClosed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "year",
+          "month",
+          "monthName",
+          "startDate",
+          "endDate",
+          "isCurrent"
+        ],
+        "description": "Abrechnungsperiode eines Mitarbeiters"
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "success",
+          "error",
+          "code"
+        ],
+        "properties": {
+          "success": {
+            "const": false
+          },
+          "error": {
+            "type": "string",
+            "description": "Meldung für den Benutzer (deutsch)"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_ERROR",
+              "INVALID_JSON",
+              "INVALID_CONTENT_TYPE",
+              "CSRF_HEADER_MISSING",
+              "ROUTE_NOT_FOUND",
+              "ENDPOINT_NOT_FOUND",
+              "RATE_LIMIT_EXCEEDED",
+              "INTERNAL_ERROR",
+              "MISSING_TOKEN",
+              "TOKEN_EXPIRED",
+              "INVALID_TOKEN",
+              "SESSION_ENDED",
+              "MISSING_REFRESH_TOKEN",
+              "INVALID_REFRESH_TOKEN",
+              "REFRESH_TOKEN_REUSED",
+              "REFRESH_IN_PROGRESS",
+              "INVALID_CREDENTIALS",
+              "ACCOUNT_LOCKED",
+              "USER_INACTIVE",
+              "INSUFFICIENT_PERMISSIONS",
+              "REGISTRATION_DISABLED",
+              "USER_NOT_FOUND",
+              "EMAIL_EXISTS",
+              "INVALID_CURRENT_PASSWORD",
+              "INVALID_ROLE",
+              "CANNOT_DEACTIVATE_SELF",
+              "CANNOT_DELETE_SELF",
+              "USER_HAS_DEPENDENCIES",
+              "SETTINGS_ADMIN_ONLY",
+              "SETTING_NOT_FOUND",
+              "NO_CURRENT_SETTING",
+              "OVERLAPPING_PERIODS",
+              "CANNOT_DELETE_ACTIVE",
+              "ENTRY_NOT_FOUND",
+              "ENTRY_EXISTS",
+              "CLIENT_ID_CONFLICT",
+              "PERIOD_CLOSED",
+              "PERIOD_NOT_ENDED",
+              "PERIOD_ALREADY_CLOSED",
+              "PERIOD_NOT_CLOSED",
+              "PERIOD_PREVIOUS_OPEN",
+              "PERIOD_LATER_CLOSED",
+              "PERIOD_OVERLAP",
+              "MINIJOB_LIMIT_MISSING",
+              "REASON_REQUIRED"
+            ],
+            "description": "Maschinenlesbarer Fehlercode (stabil)"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Bei VALIDATION_ERROR: Meldung je Feld"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "retryAfter": {
+            "type": "integer",
+            "description": "Sekunden bis zum nächsten Versuch (ACCOUNT_LOCKED, Rate-Limit)"
+          },
+          "requestId": {
+            "type": "string",
+            "description": "Bei INTERNAL_ERROR: Kennung für die Fehlersuche im Log"
+          }
+        }
+      },
+      "MinijobAdjustment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "oldValidUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "newValidUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "oldValidUntil",
+          "newValidUntil"
+        ],
+        "description": "Automatisch angepasster Zeitraum einer anderen Grenze"
+      },
+      "MinijobSetting": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "monthlyLimit": {
+            "description": "Grenze in Euro",
+            "type": [
+              "number",
+              "string"
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string"
+          },
+          "validUntil": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "createdBy": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "Creator": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "email"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "monthlyLimit",
+          "description",
+          "validFrom",
+          "validUntil",
+          "isActive",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "Minijob-Verdienstgrenze mit Gültigkeitszeitraum"
+      },
+      "MonthlyRecords": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TimeEntry"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PeriodSummary"
+          },
+          "period": {
+            "type": "object",
+            "properties": {
+              "year": {
+                "type": "integer"
+              },
+              "month": {
+                "type": "integer"
+              },
+              "monthName": {
+                "type": "string"
+              },
+              "startDate": {
+                "type": "string"
+              },
+              "endDate": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "closed"
+                ]
+              }
+            },
+            "required": [
+              "year",
+              "month",
+              "monthName",
+              "startDate",
+              "endDate",
+              "description",
+              "status"
+            ]
+          },
+          "closure": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "closedAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {}
+                    ]
+                  },
+                  "closedBy": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "periodStart": {
+                    "type": "string"
+                  },
+                  "periodEnd": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "closedAt",
+                  "closedBy",
+                  "periodStart",
+                  "periodEnd"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "records",
+          "summary",
+          "period",
+          "closure"
+        ],
+        "description": "Zeiteinträge und Abrechnung einer Periode"
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "totalPages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "limit",
+          "total",
+          "totalPages"
+        ]
+      },
+      "PeriodClosure": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "closedBy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "closedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "entryCount": {
+            "type": "integer"
+          },
+          "totalMinutes": {
+            "type": "integer"
+          },
+          "earningsCents": {
+            "type": "integer"
+          },
+          "limitCents": {
+            "type": "integer"
+          },
+          "carryInCents": {
+            "type": "integer"
+          },
+          "paidCents": {
+            "type": "integer"
+          },
+          "carryOutCents": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "periodStart",
+          "periodEnd",
+          "closedBy",
+          "closedAt",
+          "entryCount",
+          "totalMinutes",
+          "earningsCents",
+          "limitCents",
+          "carryInCents",
+          "paidCents",
+          "carryOutCents",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "Monatsabschluss mit eingefrorenen Zahlen (Beträge in Cent)"
+      },
+      "PeriodSummary": {
+        "type": "object",
+        "properties": {
+          "totalHours": {
+            "type": "number"
+          },
+          "totalEarnings": {
+            "type": "number",
+            "description": "Verdienst der Periode in Euro"
+          },
+          "actualEarnings": {
+            "type": "number",
+            "description": "Verdienst + Übertrag aus Vorperioden"
+          },
+          "carryIn": {
+            "type": "number"
+          },
+          "carryOut": {
+            "type": "number",
+            "description": "Übertrag in die nächste Periode (über der Grenze)"
+          },
+          "paidThisMonth": {
+            "type": "number",
+            "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+          },
+          "minijobLimit": {
+            "type": "number"
+          },
+          "hourlyRate": {
+            "type": "number"
+          },
+          "exceedsLimit": {
+            "type": "boolean"
+          },
+          "minijobLimitMissing": {
+            "type": "boolean",
+            "description": "Keine Minijob-Grenze hinterlegt: Werte vorläufig, Abschluss gesperrt"
+          },
+          "entryCount": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "totalHours",
+          "totalEarnings",
+          "actualEarnings",
+          "carryIn",
+          "carryOut",
+          "paidThisMonth",
+          "minijobLimit",
+          "hourlyRate",
+          "exceedsLimit",
+          "minijobLimitMissing",
+          "entryCount"
+        ]
+      },
+      "TimeEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "date": {
+            "type": "string",
+            "description": "Arbeitstag (YYYY-MM-DD)"
+          },
+          "startTime": {
+            "type": "string",
+            "description": "HH:mm"
+          },
+          "endTime": {
+            "type": "string",
+            "description": "HH:mm"
+          },
+          "breakMinutes": {
+            "type": "integer"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hourlyRateCents": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Beim Anlegen eingefrorener Stundensatz in Cent"
+          },
+          "hourlyRate": {
+            "type": "number",
+            "description": "Eingefrorener Stundensatz in Euro"
+          },
+          "workMinutes": {
+            "type": "integer"
+          },
+          "workTime": {
+            "type": "string",
+            "description": "Arbeitszeit als HH:mm"
+          },
+          "totalHours": {
+            "type": "number"
+          },
+          "earningsCents": {
+            "type": "integer"
+          },
+          "earnings": {
+            "type": "number",
+            "description": "Verdienst in Euro"
+          },
+          "formattedEarnings": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "date",
+          "startTime",
+          "endTime",
+          "breakMinutes",
+          "description",
+          "hourlyRateCents",
+          "hourlyRate",
+          "workMinutes",
+          "workTime",
+          "totalHours",
+          "earningsCents",
+          "earnings",
+          "formattedEarnings",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "Zeiteintrag; Beträge aus dem eingefrorenen Stundensatz"
+      },
+      "TokenPair": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/User"
+          },
+          "tokenType": {
+            "type": "string",
+            "const": "Bearer"
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "Zugriffs-Token (JWT) für den Header Authorization: Bearer"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "description": "Gültigkeit des Zugriffs-Tokens in Sekunden"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Erneuerungs-Token; sicher im Gerät speichern (Keychain/Keystore). Wird bei jeder Erneuerung ersetzt."
+          },
+          "refreshExpiresAt": {
+            "type": "string",
+            "description": "Ablauf des Erneuerungs-Tokens, wenn es bis dahin nicht genutzt wird"
+          }
+        },
+        "required": [
+          "user",
+          "tokenType",
+          "accessToken",
+          "expiresIn",
+          "refreshToken",
+          "refreshExpiresAt"
+        ],
+        "description": "Token-Anmeldung für die App"
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "email": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "mitarbeiter"
+            ]
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "stundenlohn": {
+            "description": "Stundenlohn in Euro (aktueller Satz; Einträge frieren ihren Satz ein)",
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "abrechnungStart": {
+            "type": "integer",
+            "description": "Erster Tag der Abrechnungsperiode (1–31)"
+          },
+          "abrechnungEnde": {
+            "type": "integer",
+            "description": "Letzter Tag der Abrechnungsperiode (1–31); kleiner als Start = monatsübergreifend"
+          },
+          "lohnzettelEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "isActive",
+          "stundenlohn",
+          "abrechnungStart",
+          "abrechnungEnde",
+          "lohnzettelEmail",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "Benutzerkonto (ohne Passwort)"
+      },
+      "WorkSettings": {
+        "type": "object",
+        "properties": {
+          "stundenlohn": {
+            "type": [
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "abrechnungStart": {
+            "type": "integer"
+          },
+          "abrechnungEnde": {
+            "type": "integer"
+          },
+          "lohnzettelEmail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "stundenlohn",
+          "abrechnungStart",
+          "abrechnungEnde",
+          "lohnzettelEmail"
+        ],
+        "description": "Arbeitseinstellungen (Lohn und Abrechnungszeitraum legt der Admin fest)"
+      }
+    }
+  }
+}

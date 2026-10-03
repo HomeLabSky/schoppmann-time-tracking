@@ -8,7 +8,7 @@
  * `<datenbank>.vor-wiederherstellung-<zeit>` erhalten. Danach das Backend wieder starten.
  */
 const path = require('path');
-require('dotenv').config({ quiet: true });
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env'), quiet: true });
 const { restoreBackup } = require('../utils/dbBackup');
 
 const file = process.argv.slice(2).find((a) => !a.startsWith('--'));

@@ -16,7 +16,7 @@
  * Exit-Code 1, wenn die lokale Sicherung ODER die NAS-Kopie fehlschlägt.
  */
 const path = require('path');
-require('dotenv').config({ quiet: true });
+require('dotenv').config({ path: require('path').resolve(__dirname, '..', '.env'), quiet: true });
 const { createBackup, copyToOffsite } = require('../utils/dbBackup');
 const { recordRun } = require('../utils/backupStatus');
 

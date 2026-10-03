@@ -444,3 +444,27 @@ Mitarbeiter sollen **mobil ausschließlich über eine später entwickelte App** 
 Bewusst offen (→ Phase 2/3): restliche Inline-SVGs und `gray`/`slate`-Mischung, Toasts statt Emoji-Statusmeldungen
 (`message.includes('✅')`), Logo als SVG/`next/image`, Tabellen mit Suche/Filter/Export, Übersicht aller Mitarbeiter in
 *Zeitnachweise*, Bereinigung der übrigen ~85 Lint-Warnungen.
+
+---
+
+## Status Phase 2, Teil 1: App-taugliche API (Branch `claude/phase2-api`)
+
+| Punkt | Stand |
+|---|---|
+| Express 5 | umgestellt; asynchrone Fehler landen automatisch im zentralen Error-Handler (47 `try/catch` in Routen entfallen) |
+| Fehler | `AppError('CODE', 'Meldung')` statt Text `CODE:Nachricht` mit Split-Parser; Status je Code an einer Stelle (`lib/errors.js`); unbekannte Fehler → `500 INTERNAL_ERROR` mit Request-ID, ohne interne Details |
+| Validierung | zod-Schemas für alle 48 Endpunkte (Pfad, Query, Body); unbekannte Felder werden entfernt; Fehlerformat unverändert (`fields`, `details`); `express-validator` entfernt |
+| OpenAPI | 3.1-Dokument aus den Routen und Schemas: `/api/v1/openapi.json` und `backend/openapi.json`; ein Test schlägt fehl, wenn die Datei veraltet ist |
+| Antworten geprüft | Der Smoke-Test prüft jede Erfolgsantwort gegen ihr Schema (alle 48 Endpunkte abgedeckt). Fund dabei: neu angelegte Konten lieferten `lohnzettelEmail` gar nicht statt `null` – behoben |
+| Versionierung | `/api/v1` verbindlich, `/api` als Alias für die bestehende Web-Oberfläche (keine Frontend-Änderung nötig) |
+| App-Anmeldung | `POST /auth/token`, `/token/refresh`, `/token/revoke`: Bearer-Token auf derselben Sitzungs-Tabelle mit Rotation und Wiederverwendungs-Erkennung; Laufzeit App 30/90 Tage; ein Token gilt nur auf seinem Weg (Web-Cookie ≠ App-Token); kein CSRF-Header für Bearer-Anfragen |
+| S11 Konto-Sperre | nach 5 Fehlversuchen je Adresse 15 min (`429 ACCOUNT_LOCKED`, `Retry-After`), jede weitere Serie doppelt, max. 24 h; auch für unbekannte Adressen (keine Konto-Erkennung), gleiche Antwortzeit; Protokoll `auth.account_locked`; Admin-/CLI-Passwort-Reset hebt sie auf |
+| Offline-Erfassung | `clientId` beim Anlegen: Wiederholung liefert den bestehenden Eintrag (200), anderer Tag → `409 CLIENT_ID_CONFLICT` |
+| S12 Logging | pino (JSON) mit Request-ID; keine E-Mail-Adressen, Namen, Tokens; Personen nur als ID; 48 `console.log` mit Emojis entfernt |
+| Konfiguration | Umgebungsvariablen mit zod geprüft – ungültige Werte (z. B. `PORT=abc`) verhindern den Start statt stiller Ersatzwerte |
+| Totcode | Fehler-Parser, Validierungs-Middleware, Dev-Testdaten-Route, doppelte Minijob-Statuslogik, ungenutzte Model-Helfer entfernt |
+| Prüfung | 86 Unit-/Integrationstests, 124 Smoke-Checks; Mutationen (Weg-Bindung App/Web, Sperre, CSRF-Ausnahme, `clientId`-Konflikt, Rückfall auf Cookie) färben je einen Test rot |
+
+Bewusst offen (Phase 2, Teil 2): TypeScript, Drizzle + `better-sqlite3` mit versionierten Migrationen und DB-Prüfungen
+(CHECK) für Enums. Die verbleibenden `npm audit`-Funde (u. a. `tar` kritisch) hängen alle an `sqlite3`/`sequelize` und
+entfallen mit diesem Wechsel. Frontend: auf `/api/v1` umstellen und Typen aus `openapi.json` erzeugen (Phase 3).
