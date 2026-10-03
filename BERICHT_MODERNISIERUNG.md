@@ -491,3 +491,17 @@ Schließen-X (Enter schloss den Dialog), Spalten liefen bei 1280 px aus dem Bild
 - Gemeinsames Schema-Paket für Frontend **und** Backend: kommt mit Phase 2 (Backend in TypeScript, npm-Workspaces);
   bis dahin liegen die zod-Schemas im Frontend und spiegeln die Backend-Regeln.
 - PDF-Zeitnachweis/Lohnzettel, E-Mail-Versand (Phase 4), Admin-Korrekturen direkt an Einträgen.
+
+---
+
+## Status Next.js 16 (Branch `claude/next16`)
+
+| Punkt | Stand |
+|---|---|
+| Versionen | Next 15.5.27 → **16.3.8**, React 19.1 → **19.3**, `eslint-config-next` 16.3.8 |
+| Sicherheit | `npm audit --omit=dev`: **0 Funde** (vorher 2: `next`, `postcss`). Offen nur im Lint-Werkzeug (`braces` über `eslint-config-next`, nicht im ausgelieferten Code) |
+| Turbopack | Standard für `next dev` und `next build`; keine eigene Webpack-Konfiguration nötig. `next dev` nutzt `.next/dev` – Dev-Server und Build/E2E laufen parallel |
+| Lint | `next lint` entfällt → ESLint-CLI mit Flat Config (`eslint-config-next/core-web-vitals` + `/typescript`), weiterhin 0 Warnungen. ESLint bleibt auf v9 (Plugin-Kompatibilität) |
+| Neue Regeln (React Compiler) | 1 Fund behoben: Startperiode im Mitarbeiter-Dashboard wird abgeleitet statt per `setState` im Effect gesetzt. DataTable: TanStack Table wird vom Compiler bewusst übersprungen (bekannt, unkritisch, kommentiert). Notfall-Weiterleitung im API-Client mit absoluter URL |
+| Nicht betroffen | async `params`/`searchParams`, Middleware→`proxy`, `next/image`, AMP, Runtime-Config – im Projekt nicht genutzt |
+| Prüfung | `tsc`, ESLint, `next build` (auch `output: standalone` wie im Docker-Image, Server gestartet und Seite ausgeliefert), 4 Playwright-Tests in Dev- und Produktionsmodus grün |
