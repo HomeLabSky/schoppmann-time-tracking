@@ -38,7 +38,7 @@ class AuditService {
   static async record(entry, options = {}) {
     const { actor, action, entityType, entityId = null, targetUserId = null, before = null, after = null, meta = null } = entry;
     if (!action || !entityType) {
-      throw new Error('AUDIT_INVALID:action und entityType sind erforderlich');
+      throw new Error('Protokolleintrag ohne action/entityType');
     }
     return AuditLog.create({
       actorId: actor?.id ?? null,

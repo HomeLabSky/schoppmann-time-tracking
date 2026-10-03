@@ -1,7 +1,9 @@
 /**
- * Middleware-Barrel: stellt die tatsächlich genutzten Middleware-Kombinationen
- * bereit. Spezial-Limiter (login/registration) werden direkt aus
- * ./rateLimiting importiert, wo sie gebraucht werden.
+ * Middleware-Barrel: Kombinationen für app.js und routes/index.js.
+ *
+ * Die Berechtigung steht an jeder einzelnen Route (lib/route.js, Feld `auth`) und damit auch im
+ * OpenAPI-Dokument. Die Einhängepunkte prüfen zusätzlich (doppelt hält besser: eine neue Route unter
+ * /admin ohne `auth: 'admin'` ist trotzdem geschützt). Die Prüfung läuft je Anfrage nur einmal.
  */
 const authMiddleware = require('./auth');
 const rateLimitingMiddleware = require('./rateLimiting');
@@ -11,34 +13,18 @@ const securityMiddleware = require('./security');
 const basicSecurity = [
   securityMiddleware.helmetMiddleware,
   securityMiddleware.corsMiddleware,
-  securityMiddleware.securityHeaders,
-  securityMiddleware.requestId
+  securityMiddleware.securityHeaders
 ];
 
-// Öffentliche API-Routen (ohne Auth)
-const publicAPI = [
-  securityMiddleware.helmetMiddleware,
-  securityMiddleware.corsMiddleware,
-  securityMiddleware.securityHeaders,
-  rateLimitingMiddleware.generalLimiter,
-  securityMiddleware.validateContentType
-];
-
-// Authentifizierte API-Routen
+// Angemeldete Benutzer
 const authenticatedAPI = [
-  securityMiddleware.helmetMiddleware,
-  securityMiddleware.corsMiddleware,
-  securityMiddleware.securityHeaders,
   rateLimitingMiddleware.apiLimiter,
   securityMiddleware.validateContentType,
   authMiddleware.authenticateToken
 ];
 
-// Admin-only API-Routen
+// Nur Admins
 const adminAPI = [
-  securityMiddleware.helmetMiddleware,
-  securityMiddleware.corsMiddleware,
-  securityMiddleware.securityHeaders,
   rateLimitingMiddleware.adminLimiter,
   securityMiddleware.validateContentType,
   authMiddleware.requireAdmin
@@ -46,7 +32,6 @@ const adminAPI = [
 
 module.exports = {
   basicSecurity,
-  publicAPI,
   authenticatedAPI,
   adminAPI,
   generalLimiter: rateLimitingMiddleware.generalLimiter

@@ -77,7 +77,7 @@ const AuditLog = sequelize.define('AuditLog', {
 });
 
 const immutable = () => {
-  throw new Error('AUDIT_IMMUTABLE:Das Änderungsprotokoll ist unveränderlich');
+  throw new Error('Das Änderungsprotokoll ist unveränderlich');
 };
 AuditLog.beforeUpdate(immutable);
 AuditLog.beforeDestroy(immutable);

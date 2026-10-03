@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const { sequelize } = require('../config/database');
 
-// ✅ User Model Definition
+// User Model Definition
 const User = sequelize.define('User', {
   email: {
     type: DataTypes.STRING,
@@ -80,7 +80,7 @@ const User = sequelize.define('User', {
   ]
 });
 
-// ✅ Hooks für Passwort-Hashing
+// Hooks für Passwort-Hashing
 User.beforeCreate(async (user, options) => {
   try {
     if (user.password) {
@@ -101,7 +101,7 @@ User.beforeUpdate(async (user, options) => {
   }
 });
 
-// ✅ Instance Methods
+// Instance Methods
 User.prototype.comparePassword = async function(candidatePassword) {
   try {
     return await bcrypt.compare(candidatePassword, this.password);
@@ -111,36 +111,12 @@ User.prototype.comparePassword = async function(candidatePassword) {
 };
 
 User.prototype.toSafeJSON = function() {
-  try {
-    const values = Object.assign({}, this.get());
-    delete values.password; // Passwort aus JSON-Output entfernen
-    return values;
-  } catch (error) {
-    throw new Error(`JSON-Konvertierung fehlgeschlagen: ${error.message}`);
-  }
-};
-
-// ✅ Static Methods
-User.findByEmail = function(email) {
-  try {
-    if (!email) {
-      throw new Error('Email ist erforderlich');
-    }
-    return this.findOne({ where: { email } });
-  } catch (error) {
-    throw new Error(`Benutzer-Suche per Email fehlgeschlagen: ${error.message}`);
-  }
-};
-
-User.findActiveUsers = function() {
-  try {
-    return this.findAll({ 
-      where: { isActive: true },
-      attributes: { exclude: ['password'] }
-    });
-  } catch (error) {
-    throw new Error(`Aktive Benutzer-Suche fehlgeschlagen: ${error.message}`);
-  }
+  const values = Object.assign({}, this.get());
+  delete values.password; // Passwort nie ausliefern
+  // Frisch angelegte Konten kennen nicht gesetzte Felder noch nicht: einheitlich null statt fehlend
+  values.lohnzettelEmail = values.lohnzettelEmail ?? null;
+  values.stundenlohn = values.stundenlohn ?? null;
+  return values;
 };
 
 module.exports = User;

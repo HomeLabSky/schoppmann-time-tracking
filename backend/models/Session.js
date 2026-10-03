@@ -2,7 +2,7 @@ const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
 /**
- * Anmelde-Sitzung (eine je Browser-Anmeldung).
+ * Anmelde-Sitzung (eine je Anmeldung im Browser oder in der App).
  *
  * Das Erneuerungs-Token wird nie im Klartext gespeichert, nur als HMAC-Prüfwert. Bei jeder Erneuerung
  * wird das Token rotiert; der vorherige Prüfwert bleibt für die Erkennung von Wiederverwendung erhalten
@@ -28,6 +28,14 @@ const Session = sequelize.define('Session', {
   absoluteExpiresAt: { type: DataTypes.DATE, allowNull: false, comment: 'Späteste Gültigkeit der Sitzung' },
   revokedAt: { type: DataTypes.DATE, allowNull: true },
   revokedReason: { type: DataTypes.STRING(64), allowNull: true },
+  clientType: {
+    type: DataTypes.STRING(8),
+    allowNull: false,
+    defaultValue: 'web',
+    validate: { isIn: [['web', 'app']] },
+    comment: "web = Cookies, app = Bearer-Token; ein Erneuerungs-Token gilt nur auf seinem Weg"
+  },
+  deviceName: { type: DataTypes.STRING(100), allowNull: true },
   ip: { type: DataTypes.STRING(64), allowNull: true },
   userAgent: { type: DataTypes.STRING(255), allowNull: true }
 }, {

@@ -199,7 +199,8 @@ test('Perioden-Dropdown: aktuelle Periode ist markiert und endet am echten Monat
 
 // ---------- Serverseitige Fachregeln ----------
 
-const reject = (promise, pattern) => assert.rejects(promise, (e) => pattern.test(e.message));
+// Fachfehler: Code (z. B. PERIOD_CLOSED) und Meldung gemeinsam prüfbar
+const reject = (promise, pattern) => assert.rejects(promise, (e) => pattern.test(`${e.code}: ${e.message}`));
 
 test('Regeln: Zukunft, älter als ein Monat, > 12 h, < 15 min werden abgelehnt', async () => {
   const user = await makeUser();

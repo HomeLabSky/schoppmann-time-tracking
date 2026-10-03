@@ -1,96 +1,74 @@
 /**
- * Admin-Zeitnachweise (/api/admin/timesheets) – nur für Admins.
+ * Zeitnachweise und Monatsabschluss (/admin/timesheets) – nur für Admins.
  *
- * Admins sehen die Zeiten aller Mitarbeiter und schließen Abrechnungsperioden ab
- * bzw. öffnen sie (mit Begründung) wieder. Dünne Controller-Schicht über
- * TimeEntryService und PeriodService; jede Änderung landet im Änderungsprotokoll.
+ * Admins sehen die Zeiten aller Mitarbeiter und schließen Abrechnungsperioden ab bzw. öffnen sie (mit
+ * Begründung) wieder. Dünne Controller-Schicht über TimeEntryService und PeriodService; jede Änderung
+ * landet im Änderungsprotokoll.
  */
-const express = require('express');
-const { query, param, body } = require('express-validator');
-const { requireAdmin } = require('../middleware/auth');
-const { handleValidationErrors } = require('../middleware/validation');
+const { createApiRouter } = require('../lib/route');
 const TimeEntryService = require('../services/timeEntryService');
 const PeriodService = require('../services/periodService');
-const { sendServiceError } = require('../utils/serviceErrors');
+const { actorOf } = require('../middleware/auth');
+const { MonthQuery, MonthlyRecords, PeriodsData } = require('../schemas/timeEntry');
+const { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData } = require('../schemas/admin');
 
-const router = express.Router();
+const api = createApiRouter('/admin/timesheets', { tags: ['Zeitnachweise'] });
 
-const actorOf = (req) => ({ id: req.user.userId, email: req.user.email });
 const parseMonth = (month) => month.split('-').map(Number);
 
-const userIdParam = param('userId').isInt({ min: 1 }).withMessage('Ungültige Benutzer-ID');
-const monthRule = (location) =>
-  location('month').matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('Monat muss im Format YYYY-MM sein');
+api.get('/:userId/periods', {
+  summary: 'Abrechnungsperioden eines Mitarbeiters (mit Abschluss-Kennzeichen)',
+  auth: 'admin',
+  params: UserIdParam,
+  response: PeriodsData,
+  message: 'Abrechnungsperioden erfolgreich geladen'
+}, async (req) => {
+  const periods = await TimeEntryService.generateBillingPeriods(req.valid.params.userId, 12, 1);
+  return { data: { periods, currentPeriod: periods.find((p) => p.isCurrent) } };
+});
 
-// ✅ ABRECHNUNGSPERIODEN EINES MITARBEITERS (mit Abschluss-Kennzeichen)
-router.get('/:userId/periods',
-  requireAdmin,
-  [userIdParam, handleValidationErrors],
-  async (req, res) => {
-    try {
-      const periods = await TimeEntryService.generateBillingPeriods(parseInt(req.params.userId), 12, 1);
-      res.json({
-        success: true,
-        message: 'Abrechnungsperioden erfolgreich geladen',
-        data: { periods, currentPeriod: periods.find((p) => p.isCurrent) }
-      });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'PERIODS_LOAD_ERROR', error: 'Abrechnungsperioden konnten nicht geladen werden' });
-    }
-  }
-);
+api.get('/:userId', {
+  summary: 'Zeitnachweis eines Mitarbeiters für eine Periode',
+  auth: 'admin',
+  params: UserIdParam,
+  query: MonthQuery,
+  response: MonthlyRecords,
+  message: 'Zeitnachweis erfolgreich geladen',
+  errors: ['USER_NOT_FOUND']
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.query.month);
+  return { data: await TimeEntryService.getMonthlyTimeRecords(req.valid.params.userId, year, month) };
+});
 
-// ✅ ZEITNACHWEIS EINES MITARBEITERS FÜR EINE PERIODE
-router.get('/:userId',
-  requireAdmin,
-  [userIdParam, monthRule(query), handleValidationErrors],
-  async (req, res) => {
-    try {
-      const [year, month] = parseMonth(req.query.month);
-      const result = await TimeEntryService.getMonthlyTimeRecords(parseInt(req.params.userId), year, month);
-      res.json({ success: true, message: 'Zeitnachweis erfolgreich geladen', data: result });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'TIMESHEET_LOAD_ERROR', error: 'Zeitnachweis konnte nicht geladen werden' });
-    }
-  }
-);
+api.post('/:userId/close', {
+  summary: 'Periode abschließen (Zahlen werden eingefroren)',
+  description: 'Erst nach Periodenende; frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.',
+  auth: 'admin',
+  params: UserIdParam,
+  body: ClosePeriodBody,
+  response: ClosureData,
+  status: 201,
+  message: 'Periode erfolgreich abgeschlossen',
+  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_ENDED', 'PERIOD_ALREADY_CLOSED', 'PERIOD_OVERLAP', 'PERIOD_PREVIOUS_OPEN', 'MINIJOB_LIMIT_MISSING']
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.body.month);
+  const closure = await PeriodService.closePeriod(req.valid.params.userId, year, month, actorOf(req));
+  return { data: { closure } };
+});
 
-// ✅ PERIODE ABSCHLIESSEN
-router.post('/:userId/close',
-  requireAdmin,
-  [userIdParam, monthRule(body), handleValidationErrors],
-  async (req, res) => {
-    try {
-      const [year, month] = parseMonth(req.body.month);
-      const closure = await PeriodService.closePeriod(parseInt(req.params.userId), year, month, actorOf(req));
-      console.log(`🔒 Admin ${req.user.email} hat Periode ${closure.periodStart} – ${closure.periodEnd} (User ${req.params.userId}) abgeschlossen`);
-      res.status(201).json({ success: true, message: 'Periode erfolgreich abgeschlossen', data: { closure } });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'PERIOD_CLOSE_ERROR', error: 'Periode konnte nicht abgeschlossen werden' });
-    }
-  }
-);
+api.post('/:userId/reopen', {
+  summary: 'Abgeschlossene Periode wieder öffnen (Begründung Pflicht)',
+  description: 'Nur die jüngste abgeschlossene Periode; die Begründung steht im Änderungsprotokoll.',
+  auth: 'admin',
+  params: UserIdParam,
+  body: ReopenPeriodBody,
+  response: ReopenData,
+  message: 'Periode wieder geöffnet',
+  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_CLOSED', 'PERIOD_LATER_CLOSED', 'REASON_REQUIRED']
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.body.month);
+  const result = await PeriodService.reopenPeriod(req.valid.params.userId, year, month, req.valid.body.reason, actorOf(req));
+  return { data: result };
+});
 
-// ✅ PERIODE WIEDER ÖFFNEN (Begründung Pflicht)
-router.post('/:userId/reopen',
-  requireAdmin,
-  [
-    userIdParam,
-    monthRule(body),
-    body('reason').isString().trim().isLength({ min: 5, max: 500 })
-      .withMessage('Bitte eine Begründung angeben (5 bis 500 Zeichen)'),
-    handleValidationErrors
-  ],
-  async (req, res) => {
-    try {
-      const [year, month] = parseMonth(req.body.month);
-      const result = await PeriodService.reopenPeriod(parseInt(req.params.userId), year, month, req.body.reason, actorOf(req));
-      console.log(`🔓 Admin ${req.user.email} hat Periode ${result.periodStart} – ${result.periodEnd} (User ${req.params.userId}) wieder geöffnet`);
-      res.json({ success: true, message: 'Periode wieder geöffnet', data: result });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'PERIOD_REOPEN_ERROR', error: 'Periode konnte nicht geöffnet werden' });
-    }
-  }
-);
-
-module.exports = router;
+module.exports = api.router;

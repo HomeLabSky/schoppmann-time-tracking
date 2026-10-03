@@ -1,3 +1,4 @@
+const { AppError } = require('../lib/errors');
 const { TimeEntry, User, MinijobSetting, PeriodClosure, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const DateService = require('./dateService');
@@ -5,6 +6,7 @@ const AuditService = require('./auditService');
 const { assertDateOpen, overlaps } = require('./periodGuard');
 const billing = require('../utils/billing');
 const { todayString } = require('../utils/clock');
+const logger = require('../lib/logger');
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year, month) => `${year}-${String(month).padStart(2, '0')}-15`;
@@ -23,7 +25,7 @@ const entrySnapshot = (entry) => ({
 const resolveActor = (actor, userId) => actor || { id: userId };
 
 /**
- * ✅ Time Entry Service - Zeiterfassung Business Logic
+ * Time Entry Service – Zeiterfassung
  * Enthält alle Zeiterfassungs-bezogenen Operationen und Minijob-Berechnungen.
  * Die reine Rechenlogik (Cent-Beträge, Übertrag, Fachregeln) liegt in utils/billing.js.
  * Jede Änderung wird in derselben Transaktion im Änderungsprotokoll festgehalten
@@ -90,117 +92,141 @@ class TimeEntryService {
    */
   static async getMonthlyTimeRecords(userId, year, month, options = {}) {
     const { transaction } = options;
-    try {
-      const user = await User.findByPk(userId, {
-        attributes: ['id', 'name', 'email', 'stundenlohn', 'abrechnungStart', 'abrechnungEnde'],
-        transaction
-      });
+    const user = await User.findByPk(userId, {
+      attributes: ['id', 'name', 'email', 'stundenlohn', 'abrechnungStart', 'abrechnungEnde'],
+      transaction
+    });
 
-      if (!user) {
-        throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
-      }
-
-      const startDay = user.abrechnungStart || 1;
-      const endDay = user.abrechnungEnde || 31;
-
-      const periods = await this.listPeriodsUpTo(userId, startDay, endDay, year, month, { transaction });
-      const target = periods[periods.length - 1];
-
-      const settings = await MinijobSetting.findAll({ raw: true, transaction });
-      const closures = await PeriodClosure.findAll({ where: { userId }, raw: true, transaction });
-      const entries = await TimeEntry.findAll({
-        where: { userId, date: { [Op.between]: [periods[0].startDate, target.endDate] } },
-        order: [['date', 'ASC']],
-        transaction
-      });
-
-      const closureFor = (period) =>
-        closures.find((c) => overlaps(period.startDate, period.endDate, c.periodStart, c.periodEnd)) || null;
-
-      const rows = periods.map((period) => {
-        const own = entries.filter((e) => e.date >= period.startDate && e.date <= period.endDate);
-        const closure = closureFor(period);
-        return {
-          period,
-          closure,
-          entries: own,
-          // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
-          minutes: closure ? closure.totalMinutes : own.reduce((sum, e) => sum + e.workMinutes, 0),
-          earningsCents: closure ? closure.earningsCents : own.reduce((sum, e) => sum + e.earningsCents, 0),
-          limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate),
-          limitMissing: !closure && !billing.hasLimitForDate(settings, period.endDate)
-        };
-      });
-      const folded = billing.foldCarry(rows);
-      // Ersatz-Grenze ist nur relevant, wo tatsächlich verrechnet wird (Verdienst oder Übertrag > 0)
-      const limitMissing = rows.some((row, i) => row.limitMissing && folded[i].actualCents > 0);
-
-      const current = rows[rows.length - 1];
-      const result = folded[folded.length - 1];
-      const closure = current.closure;
-      const hourlyRate = user.stundenlohn == null ? billing.toEuros(billing.DEFAULT_HOURLY_RATE_CENTS) : Number(user.stundenlohn);
-
-      // Display-Werte (Benennung nach End- bzw. Referenzmonat)
-      const periodInfo = TimeEntryService.createPeriodObjectForUser(
-        new Date(referenceDate(year, month)),
-        startDay,
-        endDay
-      );
-
-      return {
-        records: current.entries.map((entry) => entry.toSafeJSON()),
-        summary: {
-          totalHours: Math.round((current.minutes / 60) * 100) / 100,
-          totalEarnings: billing.toEuros(current.earningsCents),
-          actualEarnings: billing.toEuros(result.actualCents),
-          carryIn: billing.toEuros(result.carryInCents),
-          carryOut: billing.toEuros(result.carryOutCents),
-          paidThisMonth: billing.toEuros(result.paidCents),
-          minijobLimit: billing.toEuros(result.limitCents),
-          hourlyRate,
-          exceedsLimit: result.actualCents > result.limitCents,
-          // true: Für diese oder eine frühere offene Periode im Übertrag ist keine Minijob-Grenze
-          // hinterlegt – Auszahlung/Übertrag sind vorläufig (Ersatzwert), Abschluss ist gesperrt.
-          minijobLimitMissing: limitMissing,
-          entryCount: current.entries.length
-        },
-        period: {
-          year: periodInfo.year,
-          month: periodInfo.month,
-          monthName: periodInfo.monthName,
-          startDate: target.startDate,
-          endDate: target.endDate,
-          description: target.description,
-          status: closure ? 'closed' : 'open'
-        },
-        closure: closure
-          ? {
-            closedAt: closure.closedAt,
-            closedBy: closure.closedBy,
-            periodStart: closure.periodStart,
-            periodEnd: closure.periodEnd
-          }
-          : null
-      };
-    } catch (error) {
-      throw new Error(`MONTHLY_RECORDS_ERROR:${error.message}`);
+    if (!user) {
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
+
+    const startDay = user.abrechnungStart || 1;
+    const endDay = user.abrechnungEnde || 31;
+
+    const periods = await this.listPeriodsUpTo(userId, startDay, endDay, year, month, { transaction });
+    const target = periods[periods.length - 1];
+
+    const settings = await MinijobSetting.findAll({ raw: true, transaction });
+    const closures = await PeriodClosure.findAll({ where: { userId }, raw: true, transaction });
+    const entries = await TimeEntry.findAll({
+      where: { userId, date: { [Op.between]: [periods[0].startDate, target.endDate] } },
+      order: [['date', 'ASC']],
+      transaction
+    });
+
+    const closureFor = (period) =>
+      closures.find((c) => overlaps(period.startDate, period.endDate, c.periodStart, c.periodEnd)) || null;
+
+    const rows = periods.map((period) => {
+      const own = entries.filter((e) => e.date >= period.startDate && e.date <= period.endDate);
+      const closure = closureFor(period);
+      return {
+        period,
+        closure,
+        entries: own,
+        // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
+        minutes: closure ? closure.totalMinutes : own.reduce((sum, e) => sum + e.workMinutes, 0),
+        earningsCents: closure ? closure.earningsCents : own.reduce((sum, e) => sum + e.earningsCents, 0),
+        limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate),
+        limitMissing: !closure && !billing.hasLimitForDate(settings, period.endDate)
+      };
+    });
+    const folded = billing.foldCarry(rows);
+    // Ersatz-Grenze ist nur relevant, wo tatsächlich verrechnet wird (Verdienst oder Übertrag > 0)
+    const limitMissing = rows.some((row, i) => row.limitMissing && folded[i].actualCents > 0);
+
+    const current = rows[rows.length - 1];
+    const result = folded[folded.length - 1];
+    const closure = current.closure;
+    const hourlyRate = user.stundenlohn == null ? billing.toEuros(billing.DEFAULT_HOURLY_RATE_CENTS) : Number(user.stundenlohn);
+
+    // Display-Werte (Benennung nach End- bzw. Referenzmonat)
+    const periodInfo = TimeEntryService.createPeriodObjectForUser(
+      new Date(referenceDate(year, month)),
+      startDay,
+      endDay
+    );
+
+    return {
+      records: current.entries.map((entry) => entry.toSafeJSON()),
+      summary: {
+        totalHours: Math.round((current.minutes / 60) * 100) / 100,
+        totalEarnings: billing.toEuros(current.earningsCents),
+        actualEarnings: billing.toEuros(result.actualCents),
+        carryIn: billing.toEuros(result.carryInCents),
+        carryOut: billing.toEuros(result.carryOutCents),
+        paidThisMonth: billing.toEuros(result.paidCents),
+        minijobLimit: billing.toEuros(result.limitCents),
+        hourlyRate,
+        exceedsLimit: result.actualCents > result.limitCents,
+        // true: Für diese oder eine frühere offene Periode im Übertrag ist keine Minijob-Grenze
+        // hinterlegt – Auszahlung/Übertrag sind vorläufig (Ersatzwert), Abschluss ist gesperrt.
+        minijobLimitMissing: limitMissing,
+        entryCount: current.entries.length
+      },
+      period: {
+        year: periodInfo.year,
+        month: periodInfo.month,
+        monthName: periodInfo.monthName,
+        startDate: target.startDate,
+        endDate: target.endDate,
+        description: target.description,
+        status: closure ? 'closed' : 'open'
+      },
+      closure: closure
+        ? {
+          closedAt: closure.closedAt,
+          closedBy: closure.closedBy,
+          periodStart: closure.periodStart,
+          periodEnd: closure.periodEnd
+        }
+        : null
+    };
   }
 
   /**
    * Erstellt einen neuen Zeiteintrag. Der aktuelle Stundenlohn des Mitarbeiters wird
    * im Eintrag eingefroren; spätere Lohnänderungen wirken nicht rückwirkend.
-   * @param {Object} entryData - { userId, date, startTime, endTime, breakMinutes?, description? }
+   * @param {Object} entryData - { userId, date, startTime, endTime, breakMinutes?, description?, clientId? }
    * @param {{id:number,email?:string}} [actor] Auslöser für das Protokoll
    * @returns {Promise<Object>} Erstellter Zeiteintrag
    */
   static async createTimeEntry(entryData, actor) {
+    const { entry } = await this.createTimeEntryIdempotent(entryData, actor);
+    return entry;
+  }
+
+  /**
+   * Wie createTimeEntry, aber sicher wiederholbar (App, Offline-Erfassung): Gibt es für den Mitarbeiter
+   * schon einen Eintrag mit derselben `clientId`, wird nichts angelegt, sondern dieser Eintrag geliefert
+   * (`replayed: true`). Dieselbe `clientId` für einen anderen Tag ist ein Client-Fehler → CLIENT_ID_CONFLICT.
+   * @returns {Promise<{entry:Object, replayed:boolean}>}
+   */
+  static async createTimeEntryIdempotent(entryData, actor) {
     const transaction = await sequelize.transaction();
 
     try {
+      if (entryData.clientId) {
+        const previous = await TimeEntry.findOne({
+          where: { userId: entryData.userId, clientId: entryData.clientId },
+          transaction
+        });
+        if (previous) {
+          await transaction.commit();
+          if (previous.date !== entryData.date) {
+            throw new AppError(
+              'CLIENT_ID_CONFLICT',
+              `Die clientId wurde bereits für einen Eintrag am ${DateService.formatDateForDisplay(previous.date)} verwendet`
+            );
+          }
+          return { entry: previous.toSafeJSON(), replayed: true };
+        }
+      }
+
       const validation = TimeEntry.validateTimeEntry(entryData);
       if (!validation.isValid) {
-        throw new Error(`VALIDATION_ERROR:${validation.errors.join(', ')}`);
+        throw new AppError('VALIDATION_ERROR', `${validation.errors.join(', ')}`);
       }
 
       // Nur gewünschte Felder übernehmen (kein Mass-Assignment, z. B. von hourlyRateCents)
@@ -213,7 +239,7 @@ class TimeEntryService {
         { today: todayString(), checkDateWindow: true }
       );
       if (ruleErrors.length > 0) {
-        throw new Error(`VALIDATION_ERROR:${ruleErrors.join(', ')}`);
+        throw new AppError('VALIDATION_ERROR', `${ruleErrors.join(', ')}`);
       }
 
       await assertDateOpen(entryData.userId, entryData.date, { transaction });
@@ -223,16 +249,17 @@ class TimeEntryService {
         transaction
       });
       if (existingEntry) {
-        throw new Error('ENTRY_EXISTS:Für dieses Datum existiert bereits ein Zeiteintrag');
+        throw new AppError('ENTRY_EXISTS', 'Für dieses Datum existiert bereits ein Zeiteintrag');
       }
 
       const user = await User.findByPk(entryData.userId, { transaction });
       if (!user) {
-        throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+        throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
       }
 
       const newEntry = await TimeEntry.create({
         userId: entryData.userId,
+        clientId: entryData.clientId || null,
         date: entryData.date,
         startTime,
         endTime,
@@ -254,10 +281,10 @@ class TimeEntryService {
 
       await transaction.commit();
 
-      return newEntry.toSafeJSON();
+      return { entry: newEntry.toSafeJSON(), replayed: false };
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`CREATE_ENTRY_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -279,7 +306,7 @@ class TimeEntryService {
       });
 
       if (!entry) {
-        throw new Error('ENTRY_NOT_FOUND:Zeiteintrag nicht gefunden');
+        throw new AppError('ENTRY_NOT_FOUND', 'Zeiteintrag nicht gefunden');
       }
 
       await assertDateOpen(userId, entry.date, { transaction });
@@ -296,11 +323,11 @@ class TimeEntryService {
 
       const validation = TimeEntry.validateTimeEntry(merged);
       if (!validation.isValid) {
-        throw new Error(`VALIDATION_ERROR:${validation.errors.join(', ')}`);
+        throw new AppError('VALIDATION_ERROR', `${validation.errors.join(', ')}`);
       }
       const ruleErrors = billing.validateEntryRules(merged, { today: todayString() });
       if (ruleErrors.length > 0) {
-        throw new Error(`VALIDATION_ERROR:${ruleErrors.join(', ')}`);
+        throw new AppError('VALIDATION_ERROR', `${ruleErrors.join(', ')}`);
       }
 
       const before = entrySnapshot(entry);
@@ -326,8 +353,8 @@ class TimeEntryService {
 
       return entry.toSafeJSON();
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`UPDATE_ENTRY_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -351,7 +378,7 @@ class TimeEntryService {
       });
 
       if (!entry) {
-        throw new Error('ENTRY_NOT_FOUND:Zeiteintrag nicht gefunden');
+        throw new AppError('ENTRY_NOT_FOUND', 'Zeiteintrag nicht gefunden');
       }
 
       await assertDateOpen(userId, entry.date, { transaction });
@@ -372,8 +399,8 @@ class TimeEntryService {
 
       return true;
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`DELETE_ENTRY_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -384,22 +411,18 @@ class TimeEntryService {
    * @returns {Promise<Object>} Zeiteintrag
    */
   static async getTimeEntry(entryId, userId) {
-    try {
-      const entry = await TimeEntry.findOne({
-        where: {
-          id: entryId,
-          userId: userId
-        }
-      });
-
-      if (!entry) {
-        throw new Error('ENTRY_NOT_FOUND:Zeiteintrag nicht gefunden');
+    const entry = await TimeEntry.findOne({
+      where: {
+        id: entryId,
+        userId: userId
       }
+    });
 
-      return entry.toSafeJSON();
-    } catch (error) {
-      throw new Error(`GET_ENTRY_ERROR:${error.message}`);
+    if (!entry) {
+      throw new AppError('ENTRY_NOT_FOUND', 'Zeiteintrag nicht gefunden');
     }
+
+    return entry.toSafeJSON();
   }
 
   /**
@@ -409,39 +432,35 @@ class TimeEntryService {
    * @returns {Promise<Object>} Statistiken
    */
   static async getMultiMonthStats(userId, monthsBack = 12) {
-    try {
-      const stats = [];
-      const currentDate = new Date();
+    const stats = [];
+    const currentDate = new Date();
 
-      for (let i = 0; i < monthsBack; i++) {
-        const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
+    for (let i = 0; i < monthsBack; i++) {
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
 
-        const monthData = await this.getMonthlyTimeRecords(userId, year, month);
-        stats.push({
-          year,
-          month,
-          monthName: this.getMonthName(month),
-          ...monthData.summary
-        });
-      }
-
-      return {
-        monthlyStats: stats.reverse(), // Chronologisch sortieren
-        totalStats: {
-          totalHours: stats.reduce((sum, stat) => sum + stat.totalHours, 0),
-          totalEarnings: stats.reduce((sum, stat) => sum + stat.totalEarnings, 0),
-          averageMonthlyHours: stats.length > 0 ? stats.reduce((sum, stat) => sum + stat.totalHours, 0) / stats.length : 0
-        }
-      };
-    } catch (error) {
-      throw new Error(`MULTI_MONTH_STATS_ERROR:${error.message}`);
+      const monthData = await this.getMonthlyTimeRecords(userId, year, month);
+      stats.push({
+        year,
+        month,
+        monthName: this.getMonthName(month),
+        ...monthData.summary
+      });
     }
+
+    return {
+      monthlyStats: stats.reverse(), // Chronologisch sortieren
+      totalStats: {
+        totalHours: stats.reduce((sum, stat) => sum + stat.totalHours, 0),
+        totalEarnings: stats.reduce((sum, stat) => sum + stat.totalEarnings, 0),
+        averageMonthlyHours: stats.length > 0 ? stats.reduce((sum, stat) => sum + stat.totalHours, 0) / stats.length : 0
+      }
+    };
   }
 
   /**
-   * Normalisiert Zeit-String zu HH:mm:ss Format
+   * Normalisiert Zeit-String zu HH:mm:ss Format (Eingaben sind über das zod-Schema bereits geprüft)
    * @param {string} timeString - Zeit als String
    * @returns {string} Normalisierte Zeit
    */
@@ -459,7 +478,7 @@ class TimeEntryService {
       return `${hours.padStart(2, '0')}:${minutes}:00`;
     }
 
-    throw new Error(`VALIDATION_ERROR:Ungültiges Zeitformat: ${timeString}`);
+    throw new AppError('VALIDATION_ERROR', `Ungültiges Zeitformat: ${timeString}`);
   }
 
   /**
@@ -521,7 +540,7 @@ class TimeEntryService {
 
       return uniquePeriods;
     } catch (error) {
-      console.error('Fehler beim Generieren der Abrechnungsperioden:', error);
+      logger.error({ err: error, userId }, 'Abrechnungsperioden konnten nicht erzeugt werden – Kalendermonate als Ersatz');
       return TimeEntryService.generateStandardBillingPeriods(monthsBack, monthsForward);
     }
   }

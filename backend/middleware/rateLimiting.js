@@ -1,7 +1,7 @@
 const rateLimit = require('express-rate-limit');
 const config = require('../config');
 
-// ✅ Einfacher Ansatz für Development ohne custom key generators
+// Allgemeine Begrenzung pro IP (hinter einem Proxy: TRUST_PROXY setzen)
 const generalLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs, // 15 Minuten
   max: config.rateLimit.general, // Max requests pro IP
@@ -16,7 +16,7 @@ const generalLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// ✅ Login Rate Limiting ohne custom keyGenerator
+// Anmeldung (Web und App) pro IP; zusätzlich sperrt services/loginThrottle.js das einzelne Konto
 const loginLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs, // 15 Minuten
   max: config.rateLimit.login, // Max 5 Login-Versuche
@@ -31,7 +31,7 @@ const loginLimiter = rateLimit({
   legacyHeaders: false
 });
 
-// ✅ API Rate Limiting
+// API Rate Limiting
 const apiLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.general * 2,
@@ -43,7 +43,7 @@ const apiLimiter = rateLimit({
   }
 });
 
-// ✅ Admin Rate Limiting
+// Admin Rate Limiting
 const adminLimiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.general * 3,
@@ -55,7 +55,7 @@ const adminLimiter = rateLimit({
   }
 });
 
-// ✅ Registration Rate Limiting
+// Registration Rate Limiting
 const registrationLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 Stunde
   max: 3, // Max 3 Registrierungen pro Stunde pro IP
@@ -68,44 +68,10 @@ const registrationLimiter = rateLimit({
   }
 });
 
-// ✅ Development Rate Limiter (sehr lockere Limits)
-const createDevelopmentLimiter = () => {
-  if (config.nodeEnv !== 'development') {
-    return generalLimiter;
-  }
-  
-  return rateLimit({
-    windowMs: config.rateLimit.windowMs,
-    max: config.rateLimit.general * 10, // 10x höhere Limits in Development
-    message: {
-      success: false,
-      error: 'Development Rate Limit (sehr hoch)',
-      code: 'DEV_RATE_LIMIT_EXCEEDED',
-      timestamp: new Date().toISOString()
-    }
-  });
-};
-
-// ✅ Rate Limit Status Middleware (für Debugging)
-const rateLimitStatus = (req, res, next) => {
-  if (config.nodeEnv === 'development') {
-    const remaining = res.getHeader('RateLimit-Remaining');
-    const limit = res.getHeader('RateLimit-Limit');
-    const reset = res.getHeader('RateLimit-Reset');
-    
-    if (remaining !== undefined) {
-      console.log(`🔄 Rate Limit: ${remaining}/${limit} remaining, resets at ${new Date(reset * 1000).toLocaleTimeString()}`);
-    }
-  }
-  next();
-};
-
 module.exports = {
   generalLimiter,
   loginLimiter,
   apiLimiter,
   adminLimiter,
-  registrationLimiter,
-  developmentLimiter: createDevelopmentLimiter(),
-  rateLimitStatus
+  registrationLimiter
 };

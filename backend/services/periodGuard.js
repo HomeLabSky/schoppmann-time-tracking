@@ -1,3 +1,4 @@
+const { AppError } = require('../lib/errors');
 const { Op } = require('sequelize');
 const { PeriodClosure } = require('../models');
 const DateService = require('./dateService');
@@ -26,8 +27,8 @@ const assertDateOpen = async (userId, date, options = {}) => {
   const closure = await findClosureCovering(userId, date, options);
   if (closure) {
     const range = `${DateService.formatDateForDisplay(closure.periodStart)} – ${DateService.formatDateForDisplay(closure.periodEnd)}`;
-    throw new Error(
-      `PERIOD_CLOSED:Der Abrechnungszeitraum ${range} ist abgeschlossen. ` +
+    throw new AppError('PERIOD_CLOSED',
+      `Der Abrechnungszeitraum ${range} ist abgeschlossen. ` +
       'Änderungen sind erst nach Wiedereröffnung durch einen Administrator möglich.'
     );
   }

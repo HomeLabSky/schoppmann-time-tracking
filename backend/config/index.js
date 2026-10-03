@@ -1,108 +1,142 @@
 const path = require('path');
 require('dotenv').config({ quiet: true });
+const { z } = require('zod');
 
 /**
- * Zentrale Konfiguration.
+ * Zentrale Konfiguration aus Umgebungsvariablen, mit zod geprüft.
  *
- * Bewusst OHNE Fallback-Geheimnisse: fehlen JWT_SECRET / JWT_REFRESH_SECRET,
- * startet das Backend nicht. NODE_ENV ist standardmäßig "production", damit
- * ein vergessener Eintrag nie Entwicklungsfunktionen freischaltet.
+ * Fehlt ein Pflichtwert oder ist ein Wert ungültig (z. B. PORT=abc), startet das Backend nicht und nennt
+ * die betroffene Variable – statt still auf einen Standardwert auszuweichen.
+ * Bewusst OHNE Fallback-Geheimnisse. NODE_ENV ist standardmäßig "production", damit ein vergessener
+ * Eintrag nie Entwicklungsfunktionen freischaltet.
  */
 
-const nodeEnv = process.env.NODE_ENV || 'production';
+const secret = (name) =>
+  z.string({ error: `${name} fehlt` }).min(32, `${name} muss mindestens 32 Zeichen lang sein`);
 
-const requireSecret = (key) => {
-  const value = process.env[key];
-  if (!value || value.length < 32) {
-    throw new Error(
-      `❌ ${key} fehlt oder ist kürzer als 32 Zeichen. ` +
-      `In backend/.env setzen (Vorlage: backend/.env.example). ` +
-      `Erzeugen z. B. mit: node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
-    );
-  }
-  return value;
-};
+const int = (fallback, { min = 0 } = {}) =>
+  z.preprocess(
+    (value) => (value === undefined || value === '' ? undefined : value),
+    z.coerce.number().int().min(min).default(fallback)
+  );
 
-const asBool = (value, defaultValue = false) =>
-  value === undefined ? defaultValue : ['true', '1', 'yes'].includes(String(value).toLowerCase());
+const bool = (fallback) =>
+  z.preprocess(
+    (value) => (value === undefined || value === '' ? undefined : ['true', '1', 'yes'].includes(String(value).toLowerCase())),
+    z.boolean().default(fallback)
+  );
 
-const asList = (value) =>
-  value ? value.split(',').map((s) => s.trim()).filter(Boolean) : [];
+const list = () =>
+  z.string().optional().transform((value) => (value ? value.split(',').map((s) => s.trim()).filter(Boolean) : []));
 
-// Relative DB-Pfade beziehen sich auf den backend-Ordner, nicht auf das
-// aktuelle Arbeitsverzeichnis – sonst entsteht beim Start aus einem anderen
-// Ordner unbemerkt eine neue, leere Datenbank.
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(['production', 'development', 'test']).default('production'),
+  PORT: int(5000, { min: 1 }),
+  TRUST_PROXY: z.preprocess((v) => (v === undefined || v === '' ? undefined : v), z.coerce.number().int().min(0).optional()),
+
+  JWT_SECRET: secret('JWT_SECRET'),
+  JWT_REFRESH_SECRET: secret('JWT_REFRESH_SECRET'),
+
+  ACCESS_TOKEN_TTL_SECONDS: int(15 * 60, { min: 60 }),
+  REFRESH_TOKEN_TTL_DAYS: int(7, { min: 1 }),
+  SESSION_MAX_DAYS: int(30, { min: 1 }),
+  APP_REFRESH_TOKEN_TTL_DAYS: int(30, { min: 1 }),
+  APP_SESSION_MAX_DAYS: int(90, { min: 1 }),
+  COOKIE_SECURE: z.string().optional(),
+
+  LOGIN_LOCK_THRESHOLD: int(5, { min: 1 }),
+  LOGIN_LOCK_MINUTES: int(15, { min: 1 }),
+
+  DB_DIALECT: z.literal('sqlite').default('sqlite'),
+  DB_STORAGE: z.string().default('./database/timetracking.db'),
+  DB_LOGGING: bool(false),
+
+  CORS_ORIGIN: list(),
+  ALLOW_REGISTRATION: bool(false),
+  ALLOWED_EMAIL_DOMAINS: list(),
+
+  RATE_LIMIT_WINDOW_MS: int(15 * 60 * 1000, { min: 1000 }),
+  RATE_LIMIT_MAX_REQUESTS: int(100, { min: 1 }),
+  RATE_LIMIT_LOGIN_MAX: int(5, { min: 1 }),
+
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional()
+});
+
+const parsed = EnvSchema.safeParse(process.env);
+if (!parsed.success) {
+  const problems = parsed.error.issues.map((issue) => `  - ${issue.path.join('.')}: ${issue.message}`).join('\n');
+  throw new Error(
+    `Ungültige Konfiguration (backend/.env, Vorlage: backend/.env.example):\n${problems}\n` +
+    'Geheimnisse erzeugen z. B. mit: node -e "console.log(require(\'crypto\').randomBytes(48).toString(\'hex\'))"'
+  );
+}
+const env = parsed.data;
+
+// Relative DB-Pfade beziehen sich auf den backend-Ordner, nicht auf das aktuelle Arbeitsverzeichnis – sonst
+// entsteht beim Start aus einem anderen Ordner unbemerkt eine neue, leere Datenbank.
 const resolveStorage = (storage) =>
   storage === ':memory:' ? storage : path.resolve(__dirname, '..', storage);
 
 const config = {
-  // Server
-  port: parseInt(process.env.PORT) || 5000,
-  nodeEnv,
-  // Hinter einem Reverse-Proxy (nginx, Traefik …) auf die Anzahl Proxys setzen,
-  // damit Rate-Limits die echte Client-IP verwenden.
-  trustProxy: process.env.TRUST_PROXY ? parseInt(process.env.TRUST_PROXY) : false,
+  port: env.PORT,
+  nodeEnv: env.NODE_ENV,
+  // Hinter einem Reverse-Proxy auf die Anzahl Proxys setzen, damit Rate-Limits die echte Client-IP verwenden
+  trustProxy: env.TRUST_PROXY === undefined ? false : env.TRUST_PROXY,
 
-  // Geheimnisse: JWT_SECRET signiert die Zugriffs-Tokens, JWT_REFRESH_SECRET sichert die in der
-  // Datenbank gespeicherten Prüfwerte der Erneuerungs-Tokens (HMAC) – beide müssen gesetzt sein.
+  // JWT_SECRET signiert die Zugriffs-Tokens, JWT_REFRESH_SECRET sichert die in der Datenbank gespeicherten
+  // Prüfwerte der Erneuerungs-Tokens (HMAC) – beide müssen gesetzt sein.
   jwt: {
-    secret: requireSecret('JWT_SECRET'),
-    refreshSecret: requireSecret('JWT_REFRESH_SECRET')
+    secret: env.JWT_SECRET,
+    refreshSecret: env.JWT_REFRESH_SECRET
   },
 
-  // Anmeldung über httpOnly-Cookies mit Sitzungen in der Datenbank
   auth: {
     // Zugriffs-Token (JWT): kurz gültig; wird über das Erneuerungs-Token still verlängert
-    accessTtlSeconds: parseInt(process.env.ACCESS_TOKEN_TTL_SECONDS) || 15 * 60,
-    // Erneuerungs-Token: gleitend, wird bei jeder Nutzung rotiert
-    refreshTtlDays: parseInt(process.env.REFRESH_TOKEN_TTL_DAYS) || 7,
-    // Absolute Obergrenze einer Sitzung, danach ist eine neue Anmeldung nötig
-    sessionMaxDays: parseInt(process.env.SESSION_MAX_DAYS) || 30,
+    accessTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
+    // Web (Cookies): Erneuerung gleitend, absolute Obergrenze je Sitzung
+    refreshTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
+    sessionMaxDays: env.SESSION_MAX_DAYS,
+    // App (Bearer): längere Laufzeiten, das Token liegt im sicheren Gerätespeicher
+    app: {
+      refreshTtlDays: env.APP_REFRESH_TOKEN_TTL_DAYS,
+      sessionMaxDays: env.APP_SESSION_MAX_DAYS
+    },
     // Parallele Erneuerung (zwei Tabs): ein soeben rotiertes Token gilt noch kurz als "in Arbeit"
     refreshGraceSeconds: 10,
     // Cookie-Attribut Secure: in Produktion an (HTTPS), lokal per http aus
-    cookieSecure: process.env.COOKIE_SECURE !== undefined
-      ? asBool(process.env.COOKIE_SECURE)
-      : nodeEnv === 'production',
+    cookieSecure: env.COOKIE_SECURE !== undefined
+      ? ['true', '1', 'yes'].includes(env.COOKIE_SECURE.toLowerCase())
+      : env.NODE_ENV === 'production',
     accessCookie: 'zeit_access',
-    refreshCookie: 'zeit_refresh'
+    refreshCookie: 'zeit_refresh',
+    // Konto-Sperre: nach `threshold` Fehlversuchen `minutes` Minuten, bei weiteren Fehlversuchen verdoppelt
+    lock: {
+      threshold: env.LOGIN_LOCK_THRESHOLD,
+      minutes: env.LOGIN_LOCK_MINUTES
+    }
   },
 
-  // Database
   database: {
-    dialect: process.env.DB_DIALECT || 'sqlite',
-    storage: resolveStorage(process.env.DB_STORAGE || './database/timetracking.db'),
-    logging: process.env.DB_LOGGING === 'true' || false
+    dialect: env.DB_DIALECT,
+    storage: resolveStorage(env.DB_STORAGE),
+    logging: env.DB_LOGGING
   },
 
-  // CORS
   cors: {
-    origin: process.env.CORS_ORIGIN ?
-      process.env.CORS_ORIGIN.split(',') :
-      ['http://localhost:3000'],
+    origin: env.CORS_ORIGIN.length > 0 ? env.CORS_ORIGIN : ['http://localhost:3000'],
     credentials: true
   },
 
   // Selbstregistrierung (Standard: aus – Konten legt ein Admin an)
-  allowRegistration: asBool(process.env.ALLOW_REGISTRATION, false),
+  allowRegistration: env.ALLOW_REGISTRATION,
   // Optional: nur diese E-Mail-Domains zulassen (leer = keine Einschränkung)
-  allowedEmailDomains: asList(process.env.ALLOWED_EMAIL_DOMAINS),
+  allowedEmailDomains: env.ALLOWED_EMAIL_DOMAINS,
 
-  // Rate Limiting
   rateLimit: {
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-    general: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
-    login: parseInt(process.env.RATE_LIMIT_LOGIN_MAX) || 5
-  },
-
-  // Logging
-  logLevel: process.env.LOG_LEVEL || 'info'
+    windowMs: env.RATE_LIMIT_WINDOW_MS,
+    general: env.RATE_LIMIT_MAX_REQUESTS,
+    login: env.RATE_LIMIT_LOGIN_MAX
+  }
 };
-
-// Development Info (keine Secret-Längen oder -Werte ausgeben)
-if (config.nodeEnv === 'development') {
-  console.log('🔧 Development Configuration loaded');
-  console.log(`📊 Database: ${config.database.dialect} (${config.database.storage})`);
-}
 
 module.exports = config;

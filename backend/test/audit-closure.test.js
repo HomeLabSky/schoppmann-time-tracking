@@ -26,7 +26,8 @@ const makeUser = (patch = {}) =>
 const addEntry = (user, date, { start = '09:00', end = '17:00', breakMinutes = 0, rateCents = 1000 } = {}) =>
   TimeEntry.create({ userId: user.id, date, startTime: `${start}:00`, endTime: `${end}:00`, breakMinutes, hourlyRateCents: rateCents });
 
-const reject = (promise, pattern) => assert.rejects(promise, (e) => pattern.test(e.message));
+// Fachfehler: Code (z. B. PERIOD_CLOSED) und Meldung gemeinsam prüfbar
+const reject = (promise, pattern) => assert.rejects(promise, (e) => pattern.test(`${e.code}: ${e.message}`));
 const actorOf = (u) => ({ id: u.id, email: u.email });
 const logFor = (userId, action) => AuditService.list({ userId, action, limit: 200 }).then((r) => r.entries);
 

@@ -3,19 +3,27 @@ const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
 const { Session, User } = require('../models');
 const config = require('../config');
+const { AppError } = require('../lib/errors');
 
 const ISSUER = 'schoppmann-timetracking';
 const AUDIENCE = 'schoppmann-users';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Fehler mit maschinenlesbarem Code (wird von den Auth-Routen auf HTTP-Antworten abgebildet). */
-class SessionError extends Error {
+/**
+ * Sitzungsfehler: immer 401 (auch USER_INACTIVE – die Sitzung ist damit beendet), außer
+ * REFRESH_IN_PROGRESS = 409 (zweiter Tab erneuert gerade; der Client versucht es kurz darauf erneut).
+ */
+class SessionError extends AppError {
   constructor(code, message) {
-    super(message);
+    super(code, message, { status: code === 'REFRESH_IN_PROGRESS' ? 409 : 401 });
     this.name = 'SessionError';
-    this.code = code;
   }
 }
+
+const CLIENT_TYPES = new Set(['web', 'app']);
+
+/** Laufzeiten je Anmeldeweg: Web (Cookies) kürzer, App (sicherer Gerätespeicher) länger */
+const lifetimes = (clientType) => (clientType === 'app' ? config.auth.app : config.auth);
 
 // HMAC mit JWT_REFRESH_SECRET: ein Datenbank-Abzug allein reicht nicht, um Tokens zu prüfen oder zu erzeugen.
 const hashSecret = (secret) => crypto.createHmac('sha256', config.jwt.refreshSecret).update(secret).digest('hex');
@@ -53,21 +61,28 @@ class SessionService {
   /**
    * Legt eine Sitzung an (bei Login/Registrierung).
    * @param {Object} user Sequelize-User
-   * @param {{ip?:string, userAgent?:string}} [context]
-   * @returns {Promise<{sid:string, accessToken:string, refreshToken:string}>}
+   * @param {{ip?:string, userAgent?:string, clientType?:'web'|'app', deviceName?:string}} [context]
+   * @returns {Promise<{sid:string, accessToken:string, refreshToken:string, refreshExpiresAt:Date}>}
    */
   static async createSession(user, context = {}) {
+    const clientType = context.clientType || 'web';
+    if (!CLIENT_TYPES.has(clientType)) throw new Error(`Unbekannter Anmeldeweg: ${clientType}`);
+    const { refreshTtlDays, sessionMaxDays } = lifetimes(clientType);
+
     const now = new Date();
     const sid = crypto.randomUUID();
     const secret = newSecret();
+    const expiresAt = new Date(now.getTime() + refreshTtlDays * DAY_MS);
 
     await Session.create({
       id: sid,
       userId: user.id,
+      clientType,
+      deviceName: clip(context.deviceName, 100),
       refreshHash: hashSecret(secret),
       lastUsedAt: now,
-      expiresAt: new Date(now.getTime() + config.auth.refreshTtlDays * DAY_MS),
-      absoluteExpiresAt: new Date(now.getTime() + config.auth.sessionMaxDays * DAY_MS),
+      expiresAt,
+      absoluteExpiresAt: new Date(now.getTime() + sessionMaxDays * DAY_MS),
       ip: clip(context.ip, 64),
       userAgent: clip(context.userAgent, 255)
     });
@@ -75,21 +90,28 @@ class SessionService {
     // Aufräumen beiläufig: abgelaufene/gesperrte Sitzungen nach einer Woche entfernen
     this.purgeOld().catch(() => undefined);
 
-    return { sid, accessToken: signAccessToken(user.id, sid), refreshToken: `${sid}.${secret}` };
+    return { sid, accessToken: signAccessToken(user.id, sid), refreshToken: `${sid}.${secret}`, refreshExpiresAt: expiresAt };
   }
 
   /**
    * Tauscht ein Erneuerungs-Token gegen ein neues Paar (Rotation).
+   * Ein Token gilt nur auf dem Weg, auf dem es ausgegeben wurde (Web-Cookie bzw. App-Body): Ein aus dem Browser
+   * entwendetes Cookie lässt sich nicht als App-Token einsetzen und umgekehrt.
    * Wirft SessionError mit: INVALID_REFRESH_TOKEN, USER_INACTIVE, REFRESH_IN_PROGRESS, REFRESH_TOKEN_REUSED.
-   * @returns {Promise<{user:Object, sid:string, accessToken:string, refreshToken:string}>}
+   * @param {string} rawToken
+   * @param {{clientType?:'web'|'app'}} [options]
+   * @returns {Promise<{user:Object, sid:string, accessToken:string, refreshToken:string, refreshExpiresAt:Date}>}
    */
-  static async rotate(rawToken) {
+  static async rotate(rawToken, { clientType = 'web' } = {}) {
     const parsed = parseRefreshToken(rawToken);
     if (!parsed) throw new SessionError('INVALID_REFRESH_TOKEN', 'Ungültiges Erneuerungs-Token');
 
     const session = await Session.findByPk(parsed.sid);
     if (!session || session.revokedAt) {
       throw new SessionError('INVALID_REFRESH_TOKEN', 'Sitzung ist beendet');
+    }
+    if ((session.clientType || 'web') !== clientType) {
+      throw new SessionError('INVALID_REFRESH_TOKEN', 'Ungültiges Erneuerungs-Token');
     }
 
     const now = new Date();
@@ -123,7 +145,7 @@ class SessionService {
 
     const secret = newSecret();
     const nextExpiry = new Date(Math.min(
-      now.getTime() + config.auth.refreshTtlDays * DAY_MS,
+      now.getTime() + lifetimes(clientType).refreshTtlDays * DAY_MS,
       session.absoluteExpiresAt.getTime()
     ));
     // Bedingtes Update: gewinnt nur, wenn niemand sonst zwischenzeitlich rotiert hat
@@ -135,7 +157,13 @@ class SessionService {
       throw new SessionError('REFRESH_IN_PROGRESS', 'Erneuerung läuft bereits, bitte erneut versuchen');
     }
 
-    return { user, sid: session.id, accessToken: signAccessToken(user.id, session.id), refreshToken: `${session.id}.${secret}` };
+    return {
+      user,
+      sid: session.id,
+      accessToken: signAccessToken(user.id, session.id),
+      refreshToken: `${session.id}.${secret}`,
+      refreshExpiresAt: nextExpiry
+    };
   }
 
   /**
@@ -166,7 +194,7 @@ class SessionService {
   }
 
   /**
-   * Meldet die Sitzung ab, zu der die mitgeschickten Tokens gehören. Die Zugehörigkeit muss belegt sein
+   * Meldet die Sitzung ab, zu der die mitgeschickten Tokens gehören (Cookies oder App-Tokens). Die Zugehörigkeit muss belegt sein
    * (passendes Erneuerungs-Token oder gültig signiertes – auch abgelaufenes – Zugriffs-Token), damit niemand
    * fremde Sitzungen beenden kann.
    * @returns {Promise<{sid:string,userId:number,email:string|null}|null>} null, wenn keine Sitzung zugeordnet werden konnte
