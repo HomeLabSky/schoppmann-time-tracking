@@ -1,11 +1,12 @@
 const { Sequelize } = require('sequelize');
-const config = require('./index'); // Ihre bestehende config nutzen
+const config = require('./index');
+const logger = require('../lib/logger');
 
-// SQLite Datenbank-Konfiguration basierend auf Ihrer config
+// SQLite-Datenbank (Pfad absolut, siehe config/index.js)
 const sequelize = new Sequelize({
   dialect: config.database.dialect,
   storage: config.database.storage,
-  logging: config.database.logging ? console.log : false
+  logging: config.database.logging ? (sql) => logger.debug({ sql }, 'SQL') : false
 });
 
 // SQLite erlaubt nur einen Schreiber gleichzeitig. Ohne Wartezeit scheitern überlappende Schreibvorgänge

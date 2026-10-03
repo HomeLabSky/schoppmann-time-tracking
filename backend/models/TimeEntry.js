@@ -18,6 +18,11 @@ const TimeEntry = sequelize.define('TimeEntry', {
     },
     comment: 'ID des Mitarbeiters'
   },
+  clientId: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+    comment: 'Vom Client erzeugte Kennung (App, Offline-Erfassung): Wiederholungen legen nichts doppelt an'
+  },
   date: {
     type: DataTypes.DATEONLY,
     allowNull: false,
@@ -92,13 +97,12 @@ const TimeEntry = sequelize.define('TimeEntry', {
       name: 'unique_user_date'
     },
     {
-      fields: ['userId']
+      unique: true,
+      fields: ['userId', 'clientId'],
+      name: 'unique_user_client_id'
     },
     {
       fields: ['date']
-    },
-    {
-      fields: ['userId', 'date']
     }
   ],
   validate: {

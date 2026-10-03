@@ -5,7 +5,7 @@ Zeiterfassungssystem für Minijob-/Stundenabrechnung mit getrenntem Frontend und
 | Bereich | Technologie | Pfad |
 |---|---|---|
 | Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind | `frontend/` |
-| Backend | Express 4, Sequelize, SQLite, JWT | `backend/` |
+| Backend | Express 5, zod, Sequelize, SQLite, pino; REST-API `/api/v1` mit OpenAPI-Vertrag | `backend/` |
 | Shared | Geteilte TypeScript-Typen (noch nicht eingebunden) | `shared/` |
 
 ## Schnellstart
@@ -29,6 +29,9 @@ npm run dev              # Frontend (:3000) + Backend (:5000) parallel
 npm run dev:backend      # nur Backend
 npm run dev:frontend     # nur Frontend
 ```
+
+API-Vertrag (für Web und spätere App): `http://localhost:5000/api/v1/openapi.json`, als Datei `backend/openapi.json`
+(nach Änderungen an Routen: `npm run openapi` im Ordner `backend`). Details: `backend/ARCHITECTURE.md`.
 
 ## Benutzer und Passwörter
 

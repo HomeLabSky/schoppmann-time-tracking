@@ -1,13 +1,15 @@
 const { sequelize } = require('../config/database');
 const User = require('./User');
 const MinijobSetting = require('./MinijobSetting');
-const TimeEntry = require('./TimeEntry'); // ✅ TimeEntry importieren
+const TimeEntry = require('./TimeEntry'); // TimeEntry importieren
 const AuditLog = require('./AuditLog');
 const PeriodClosure = require('./PeriodClosure');
 const Session = require('./Session');
-const { runMigrations } = require('./migrations');
+const LoginThrottle = require('./LoginThrottle');
+const { runPreSyncMigrations, runMigrations } = require('./migrations');
+const logger = require('../lib/logger');
 
-// ✅ Beziehungen zwischen Models definieren
+// Beziehungen zwischen Models definieren
 User.hasMany(MinijobSetting, {
   foreignKey: 'createdBy',
   as: 'CreatedMinijobSettings'
@@ -37,39 +39,21 @@ PeriodClosure.belongsTo(User, { foreignKey: 'userId', as: 'User' });
 User.hasMany(Session, { foreignKey: 'userId', as: 'Sessions', onDelete: 'CASCADE' });
 Session.belongsTo(User, { foreignKey: 'userId', as: 'User' });
 
-// ✅ Datenbank initialisieren (ersetzt die alte database.js Funktion)
+// Datenbank initialisieren: Verbindung, Schema, Migrationen
 const initDatabase = async () => {
-  try {
-    console.log('🔄 Initialisiere Datenbank...');
+  await sequelize.authenticate();
+  // Neue Spalten in bestehenden Tabellen zuerst – sync() legt danach fehlende Tabellen und Indizes an
+  await runPreSyncMigrations(sequelize);
+  await sequelize.sync();
+  await runMigrations(sequelize);
 
-    // Verbindung testen
-    await sequelize.authenticate();
-    console.log('✅ Datenbankverbindung erfolgreich etabliert');
-
-    // Tabellen synchronisieren
-    await sequelize.sync();
-    console.log('✅ Datenbank-Tabellen synchronisiert');
-
-    // Schema-Änderungen für bestehende Datenbanken nachziehen
-    await runMigrations(sequelize);
-
-    // Aktive Minijob-Einstellungen beim Start aktualisieren
-    try {
-      await MinijobSetting.updateActiveStatus();
-      console.log('✅ Minijob-Einstellungen Status aktualisiert');
-    } catch (error) {
-      console.warn('⚠️ Minijob-Status Update übersprungen (evtl. erste Initialisierung)');
-    }
-
-    console.log('🎉 Datenbank erfolgreich initialisiert');
-    return true;
-  } catch (error) {
-    console.error('❌ Datenbankfehler:', error);
-    throw error;
-  }
+  // Aktive Minijob-Einstellung beim Start aktualisieren
+  await MinijobSetting.updateActiveStatus();
+  logger.info('Datenbank initialisiert');
+  return true;
 };
 
-// ✅ Alle Models und Funktionen exportieren
+// Alle Models und Funktionen exportieren
 module.exports = {
   // Models
   User,
@@ -78,6 +62,7 @@ module.exports = {
   AuditLog,
   PeriodClosure,
   Session,
+  LoginThrottle,
 
   // Database
   sequelize,

@@ -1,48 +1,66 @@
 /**
  * Kleine, idempotente Schema-Migrationen für bestehende Datenbanken.
  *
- * `sequelize.sync()` legt nur fehlende Tabellen an, ändert aber keine
- * vorhandenen. Neue Spalten werden deshalb hier nachgezogen. Vor der ersten
- * Änderung entsteht automatisch eine Sicherungskopie der DB-Datei.
- * (Ein vollwertiges Migrations-Framework ist für Phase 2 vorgesehen.)
+ * `sequelize.sync()` legt nur fehlende Tabellen und Indizes an, ändert aber keine vorhandenen Spalten.
+ * - runPreSyncMigrations: neue Spalten in bestehenden Tabellen – VOR sync(), weil sync() sonst Indizes
+ *   auf noch fehlende Spalten anlegen will.
+ * - runMigrations: Datenpflege und Trigger NACH sync().
+ * Vor der ersten Änderung entsteht automatisch eine Sicherungskopie der DB-Datei.
+ * (Versionierte Migrationen mit Drizzle folgen mit dem Wechsel auf better-sqlite3.)
  */
 const fs = require('fs');
 const config = require('../config');
 const billing = require('../utils/billing');
+const logger = require('../lib/logger');
 
+let backupTaken = false;
 const backupDatabaseFile = () => {
   const storage = config.database.storage;
-  if (config.database.dialect !== 'sqlite' || storage === ':memory:' || !fs.existsSync(storage)) {
+  if (backupTaken || config.database.dialect !== 'sqlite' || storage === ':memory:' || !fs.existsSync(storage)) {
     return null;
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const target = `${storage}.pre-migration-${stamp}`;
   fs.copyFileSync(storage, target);
+  backupTaken = true;
+  logger.info({ backup: target }, 'Sicherung vor Migration angelegt');
   return target;
 };
 
-/**
- * Stundensatz pro Zeiteintrag einfrieren (TimeEntries.hourlyRateCents).
- * Bestehende Einträge erhalten den aktuellen Stundenlohn des Mitarbeiters.
- */
-const addHourlyRateSnapshot = async (sequelize) => {
+const tableExists = async (queryInterface, table) => {
+  const tables = await queryInterface.showAllTables();
+  return tables.includes(table);
+};
+
+/** Fügt eine Spalte hinzu, wenn die Tabelle existiert und die Spalte fehlt. */
+const addColumnIfMissing = async (sequelize, table, column, definition) => {
   const queryInterface = sequelize.getQueryInterface();
-  const columns = await queryInterface.describeTable('TimeEntries');
+  if (!(await tableExists(queryInterface, table))) return false;
+  const columns = await queryInterface.describeTable(table);
+  if (columns[column]) return false;
+  backupDatabaseFile();
+  await queryInterface.addColumn(table, column, definition);
+  logger.info({ table, column }, 'Migration: Spalte angelegt');
+  return true;
+};
 
-  if (!columns.hourlyRateCents) {
-    const backup = backupDatabaseFile();
-    if (backup) console.log(`💾 Sicherung vor Migration: ${backup}`);
-    await queryInterface.addColumn('TimeEntries', 'hourlyRateCents', {
-      type: sequelize.Sequelize.INTEGER,
-      allowNull: true
-    });
-    console.log('🔧 Migration: Spalte TimeEntries.hourlyRateCents angelegt');
-  }
+const runPreSyncMigrations = async (sequelize) => {
+  const { STRING, INTEGER } = sequelize.Sequelize;
+  // Phase 1: Stundensatz pro Zeiteintrag einfrieren
+  await addColumnIfMissing(sequelize, 'TimeEntries', 'hourlyRateCents', { type: INTEGER, allowNull: true });
+  // Phase 2: idempotente Anlage (App/Offline) und Sitzungen für die App
+  await addColumnIfMissing(sequelize, 'TimeEntries', 'clientId', { type: STRING(64), allowNull: true });
+  await addColumnIfMissing(sequelize, 'Sessions', 'clientType', { type: STRING(8), allowNull: false, defaultValue: 'web' });
+  await addColumnIfMissing(sequelize, 'Sessions', 'deviceName', { type: STRING(100), allowNull: true });
+};
 
+/** Bestandseinträge ohne eingefrorenen Stundensatz erhalten den aktuellen Stundenlohn des Mitarbeiters. */
+const fillHourlyRateSnapshot = async (sequelize) => {
   const [[{ missing }]] = await sequelize.query(
     'SELECT COUNT(*) AS missing FROM TimeEntries WHERE hourlyRateCents IS NULL'
   );
   if (missing > 0) {
+    backupDatabaseFile();
     await sequelize.query(
       `UPDATE TimeEntries
          SET hourlyRateCents = COALESCE(
@@ -50,7 +68,7 @@ const addHourlyRateSnapshot = async (sequelize) => {
            ${billing.DEFAULT_HOURLY_RATE_CENTS})
        WHERE hourlyRateCents IS NULL`
     );
-    console.log(`🔧 Migration: ${missing} Zeiteintrag/-einträge mit Stundensatz versehen`);
+    logger.info({ count: missing }, 'Migration: Zeiteinträge mit Stundensatz versehen');
   }
 };
 
@@ -67,8 +85,8 @@ const protectAuditLog = async (sequelize) => {
 };
 
 const runMigrations = async (sequelize) => {
-  await addHourlyRateSnapshot(sequelize);
+  await fillHourlyRateSnapshot(sequelize);
   await protectAuditLog(sequelize);
 };
 
-module.exports = { runMigrations };
+module.exports = { runPreSyncMigrations, runMigrations };

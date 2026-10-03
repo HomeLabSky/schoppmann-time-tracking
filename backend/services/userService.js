@@ -1,7 +1,15 @@
+const { AppError } = require('../lib/errors');
 const { User, MinijobSetting, TimeEntry, PeriodClosure, sequelize } = require('../models');
 const { Op } = require('sequelize');
+const bcrypt = require('bcryptjs');
+const config = require('../config');
 const SessionService = require('./sessionService');
 const AuditService = require('./auditService');
+const LoginThrottleService = require('./loginThrottle');
+
+// Vergleichswert für unbekannte E-Mail-Adressen: Die Anmeldung dauert dann gleich lange wie bei einem
+// falschen Passwort und verrät über die Antwortzeit nicht, ob ein Konto existiert.
+const DUMMY_HASH = bcrypt.hashSync('dummy-password-for-timing', 10);
 
 /** Fachlich relevante Konto-Felder für das Änderungsprotokoll (nie das Passwort). */
 const accountSnapshot = (user) => ({
@@ -21,9 +29,21 @@ const settingsSnapshot = (user) => ({
 /** Auslöser aus einem Objekt `{id,email}`; eine nackte ID (alter Aufruf) wird unterstützt. */
 const normalizeActor = (actor) => (typeof actor === 'number' || typeof actor === 'string' ? { id: Number(actor) } : actor || null);
 
+/** Optionale Einschränkung neuer Konten auf bestimmte E-Mail-Domains (ALLOWED_EMAIL_DOMAINS) */
+const assertAllowedDomain = (email) => {
+  const allowed = config.allowedEmailDomains;
+  if (allowed.length === 0) return;
+  const domain = String(email).split('@')[1];
+  if (!allowed.includes(domain)) {
+    throw new AppError('VALIDATION_ERROR', 'Eingabefehler', {
+      fields: { email: 'Email-Domain nicht erlaubt' },
+      details: ['Email-Domain nicht erlaubt']
+    });
+  }
+};
+
 /**
- * ✅ User Service - User-spezifische Business Logic
- * Enthält alle User-bezogenen Operationen und Geschäftslogik.
+ * User Service: Konten, Anmeldung, Arbeitseinstellungen.
  * Änderungen an Konten werden zusammen mit dem Änderungsprotokoll in einer Transaktion gespeichert.
  */
 class UserService {
@@ -40,72 +60,66 @@ class UserService {
    */
   static async createUser(userData, actor) {
     const { email, password, name, role = 'mitarbeiter' } = userData;
+    assertAllowedDomain(email);
 
     // Prüfen ob User bereits existiert
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
-      throw new Error(`USER_ALREADY_EXISTS:Email ${email} ist bereits registriert`);
+      throw new AppError('EMAIL_EXISTS', `Email ${email} ist bereits registriert`);
     }
 
     // Rolle validieren
     if (!['admin', 'mitarbeiter'].includes(role)) {
-      throw new Error('INVALID_ROLE:Rolle muss admin oder mitarbeiter sein');
+      throw new AppError('INVALID_ROLE', 'Rolle muss admin oder mitarbeiter sein');
     }
 
-    try {
-      return await sequelize.transaction(async (transaction) => {
-        const user = await User.create({
-          email,
-          password, // Wird automatisch in Model gehashed
-          name,
-          role,
-          isActive: true
-        }, { transaction });
+    return await sequelize.transaction(async (transaction) => {
+      const user = await User.create({
+        email,
+        password, // Wird automatisch in Model gehashed
+        name,
+        role,
+        isActive: true
+      }, { transaction });
 
-        await AuditService.record({
-          actor: normalizeActor(actor) || { id: user.id, email: user.email },
-          action: 'user.create',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          after: accountSnapshot(user),
-          meta: { selfRegistration: !actor }
-        }, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor) || { id: user.id, email: user.email },
+        action: 'user.create',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        after: accountSnapshot(user),
+        meta: { selfRegistration: !actor }
+      }, { transaction });
 
-        return user.toSafeJSON();
-      });
-    } catch (error) {
-      if (error.name === 'SequelizeValidationError') {
-        const messages = error.errors.map(err => err.message);
-        throw new Error(`VALIDATION_ERROR:${messages.join(', ')}`);
-      }
-      throw new Error(`USER_CREATION_ERROR:${error.message}`);
-    }
+      return user.toSafeJSON();
+    });
   }
 
   /**
    * Authentifiziert einen User
    * @param {string} email - User Email
    * @param {string} password - User Passwort
-   * @returns {Promise<Object>} { user } – Sitzung und Cookies erzeugt die Route
+   * @returns {Promise<Object>} { user } – Sitzung, Konto-Sperre und Protokoll: services/authService.js
    * @throws {Error} Bei Auth-Fehlern
    */
   static async authenticateUser(email, password) {
-    // User finden
+    // User finden (ohne Konto trotzdem einen Hash prüfen: gleiche Antwortzeit)
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      throw new Error('INVALID_CREDENTIALS:Email oder Passwort falsch');
+      await bcrypt.compare(String(password), DUMMY_HASH);
+      throw new AppError('INVALID_CREDENTIALS', 'Email oder Passwort falsch');
     }
 
     // Passwort prüfen
     const isValidPassword = await user.comparePassword(password);
     if (!isValidPassword) {
-      throw new Error('INVALID_CREDENTIALS:Email oder Passwort falsch');
+      throw new AppError('INVALID_CREDENTIALS', 'Email oder Passwort falsch');
     }
 
     // User aktiv?
     if (!user.isActive) {
-      throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
+      throw new AppError('USER_INACTIVE', 'Benutzer ist deaktiviert');
     }
 
     return {
@@ -164,43 +178,35 @@ class UserService {
   static async updateUserProfile(userId, updateData, actor) {
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     if (!user.isActive) {
-      throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
+      throw new AppError('USER_INACTIVE', 'Benutzer ist deaktiviert');
     }
 
     // Email-Eindeutigkeit prüfen (falls Email geändert wird)
     if (updateData.email && updateData.email !== user.email) {
       const existingUser = await User.findOne({ where: { email: updateData.email } });
       if (existingUser) {
-        throw new Error('EMAIL_EXISTS:Email bereits vergeben');
+        throw new AppError('EMAIL_EXISTS', 'Email bereits vergeben');
       }
     }
 
-    try {
-      return await sequelize.transaction(async (transaction) => {
-        const before = accountSnapshot(user);
-        await user.update(updateData, { transaction });
-        await AuditService.record({
-          actor: normalizeActor(actor) || { id: user.id, email: before.email },
-          action: 'user.profile_update',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          before,
-          after: accountSnapshot(user)
-        }, { transaction });
-        return user.toSafeJSON();
-      });
-    } catch (error) {
-      if (error.name === 'SequelizeValidationError') {
-        const messages = error.errors.map(err => err.message);
-        throw new Error(`VALIDATION_ERROR:${messages.join(', ')}`);
-      }
-      throw new Error(`UPDATE_ERROR:${error.message}`);
-    }
+    return await sequelize.transaction(async (transaction) => {
+      const before = accountSnapshot(user);
+      await user.update(updateData, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor) || { id: user.id, email: before.email },
+        action: 'user.profile_update',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        before,
+        after: accountSnapshot(user)
+      }, { transaction });
+      return user.toSafeJSON();
+    });
   }
 
   /**
@@ -216,36 +222,32 @@ class UserService {
   static async changeUserPassword(userId, currentPassword, newPassword, actor, keepSessionId = null) {
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     if (!user.isActive) {
-      throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
+      throw new AppError('USER_INACTIVE', 'Benutzer ist deaktiviert');
     }
 
     // Aktuelles Passwort prüfen
     const isValidPassword = await user.comparePassword(currentPassword);
     if (!isValidPassword) {
-      throw new Error('INVALID_CURRENT_PASSWORD:Aktuelles Passwort ist falsch');
+      throw new AppError('INVALID_CURRENT_PASSWORD', 'Aktuelles Passwort ist falsch');
     }
 
-    try {
-      await sequelize.transaction(async (transaction) => {
-        await user.update({ password: newPassword }, { transaction });
-        await AuditService.record({
-          actor: normalizeActor(actor) || { id: user.id, email: user.email },
-          action: 'user.password_change',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id
-        }, { transaction });
-      });
-      // Ein neues Passwort macht gestohlene Sitzungen unbrauchbar: alle anderen Geräte werden abgemeldet
-      await SessionService.revokeAllForUser(user.id, { exceptSid: keepSessionId, reason: 'password_changed' });
-      return true;
-    } catch (error) {
-      throw new Error(`PASSWORD_CHANGE_ERROR:${error.message}`);
-    }
+    await sequelize.transaction(async (transaction) => {
+      await user.update({ password: newPassword }, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor) || { id: user.id, email: user.email },
+        action: 'user.password_change',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id
+      }, { transaction });
+    });
+    // Ein neues Passwort macht gestohlene Sitzungen unbrauchbar: alle anderen Geräte werden abgemeldet
+    await SessionService.revokeAllForUser(user.id, { exceptSid: keepSessionId, reason: 'password_changed' });
+    return true;
   }
 
   /**
@@ -259,32 +261,32 @@ class UserService {
   static async updateUserSettings(userId, settings, actor) {
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     if (!user.isActive) {
-      throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
+      throw new AppError('USER_INACTIVE', 'Benutzer ist deaktiviert');
     }
 
     // Settings validieren
     const validSettings = {};
     if (settings.stundenlohn !== undefined) {
       if (settings.stundenlohn < 0 || settings.stundenlohn > 999) {
-        throw new Error('INVALID_HOURLY_RATE:Stundenlohn muss zwischen 0 und 999 Euro liegen');
+        throw new AppError('VALIDATION_ERROR', 'Stundenlohn muss zwischen 0 und 999 Euro liegen');
       }
       validSettings.stundenlohn = parseFloat(settings.stundenlohn);
     }
 
     if (settings.abrechnungStart !== undefined) {
       if (settings.abrechnungStart < 1 || settings.abrechnungStart > 31) {
-        throw new Error('INVALID_BILLING_START:Abrechnungsstart muss zwischen 1 und 31 liegen');
+        throw new AppError('VALIDATION_ERROR', 'Abrechnungsstart muss zwischen 1 und 31 liegen');
       }
       validSettings.abrechnungStart = parseInt(settings.abrechnungStart);
     }
 
     if (settings.abrechnungEnde !== undefined) {
       if (settings.abrechnungEnde < 1 || settings.abrechnungEnde > 31) {
-        throw new Error('INVALID_BILLING_END:Abrechnungsende muss zwischen 1 und 31 liegen');
+        throw new AppError('VALIDATION_ERROR', 'Abrechnungsende muss zwischen 1 und 31 liegen');
       }
       validSettings.abrechnungEnde = parseInt(settings.abrechnungEnde);
     }
@@ -293,29 +295,25 @@ class UserService {
       validSettings.lohnzettelEmail = settings.lohnzettelEmail || null;
     }
 
-    try {
-      await sequelize.transaction(async (transaction) => {
-        const before = settingsSnapshot(user);
-        await user.update(validSettings, { transaction });
-        await AuditService.record({
-          actor: normalizeActor(actor) || { id: user.id, email: user.email },
-          action: 'user.settings_update',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          before,
-          after: settingsSnapshot(user)
-        }, { transaction });
-      });
-      return {
-        stundenlohn: user.stundenlohn,
-        abrechnungStart: user.abrechnungStart,
-        abrechnungEnde: user.abrechnungEnde,
-        lohnzettelEmail: user.lohnzettelEmail
-      };
-    } catch (error) {
-      throw new Error(`SETTINGS_UPDATE_ERROR:${error.message}`);
-    }
+    await sequelize.transaction(async (transaction) => {
+      const before = settingsSnapshot(user);
+      await user.update(validSettings, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor) || { id: user.id, email: user.email },
+        action: 'user.settings_update',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        before,
+        after: settingsSnapshot(user)
+      }, { transaction });
+    });
+    return {
+      stundenlohn: user.stundenlohn,
+      abrechnungStart: user.abrechnungStart,
+      abrechnungEnde: user.abrechnungEnde,
+      lohnzettelEmail: user.lohnzettelEmail
+    };
   }
 
   /**
@@ -352,27 +350,23 @@ class UserService {
     // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    try {
-      const { rows: users, count: total } = await User.findAndCountAll({
-        where: whereClause,
-        attributes: { exclude: ['password'] },
-        order: [['createdAt', 'DESC']],
-        limit: parseInt(limit),
-        offset: offset
-      });
+    const { rows: users, count: total } = await User.findAndCountAll({
+      where: whereClause,
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset
+    });
 
-      return {
-        users: users.map(user => user.toSafeJSON()),
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          totalPages: Math.ceil(total / parseInt(limit))
-        }
-      };
-    } catch (error) {
-      throw new Error(`USER_LIST_ERROR:${error.message}`);
-    }
+    return {
+      users: users.map(user => user.toSafeJSON()),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    };
   }
 
   /**
@@ -387,35 +381,31 @@ class UserService {
 
     // Sich selbst nicht deaktivieren
     if (parseInt(userId) === parseInt(admin?.id)) {
-      throw new Error('CANNOT_DEACTIVATE_SELF:Sie können sich nicht selbst deaktivieren');
+      throw new AppError('CANNOT_DEACTIVATE_SELF', 'Sie können sich nicht selbst deaktivieren');
     }
 
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
-    try {
-      return await sequelize.transaction(async (transaction) => {
-        const before = accountSnapshot(user);
-        await user.update({ isActive: !user.isActive }, { transaction });
-        await AuditService.record({
-          actor: admin,
-          action: user.isActive ? 'user.activate' : 'user.deactivate',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          before,
-          after: accountSnapshot(user)
-        }, { transaction });
-        if (!user.isActive) {
-          await SessionService.revokeAllForUser(user.id, { reason: 'user_deactivated', transaction });
-        }
-        return user.toSafeJSON();
-      });
-    } catch (error) {
-      throw new Error(`STATUS_TOGGLE_ERROR:${error.message}`);
-    }
+    return await sequelize.transaction(async (transaction) => {
+      const before = accountSnapshot(user);
+      await user.update({ isActive: !user.isActive }, { transaction });
+      await AuditService.record({
+        actor: admin,
+        action: user.isActive ? 'user.activate' : 'user.deactivate',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        before,
+        after: accountSnapshot(user)
+      }, { transaction });
+      if (!user.isActive) {
+        await SessionService.revokeAllForUser(user.id, { reason: 'user_deactivated', transaction });
+      }
+      return user.toSafeJSON();
+    });
   }
 
   /**
@@ -423,80 +413,28 @@ class UserService {
    * @returns {Promise<Object>} User Statistiken
    */
   static async getUserStats() {
-    try {
-      const totalUsers = await User.count();
-      const activeUsers = await User.count({ where: { isActive: true } });
+    const totalUsers = await User.count();
+    const activeUsers = await User.count({ where: { isActive: true } });
 
-      const roleStats = await User.findAll({
-        attributes: [
-          'role',
-          [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count'],
-          [require('sequelize').fn('COUNT', require('sequelize').literal('CASE WHEN isActive = 1 THEN 1 END')), 'activeCount']
-        ],
-        group: 'role'
-      });
-
-      return {
-        total: totalUsers,
-        active: activeUsers,
-        inactive: totalUsers - activeUsers,
-        byRole: roleStats.map(stat => ({
-          role: stat.role,
-          total: parseInt(stat.dataValues.count),
-          active: parseInt(stat.dataValues.activeCount || 0)
-        }))
-      };
-    } catch (error) {
-      throw new Error(`USER_STATS_ERROR:${error.message}`);
-    }
-  }
-
-  /**
-   * User Dashboard-Daten zusammenstellen
-   * @param {number} userId - User ID
-   * @returns {Promise<Object>} Dashboard Daten
-   */
-  static async getUserDashboardData(userId) {
-    const user = await User.findByPk(userId, {
-      attributes: { exclude: ['password'] }
+    const roleStats = await User.findAll({
+      attributes: [
+        'role',
+        [require('sequelize').fn('COUNT', require('sequelize').col('id')), 'count'],
+        [require('sequelize').fn('COUNT', require('sequelize').literal('CASE WHEN isActive = 1 THEN 1 END')), 'activeCount']
+      ],
+      group: 'role'
     });
-
-    if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
-    }
-
-    if (!user.isActive) {
-      throw new Error('USER_INACTIVE:Benutzer ist deaktiviert');
-    }
 
     return {
-      user: user.toSafeJSON(),
-      settings: {
-        stundenlohn: user.stundenlohn || 12.00,
-        abrechnungStart: user.abrechnungStart || 1,
-        abrechnungEnde: user.abrechnungEnde || 31,
-        lohnzettelEmail: user.lohnzettelEmail || user.email
-      },
-      stats: {
-        currentMonth: {
-          hoursWorked: 0,
-          earnings: 0
-        }
-      }
+      total: totalUsers,
+      active: activeUsers,
+      inactive: totalUsers - activeUsers,
+      byRole: roleStats.map(stat => ({
+        role: stat.role,
+        total: parseInt(stat.dataValues.count),
+        active: parseInt(stat.dataValues.activeCount || 0)
+      }))
     };
-  }
-
-  /**
-   * Prüft ob ein User Admin-Rechte hat
-   * @param {number} userId - User ID
-   * @returns {Promise<boolean>} True wenn User Admin ist
-   */
-  static async isUserAdmin(userId) {
-    const user = await User.findByPk(userId, {
-      attributes: ['role', 'isActive']
-    });
-
-    return user && user.isActive && user.role === 'admin';
   }
 
   /**
@@ -507,12 +445,12 @@ class UserService {
    * @param {Object} data - { email, name, role, isActive, password }
    * @param {{id:number,email:string}} [actor] ausführender Admin
    * @returns {Promise<Object>} Aktualisierter User (ohne Passwort)
-   * @throws {Error} USER_NOT_FOUND, EMAIL_EXISTS, INVALID_ROLE
+   * @throws {AppError} USER_NOT_FOUND, EMAIL_EXISTS, INVALID_ROLE
    */
   static async adminUpdateUser(userId, data, actor) {
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     const { email, name, role, isActive, password } = data;
@@ -520,12 +458,12 @@ class UserService {
     if (email && email !== user.email) {
       const existingUser = await User.findOne({ where: { email } });
       if (existingUser) {
-        throw new Error('EMAIL_EXISTS:Email bereits vergeben');
+        throw new AppError('EMAIL_EXISTS', 'Email bereits vergeben');
       }
     }
 
     if (role !== undefined && !['admin', 'mitarbeiter'].includes(role)) {
-      throw new Error('INVALID_ROLE:Rolle muss admin oder mitarbeiter sein');
+      throw new AppError('INVALID_ROLE', 'Rolle muss admin oder mitarbeiter sein');
     }
 
     const updateData = {};
@@ -536,32 +474,27 @@ class UserService {
     const passwordChanged = !!(password && password.trim() !== '');
     if (passwordChanged) updateData.password = password;
 
-    try {
-      return await sequelize.transaction(async (transaction) => {
-        const before = accountSnapshot(user);
-        await user.update(updateData, { transaction });
-        await AuditService.record({
-          actor: normalizeActor(actor),
-          action: 'user.update',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          before,
-          after: accountSnapshot(user),
-          meta: passwordChanged ? { passwordChanged: true } : null
-        }, { transaction });
-        if (passwordChanged || !user.isActive) {
-          await SessionService.revokeAllForUser(user.id, { reason: passwordChanged ? 'password_reset_by_admin' : 'user_deactivated', transaction });
-        }
-        return user.toSafeJSON();
-      });
-    } catch (error) {
-      if (error.name === 'SequelizeValidationError') {
-        const messages = error.errors.map(err => err.message);
-        throw new Error(`VALIDATION_ERROR:${messages.join(', ')}`);
+    const result = await sequelize.transaction(async (transaction) => {
+      const before = accountSnapshot(user);
+      await user.update(updateData, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor),
+        action: 'user.update',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        before,
+        after: accountSnapshot(user),
+        meta: passwordChanged ? { passwordChanged: true } : null
+      }, { transaction });
+      if (passwordChanged || !user.isActive) {
+        await SessionService.revokeAllForUser(user.id, { reason: passwordChanged ? 'password_reset_by_admin' : 'user_deactivated', transaction });
       }
-      throw new Error(`UPDATE_ERROR:${error.message}`);
-    }
+      return user.toSafeJSON();
+    });
+    // Neues Passwort vom Admin: eine bestehende Konto-Sperre aufheben
+    if (passwordChanged) await LoginThrottleService.reset(user.email);
+    return result;
   }
 
   /**
@@ -576,7 +509,7 @@ class UserService {
   static async adminUpdateUserSettings(userId, settings, actor) {
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     const updateData = {};
@@ -585,24 +518,20 @@ class UserService {
     if (settings.abrechnungEnde !== undefined) updateData.abrechnungEnde = parseInt(settings.abrechnungEnde);
     if (settings.lohnzettelEmail !== undefined) updateData.lohnzettelEmail = settings.lohnzettelEmail || null;
 
-    try {
-      return await sequelize.transaction(async (transaction) => {
-        const before = settingsSnapshot(user);
-        await user.update(updateData, { transaction });
-        await AuditService.record({
-          actor: normalizeActor(actor),
-          action: 'user.settings_update',
-          entityType: 'User',
-          entityId: user.id,
-          targetUserId: user.id,
-          before,
-          after: settingsSnapshot(user)
-        }, { transaction });
-        return user.toSafeJSON();
-      });
-    } catch (error) {
-      throw new Error(`SETTINGS_UPDATE_ERROR:${error.message}`);
-    }
+    return await sequelize.transaction(async (transaction) => {
+      const before = settingsSnapshot(user);
+      await user.update(updateData, { transaction });
+      await AuditService.record({
+        actor: normalizeActor(actor),
+        action: 'user.settings_update',
+        entityType: 'User',
+        entityId: user.id,
+        targetUserId: user.id,
+        before,
+        after: settingsSnapshot(user)
+      }, { transaction });
+      return user.toSafeJSON();
+    });
   }
 
   /**
@@ -618,19 +547,19 @@ class UserService {
     const admin = normalizeActor(actor);
 
     if (parseInt(userId) === parseInt(admin?.id)) {
-      throw new Error('CANNOT_DELETE_SELF:Sie können sich nicht selbst löschen');
+      throw new AppError('CANNOT_DELETE_SELF', 'Sie können sich nicht selbst löschen');
     }
 
     const user = await User.findByPk(userId);
     if (!user) {
-      throw new Error('USER_NOT_FOUND:Benutzer nicht gefunden');
+      throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
     }
 
     const entryCount = await TimeEntry.count({ where: { userId } });
     const closureCount = await PeriodClosure.count({ where: { userId } });
     if (entryCount > 0 || closureCount > 0) {
-      throw new Error(
-        `USER_HAS_DEPENDENCIES:Benutzer kann nicht gelöscht werden - es existieren ${entryCount} Zeiteintrag/-einträge` +
+      throw new AppError('USER_HAS_DEPENDENCIES',
+        `Benutzer kann nicht gelöscht werden - es existieren ${entryCount} Zeiteintrag/-einträge` +
         `${closureCount > 0 ? ` und ${closureCount} Monatsabschluss/-abschlüsse` : ''}. ` +
         'Arbeitszeitnachweise müssen erhalten bleiben; bitte das Konto stattdessen deaktivieren.'
       );
@@ -638,7 +567,7 @@ class UserService {
 
     const minijobCount = await MinijobSetting.count({ where: { createdBy: userId } });
     if (minijobCount > 0) {
-      throw new Error(`USER_HAS_DEPENDENCIES:Benutzer kann nicht gelöscht werden - hat ${minijobCount} Minijob-Einstellung(en) erstellt`);
+      throw new AppError('USER_HAS_DEPENDENCIES', `Benutzer kann nicht gelöscht werden - hat ${minijobCount} Minijob-Einstellung(en) erstellt`);
     }
 
     const deleted = { name: user.name, email: user.email };

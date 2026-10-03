@@ -1,139 +1,119 @@
 /**
- * Admin-Routen (/api/admin) – nur für Admins.
+ * Benutzerverwaltung (/admin) – nur für Admins.
  *
- * User-Verwaltung (CRUD, Status, Statistiken) delegiert an UserService.
- * Wartungsaktionen (ersten Admin anlegen, Passwort zurücksetzen) laufen bewusst
- * NICHT über HTTP, sondern als CLI-Skripte (npm run admin:create / user:reset-password).
+ * Konten anlegen, ändern, sperren, löschen; Lohn und Abrechnungszeitraum festlegen. Delegiert an UserService.
+ * Den ersten Admin und Notfall-Passwort-Resets gibt es bewusst nur als CLI (npm run admin:create /
+ * user:reset-password), nicht über HTTP.
  */
-const express = require('express');
+const { createApiRouter } = require('../lib/route');
+const { AppError } = require('../lib/errors');
 const UserService = require('../services/userService');
-const { validateRegistration, validateUserUpdate, validateUserSettings, handleValidationErrors } = require('../middleware/validation');
-const { requireAdmin } = require('../middleware/auth');
-const { sendServiceError } = require('../utils/serviceErrors');
+const { actorOf } = require('../middleware/auth');
+const { z, idParam, User } = require('../schemas/common');
+const { UserData } = require('../schemas/auth');
+const { UserListQuery, CreateUserBody, UpdateUserBody, UserSettingsBody, UserListData, UserStats } = require('../schemas/user');
 
-const router = express.Router();
+const api = createApiRouter('/admin', { tags: ['Benutzerverwaltung'] });
 
-// Auslöser für das Änderungsprotokoll
-const actorOf = (req) => ({ id: req.user.userId, email: req.user.email });
+const UserIdParam = idParam('id', 'Benutzer-ID');
 
-// ✅ ALLE USER AUFLISTEN (nur Admin)
-router.get('/users', requireAdmin, async (req, res) => {
-  try {
-    const { page = 1, limit = 50, search = '', role = '' } = req.query;
-    const result = await UserService.getAllUsers({ page, limit, search, role });
-
-    console.log(`📋 Admin ${req.user.email} hat User-Liste abgerufen (${result.users.length}/${result.pagination.total})`);
-    res.json({ success: true, message: 'User-Liste erfolgreich geladen', data: result });
-  } catch (error) {
-    sendServiceError(res, error, { status: 500, code: 'USER_LIST_ERROR', error: 'User-Liste konnte nicht geladen werden' });
-  }
+api.get('/users', {
+  summary: 'Benutzer auflisten (Suche, Rollenfilter, Seiten)',
+  auth: 'admin',
+  query: UserListQuery,
+  response: UserListData,
+  message: 'User-Liste erfolgreich geladen'
+}, async (req) => {
+  const { page = 1, limit = 50, search = '', role = '' } = req.valid.query;
+  return { data: await UserService.getAllUsers({ page, limit, search, role }) };
 });
 
-// ✅ EINZELNEN USER ABRUFEN (nur Admin)
-router.get('/users/:id', requireAdmin, async (req, res) => {
-  try {
-    const user = await UserService.findUserById(req.params.id, true);
-    if (!user) {
-      return res.status(404).json({ success: false, error: 'Benutzer nicht gefunden', code: 'USER_NOT_FOUND' });
-    }
-
-    console.log(`👤 Admin ${req.user.email} hat User ${user.email} abgerufen`);
-    res.json({ success: true, message: 'Benutzer erfolgreich geladen', data: { user } });
-  } catch (error) {
-    sendServiceError(res, error, { status: 500, code: 'USER_LOAD_ERROR', error: 'Benutzer konnte nicht geladen werden' });
-  }
+api.get('/users/:id', {
+  summary: 'Einzelnen Benutzer laden (auch deaktivierte)',
+  auth: 'admin',
+  params: UserIdParam,
+  response: UserData,
+  message: 'Benutzer erfolgreich geladen',
+  errors: ['USER_NOT_FOUND']
+}, async (req) => {
+  const user = await UserService.findUserById(req.valid.params.id, true);
+  if (!user) throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
+  return { data: { user } };
 });
 
-// ✅ NEUEN USER ERSTELLEN (nur Admin)
-router.post('/users',
-  requireAdmin,
-  ...validateRegistration,
-  handleValidationErrors,
-  async (req, res) => {
-    try {
-      const { email, password, name, role = 'mitarbeiter' } = req.body;
-      const user = await UserService.createUser({ email, password, name, role }, actorOf(req));
-
-      console.log(`➕ Admin ${req.user.email} hat neuen User erstellt: ${user.email} (${user.role})`);
-      res.status(201).json({ success: true, message: 'Benutzer erfolgreich erstellt', data: { user } });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'USER_CREATE_ERROR', error: 'Benutzer konnte nicht erstellt werden' });
-    }
-  }
-);
-
-// ✅ USER BEARBEITEN (nur Admin)
-router.put('/users/:id',
-  requireAdmin,
-  ...validateUserUpdate,
-  handleValidationErrors,
-  async (req, res) => {
-    try {
-      const user = await UserService.adminUpdateUser(req.params.id, req.body, actorOf(req));
-
-      console.log(`✏️ Admin ${req.user.email} hat User ${user.email} bearbeitet`);
-      res.json({ success: true, message: 'Benutzer erfolgreich aktualisiert', data: { user } });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'USER_UPDATE_ERROR', error: 'Benutzer konnte nicht aktualisiert werden' });
-    }
-  }
-);
-
-// ✅ USER EINSTELLUNGEN BEARBEITEN (nur Admin)
-router.put('/users/:id/settings',
-  requireAdmin,
-  ...validateUserSettings,
-  handleValidationErrors,
-  async (req, res) => {
-    try {
-      const user = await UserService.adminUpdateUserSettings(req.params.id, req.body, actorOf(req));
-
-      console.log(`⚙️ Admin ${req.user.email} hat Einstellungen für ${user.email} aktualisiert`);
-      res.json({ success: true, message: 'Einstellungen erfolgreich aktualisiert', data: { user } });
-    } catch (error) {
-      sendServiceError(res, error, { status: 500, code: 'USER_SETTINGS_ERROR', error: 'Einstellungen konnten nicht aktualisiert werden' });
-    }
-  }
-);
-
-// ✅ USER DEAKTIVIEREN/AKTIVIEREN (nur Admin)
-router.patch('/users/:id/toggle-status', requireAdmin, async (req, res) => {
-  try {
-    const user = await UserService.toggleUserStatus(req.params.id, actorOf(req));
-
-    console.log(`🔄 Admin ${req.user.email} hat User ${user.email} ${user.isActive ? 'aktiviert' : 'deaktiviert'}`);
-    res.json({
-      success: true,
-      message: `Benutzer erfolgreich ${user.isActive ? 'aktiviert' : 'deaktiviert'}`,
-      data: { user }
-    });
-  } catch (error) {
-    sendServiceError(res, error, { status: 500, code: 'USER_STATUS_ERROR', error: 'Status konnte nicht geändert werden' });
-  }
+api.post('/users', {
+  summary: 'Benutzer anlegen',
+  auth: 'admin',
+  body: CreateUserBody,
+  response: UserData,
+  status: 201,
+  message: 'Benutzer erfolgreich erstellt',
+  errors: ['EMAIL_EXISTS']
+}, async (req) => {
+  const { email, password, name, role = 'mitarbeiter' } = req.valid.body;
+  const user = await UserService.createUser({ email, password, name, role }, actorOf(req));
+  return { data: { user } };
 });
 
-// ✅ USER LÖSCHEN (nur Admin)
-router.delete('/users/:id', requireAdmin, async (req, res) => {
-  try {
-    const deletedUser = await UserService.deleteUser(req.params.id, actorOf(req));
-
-    console.log(`🗑️ Admin ${req.user.email} hat User ${deletedUser.email} (${deletedUser.name}) gelöscht`);
-    res.json({ success: true, message: 'Benutzer erfolgreich gelöscht', data: { deletedUser } });
-  } catch (error) {
-    sendServiceError(res, error, { status: 500, code: 'USER_DELETE_ERROR', error: 'Benutzer konnte nicht gelöscht werden' });
-  }
+api.put('/users/:id', {
+  summary: 'Benutzer ändern (Name, E-Mail, Rolle, Status, Passwort-Reset)',
+  description: 'Ein neues Passwort oder eine Sperrung beendet alle Sitzungen des Benutzers und hebt eine Konto-Sperre auf.',
+  auth: 'admin',
+  params: UserIdParam,
+  body: UpdateUserBody,
+  response: UserData,
+  message: 'Benutzer erfolgreich aktualisiert',
+  errors: ['USER_NOT_FOUND', 'EMAIL_EXISTS']
+}, async (req) => {
+  const user = await UserService.adminUpdateUser(req.valid.params.id, req.valid.body, actorOf(req));
+  return { data: { user } };
 });
 
-// ✅ USER-STATISTIKEN (nur Admin)
-router.get('/stats/users', requireAdmin, async (req, res) => {
-  try {
-    const stats = await UserService.getUserStats();
-
-    console.log(`📊 Admin ${req.user.email} hat User-Statistiken abgerufen`);
-    res.json({ success: true, message: 'User-Statistiken erfolgreich geladen', data: stats });
-  } catch (error) {
-    sendServiceError(res, error, { status: 500, code: 'USER_STATS_ERROR', error: 'User-Statistiken konnten nicht geladen werden' });
-  }
+api.put('/users/:id/settings', {
+  summary: 'Lohn, Abrechnungszeitraum und Lohnzettel-E-Mail festlegen',
+  description: 'Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein).',
+  auth: 'admin',
+  params: UserIdParam,
+  body: UserSettingsBody,
+  response: UserData,
+  message: 'Einstellungen erfolgreich aktualisiert',
+  errors: ['USER_NOT_FOUND']
+}, async (req) => {
+  const user = await UserService.adminUpdateUserSettings(req.valid.params.id, req.valid.body, actorOf(req));
+  return { data: { user } };
 });
 
-module.exports = router;
+api.patch('/users/:id/toggle-status', {
+  summary: 'Benutzer sperren bzw. entsperren',
+  auth: 'admin',
+  params: UserIdParam,
+  response: UserData,
+  errors: ['USER_NOT_FOUND', 'CANNOT_DEACTIVATE_SELF']
+}, async (req) => {
+  const user = await UserService.toggleUserStatus(req.valid.params.id, actorOf(req));
+  return {
+    message: `Benutzer erfolgreich ${user.isActive ? 'aktiviert' : 'deaktiviert'}`,
+    data: { user }
+  };
+});
+
+api.delete('/users/:id', {
+  summary: 'Benutzer löschen (nur ohne Zeiteinträge/Abschlüsse; sonst deaktivieren)',
+  auth: 'admin',
+  params: UserIdParam,
+  response: z.object({ deletedUser: User.pick({ name: true, email: true }) }),
+  message: 'Benutzer erfolgreich gelöscht',
+  errors: ['USER_NOT_FOUND', 'CANNOT_DELETE_SELF', 'USER_HAS_DEPENDENCIES']
+}, async (req) => {
+  const deletedUser = await UserService.deleteUser(req.valid.params.id, actorOf(req));
+  return { data: { deletedUser } };
+});
+
+api.get('/stats/users', {
+  summary: 'Benutzer-Kennzahlen',
+  auth: 'admin',
+  response: UserStats,
+  message: 'User-Statistiken erfolgreich geladen'
+}, async () => ({ data: await UserService.getUserStats() }));
+
+module.exports = api.router;

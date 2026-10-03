@@ -10,6 +10,7 @@
  */
 const { ask, closeCli, obtainPassword, boot } = require('./lib/cli');
 const SessionService = require('../services/sessionService');
+const LoginThrottleService = require('../services/loginThrottle');
 
 (async () => {
   const { User } = await boot();
@@ -30,6 +31,7 @@ const SessionService = require('../services/sessionService');
   user.password = password; // wird im Model-Hook gehasht
   await user.save();
   const ended = await SessionService.revokeAllForUser(user.id, { reason: 'password_reset_cli' });
+  await LoginThrottleService.reset(user.email); // Sperre nach Fehlversuchen aufheben
 
   console.log(`✅ Passwort zurückgesetzt für ${user.email} (${user.role})`);
   if (ended > 0) console.log(`🔒 ${ended} bestehende Sitzung(en) beendet – der Benutzer muss sich neu anmelden.`);

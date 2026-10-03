@@ -1,3 +1,4 @@
+const { AppError } = require('../lib/errors');
 const { MinijobSetting, User, sequelize } = require('../models');
 const { Op } = require('sequelize');
 const DateService = require('./dateService');
@@ -12,8 +13,8 @@ const settingSnapshot = (setting) => ({
 });
 
 /**
- * ✅ Minijob Service - Minijob-spezifische Business Logic
- * Enthält alle Minijob-bezogenen Operationen und Geschäftslogik
+ * Minijob Service: Verdienstgrenzen mit Gültigkeitszeiträumen (Überschneidungen, automatische Anpassung,
+ * Neuberechnung). Jede Änderung steht im Änderungsprotokoll.
  */
 class MinijobService {
   /**
@@ -24,27 +25,23 @@ class MinijobService {
   static async getCurrentSetting(referenceDate = null) {
     const today = referenceDate || DateService.getTodayString();
     
-    try {
-      const currentSetting = await MinijobSetting.findOne({
-        where: {
-          validFrom: { [Op.lte]: today },
-          [Op.or]: [
-            { validUntil: null },
-            { validUntil: { [Op.gte]: today } }
-          ]
-        },
-        order: [['validFrom', 'DESC']],
-        include: [{
-          model: User,
-          as: 'Creator',
-          attributes: ['name', 'email']
-        }]
-      });
+    const currentSetting = await MinijobSetting.findOne({
+      where: {
+        validFrom: { [Op.lte]: today },
+        [Op.or]: [
+          { validUntil: null },
+          { validUntil: { [Op.gte]: today } }
+        ]
+      },
+      order: [['validFrom', 'DESC']],
+      include: [{
+        model: User,
+        as: 'Creator',
+        attributes: ['name', 'email']
+      }]
+    });
 
-      return currentSetting;
-    } catch (error) {
-      throw new Error(`CURRENT_SETTING_ERROR:${error.message}`);
-    }
+    return currentSetting;
   }
 
   /**
@@ -71,31 +68,27 @@ class MinijobService {
     // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    try {
-      const { rows: settings, count: total } = await MinijobSetting.findAndCountAll({
-        where: whereClause,
-        include: [{
-          model: User,
-          as: 'Creator',
-          attributes: ['name', 'email']
-        }],
-        order: [['validFrom', 'DESC']],
-        limit: parseInt(limit),
-        offset: offset
-      });
+    const { rows: settings, count: total } = await MinijobSetting.findAndCountAll({
+      where: whereClause,
+      include: [{
+        model: User,
+        as: 'Creator',
+        attributes: ['name', 'email']
+      }],
+      order: [['validFrom', 'DESC']],
+      limit: parseInt(limit),
+      offset: offset
+    });
 
-      return {
-        settings,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          totalPages: Math.ceil(total / parseInt(limit))
-        }
-      };
-    } catch (error) {
-      throw new Error(`SETTINGS_LIST_ERROR:${error.message}`);
-    }
+    return {
+      settings,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    };
   }
 
   /**
@@ -113,7 +106,7 @@ class MinijobService {
       // Datums-Validierung
       const validation = this.validateSettingDates(validFrom, validUntil);
       if (!validation.isValid) {
-        throw new Error(`VALIDATION_ERROR:${validation.error}`);
+        throw new AppError('VALIDATION_ERROR', `${validation.error}`);
       }
 
       const fromDate = DateService.normalizeToDateString(validFrom);
@@ -157,8 +150,8 @@ class MinijobService {
         autoAdjustedSettings
       };
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`SETTING_CREATE_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -169,49 +162,45 @@ class MinijobService {
    * @returns {Promise<Object>} Aktualisierte Einstellung
    */
   static async updateSetting(settingId, updateData, actor) {
-    try {
-      const setting = await MinijobSetting.findByPk(settingId);
-      if (!setting) {
-        throw new Error('SETTING_NOT_FOUND:Minijob-Einstellung nicht gefunden');
-      }
-
-      const { monthlyLimit, description, validFrom, validUntil } = updateData;
-
-      // Datums-Validierung
-      const validation = this.validateSettingDates(validFrom, validUntil);
-      if (!validation.isValid) {
-        throw new Error(`VALIDATION_ERROR:${validation.error}`);
-      }
-
-      const fromDate = DateService.normalizeToDateString(validFrom);
-      const untilDate = validUntil ? DateService.normalizeToDateString(validUntil) : null;
-
-      // Aktualisieren (zusammen mit dem Protokolleintrag in einer Transaktion)
-      const before = settingSnapshot(setting);
-      await sequelize.transaction(async (transaction) => {
-        await setting.update({
-          monthlyLimit: parseFloat(monthlyLimit),
-          description,
-          validFrom: fromDate,
-          validUntil: untilDate
-        }, { transaction });
-        await AuditService.record({
-          actor,
-          action: 'minijob_setting.update',
-          entityType: 'MinijobSetting',
-          entityId: setting.id,
-          before,
-          after: settingSnapshot(setting)
-        }, { transaction });
-      });
-
-      // Aktive Einstellungen aktualisieren
-      await this.updateActiveStatus();
-
-      return setting;
-    } catch (error) {
-      throw new Error(`SETTING_UPDATE_ERROR:${error.message}`);
+    const setting = await MinijobSetting.findByPk(settingId);
+    if (!setting) {
+      throw new AppError('SETTING_NOT_FOUND', 'Minijob-Einstellung nicht gefunden');
     }
+
+    const { monthlyLimit, description, validFrom, validUntil } = updateData;
+
+    // Datums-Validierung
+    const validation = this.validateSettingDates(validFrom, validUntil);
+    if (!validation.isValid) {
+      throw new AppError('VALIDATION_ERROR', `${validation.error}`);
+    }
+
+    const fromDate = DateService.normalizeToDateString(validFrom);
+    const untilDate = validUntil ? DateService.normalizeToDateString(validUntil) : null;
+
+    // Aktualisieren (zusammen mit dem Protokolleintrag in einer Transaktion)
+    const before = settingSnapshot(setting);
+    await sequelize.transaction(async (transaction) => {
+      await setting.update({
+        monthlyLimit: parseFloat(monthlyLimit),
+        description,
+        validFrom: fromDate,
+        validUntil: untilDate
+      }, { transaction });
+      await AuditService.record({
+        actor,
+        action: 'minijob_setting.update',
+        entityType: 'MinijobSetting',
+        entityId: setting.id,
+        before,
+        after: settingSnapshot(setting)
+      }, { transaction });
+    });
+
+    // Aktive Einstellungen aktualisieren
+    await this.updateActiveStatus();
+
+    return setting;
   }
 
   /**
@@ -225,13 +214,13 @@ class MinijobService {
     try {
       const settingToDelete = await MinijobSetting.findByPk(settingId, { transaction });
       if (!settingToDelete) {
-        throw new Error('SETTING_NOT_FOUND:Minijob-Einstellung nicht gefunden');
+        throw new AppError('SETTING_NOT_FOUND', 'Minijob-Einstellung nicht gefunden');
       }
 
       // Nur zukünftige Einstellungen dürfen gelöscht werden
       const today = DateService.getTodayString();
       if (settingToDelete.validFrom <= today) {
-        throw new Error('CANNOT_DELETE_ACTIVE:Aktive oder vergangene Einstellungen können nicht gelöscht werden');
+        throw new AppError('CANNOT_DELETE_ACTIVE', 'Aktive oder vergangene Einstellungen können nicht gelöscht werden');
       }
 
       // Intelligente Rückwärts-Anpassung
@@ -265,8 +254,8 @@ class MinijobService {
         adjustedSettings
       };
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`SETTING_DELETE_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -335,8 +324,8 @@ class MinijobService {
 
       return { adjustedCount, adjustments };
     } catch (error) {
-      await transaction.rollback();
-      throw new Error(`RECALCULATION_ERROR:${error.message}`);
+      if (!transaction.finished) await transaction.rollback();
+      throw error;
     }
   }
 
@@ -345,35 +334,7 @@ class MinijobService {
    * @returns {Promise<Object|null>} Aktuelle aktive Einstellung
    */
   static async updateActiveStatus() {
-    try {
-      const today = DateService.getTodayString();
-      
-      // Alle als inaktiv markieren
-      await MinijobSetting.update(
-        { isActive: false },
-        { where: {} }
-      );
-      
-      // Aktuelle Einstellung finden und als aktiv markieren
-      const currentSetting = await MinijobSetting.findOne({
-        where: {
-          validFrom: { [Op.lte]: today },
-          [Op.or]: [
-            { validUntil: null },
-            { validUntil: { [Op.gte]: today } }
-          ]
-        },
-        order: [['validFrom', 'DESC']]
-      });
-      
-      if (currentSetting) {
-        await currentSetting.update({ isActive: true });
-      }
-      
-      return currentSetting;
-    } catch (error) {
-      throw new Error(`STATUS_UPDATE_ERROR:${error.message}`);
-    }
+    return MinijobSetting.updateActiveStatus();
   }
 
   /**
@@ -381,41 +342,37 @@ class MinijobService {
    * @returns {Promise<Object>} Statistiken
    */
   static async getStatistics() {
-    try {
-      const totalSettings = await MinijobSetting.count();
-      const activeSettings = await MinijobSetting.count({ where: { isActive: true } });
-      const currentSetting = await this.getCurrentSetting();
+    const totalSettings = await MinijobSetting.count();
+    const activeSettings = await MinijobSetting.count({ where: { isActive: true } });
+    const currentSetting = await this.getCurrentSetting();
 
-      // Statistiken der letzten 12 Monate
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    // Statistiken der letzten 12 Monate
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
-      const recentSettings = await MinijobSetting.findAll({
-        where: {
-          createdAt: { [Op.gte]: oneYearAgo }
-        },
-        order: [['createdAt', 'DESC']],
-        limit: 10,
-        include: [{
-          model: User,
-          as: 'Creator',
-          attributes: ['name', 'email']
-        }]
-      });
+    const recentSettings = await MinijobSetting.findAll({
+      where: {
+        createdAt: { [Op.gte]: oneYearAgo }
+      },
+      order: [['createdAt', 'DESC']],
+      limit: 10,
+      include: [{
+        model: User,
+        as: 'Creator',
+        attributes: ['name', 'email']
+      }]
+    });
 
-      return {
-        overview: {
-          total: totalSettings,
-          active: activeSettings,
-          inactive: totalSettings - activeSettings,
-          currentLimit: currentSetting ? currentSetting.monthlyLimit : null
-        },
-        current: currentSetting,
-        recent: recentSettings
-      };
-    } catch (error) {
-      throw new Error(`STATISTICS_ERROR:${error.message}`);
-    }
+    return {
+      overview: {
+        total: totalSettings,
+        active: activeSettings,
+        inactive: totalSettings - activeSettings,
+        currentLimit: currentSetting ? currentSetting.monthlyLimit : null
+      },
+      current: currentSetting,
+      recent: recentSettings
+    };
   }
 
   /**
@@ -499,7 +456,7 @@ class MinijobService {
       });
     } else {
       // Komplexe Überschneidung - Fehler werfen
-      throw new Error(`OVERLAPPING_PERIODS:Zeitraum überschneidet sich mit bestehenden Einstellungen`);
+      throw new AppError('OVERLAPPING_PERIODS', `Zeitraum überschneidet sich mit bestehenden Einstellungen`);
     }
 
     return { adjustedSettings };

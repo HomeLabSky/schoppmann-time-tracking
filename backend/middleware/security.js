@@ -1,8 +1,9 @@
 const cors = require('cors');
 const helmet = require('helmet');
 const config = require('../config');
+const { AppError } = require('../lib/errors');
 
-// ✅ CORS Configuration
+// CORS Configuration
 const corsOptions = {
   origin: config.cors.origin,
   credentials: config.cors.credentials,
@@ -15,6 +16,7 @@ const corsOptions = {
     'X-CSRF-Protection'
   ],
   exposedHeaders: [
+    'X-Request-ID',
     'X-Total-Count',
     'X-Page-Count', 
     'RateLimit-Limit',
@@ -23,10 +25,10 @@ const corsOptions = {
   ]
 };
 
-// ✅ CORS Middleware
+// CORS Middleware
 const corsMiddleware = cors(corsOptions);
 
-// ✅ Helmet Security Headers
+// Helmet Security Headers
 const helmetMiddleware = helmet({
   contentSecurityPolicy: {
     directives: {
@@ -50,39 +52,20 @@ const helmetMiddleware = helmet({
   }
 });
 
-// ✅ Request ID Middleware (für Logging/Debugging)
-const requestId = (req, res, next) => {
-  const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
-  req.id = id;
-  res.setHeader('X-Request-ID', id);
-  
-  if (config.nodeEnv === 'development') {
-    console.log(`🆔 Request ID: ${id} - ${req.method} ${req.path} from ${req.ip}`);
-  }
-  
-  next();
-};
-
-// ✅ Content-Type Validation Middleware
+// Content-Type Validation Middleware
 const validateContentType = (req, res, next) => {
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.get('Content-Type');
     
     if (!contentType || !contentType.includes('application/json')) {
-      return res.status(400).json({
-        success: false,
-        error: 'Content-Type muss application/json sein',
-        code: 'INVALID_CONTENT_TYPE',
-        received: contentType || 'none',
-        timestamp: new Date().toISOString()
-      });
+      return next(new AppError('INVALID_CONTENT_TYPE', 'Content-Type muss application/json sein'));
     }
   }
-  
+
   next();
 };
 
-// ✅ Security Headers Middleware
+// Security Headers Middleware
 const securityHeaders = (req, res, next) => {
   // Zusätzliche Security Headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -100,7 +83,6 @@ const securityHeaders = (req, res, next) => {
 module.exports = {
   corsMiddleware,
   helmetMiddleware,
-  requestId,
   validateContentType,
   securityHeaders,
   corsOptions

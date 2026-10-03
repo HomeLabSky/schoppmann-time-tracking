@@ -26,6 +26,8 @@ process.env.ALLOW_REGISTRATION = 'true';
 // Der Test meldet sich oft an: Rate-Limits (pro IP) hochsetzen
 process.env.RATE_LIMIT_LOGIN_MAX = '1000';
 process.env.RATE_LIMIT_MAX_REQUESTS = '10000';
+// Jede Antwort gegen ihr dokumentiertes Schema prüfen (OpenAPI = Wirklichkeit)
+process.env.VALIDATE_RESPONSES = '1';
 
 const app = require('../app');
 const config = require('../config');
@@ -91,7 +93,7 @@ async function main() {
     try { json = await res.json(); } catch { /* leerer Body */ }
     const setCookies = res.headers.getSetCookie();
     if (owner) applySetCookies(owner.jar, setCookies);
-    return { status: res.status, json, setCookies };
+    return { status: res.status, json, setCookies, headers: res.headers };
   };
 
   try {
@@ -100,7 +102,8 @@ async function main() {
     const health = await api('GET', '/health');
     check('GET /health 200', health.status === 200, health.status);
     const apiInfo = await api('GET', '/api/');
-    check('GET /api/ liefert version', apiInfo.json && apiInfo.json.version === '2.0.0', apiInfo.json);
+    check('GET /api/ liefert version', apiInfo.json && apiInfo.json.version === '2.1.0', apiInfo.json);
+    check('Antwort trägt X-Request-ID', (apiInfo.headers.get('x-request-id') || '').length >= 8);
 
     // ---- Entfernte Wartungs-/Setup-Routen dürfen nicht mehr erreichbar sein ----
     console.log('\n[Sicherheit]');
@@ -372,8 +375,10 @@ async function main() {
     forged.jar.set('zeit_access', 'eyJhbGciOiJIUzI1NiJ9.e30.gefaelscht');
     const forgedRes = await api('GET', '/api/auth/profile', { token: forged });
     check('Gefälschtes Token 401 INVALID_TOKEN', forgedRes.status === 401 && forgedRes.json?.code === 'INVALID_TOKEN', forgedRes.json);
-    const bearer = await api('GET', '/api/auth/profile', { headers: { Authorization: `Bearer ${s1.jar.get('zeit_access')}` } });
-    check('Bearer-Header wird nicht mehr akzeptiert (401)', bearer.status === 401 && bearer.json?.code === 'MISSING_TOKEN', bearer.json);
+    const badBearer = await api('GET', '/api/auth/profile', { token: s1, headers: { Authorization: 'Bearer kaputt' } });
+    check('Authorization-Header hat Vorrang: kein Rückfall auf das Cookie (401 INVALID_TOKEN)', badBearer.status === 401 && badBearer.json?.code === 'INVALID_TOKEN', badBearer.json);
+    const basicAuth = await api('GET', '/api/auth/profile', { token: s1, headers: { Authorization: 'Basic YWRtaW46YWRtaW4=' } });
+    check('… auch bei fremdem Schema (Basic): 401 MISSING_TOKEN statt Cookie', basicAuth.status === 401 && basicAuth.json?.code === 'MISSING_TOKEN', basicAuth.json);
 
     // Erneuerung rotiert das Erneuerungs-Token
     const oldRefresh = s1.jar.get('zeit_refresh');
@@ -458,6 +463,150 @@ async function main() {
     const withoutAuth = await api('GET', '/api/admin/audit?exclude=auth&limit=200', { token: adminToken });
     check('Protokoll: exclude=auth blendet Anmelde-Ereignisse aus', (withoutAuth.json?.data?.entries || []).every((e) => !e.action.startsWith('auth.')) && withoutAuth.json.data.entries.length > 0, withoutAuth.json?.data?.entries?.length);
 
+    // ---- App: Token-Anmeldung, /api/v1, idempotente Anlage ----
+    console.log('\n[App: Token-Anmeldung & /api/v1]');
+    const appUser = { email: 'smoke.app@schoppmann.de', password: 'AppUser123', name: 'App Tester' };
+    await api('POST', '/api/v1/admin/users', { token: adminToken, body: { ...appUser, role: 'mitarbeiter' } });
+    const appApi = (method, endpoint, accessToken, body) =>
+      api(method, endpoint, { csrf: false, headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}, body });
+
+    const tokenLogin = await appApi('POST', '/api/v1/auth/token', null, { email: appUser.email, password: appUser.password, deviceName: 'Smoke-Phone' });
+    const pair = tokenLogin.json?.data;
+    check(
+      'App-Anmeldung 200 ohne CSRF-Header: Tokens im Body, keine Cookies, no-store',
+      tokenLogin.status === 200 && pair?.tokenType === 'Bearer' && pair.accessToken && pair.refreshToken &&
+        pair.expiresIn === 900 && tokenLogin.setCookies.length === 0 && tokenLogin.headers.get('cache-control') === 'no-store',
+      tokenLogin.json
+    );
+    const appProfile = await appApi('GET', '/api/v1/auth/profile', pair?.accessToken);
+    check('Bearer-Zugriff auf /api/v1 200', appProfile.status === 200 && appProfile.json?.data?.user?.email === appUser.email, appProfile.json);
+
+    const clientId = 'b6f1c2a0-3d4e-4f5a-8b9c-0d1e2f3a4b5c';
+    const offlineEntry = { date: today(), startTime: '07:00', endTime: '09:30', breakMinutes: 0, clientId };
+    const firstPost = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, offlineEntry);
+    check('Anlage mit Bearer ohne CSRF-Header 201', firstPost.status === 201 && firstPost.json?.data?.entry?.clientId === clientId, firstPost.json);
+    const retryPost = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, offlineEntry);
+    check(
+      'Wiederholung mit gleicher clientId: 200, derselbe Eintrag, nichts doppelt',
+      retryPost.status === 200 && retryPost.json?.data?.entry?.id === firstPost.json?.data?.entry?.id,
+      retryPost.json
+    );
+    const otherDay = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
+    const conflict = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { ...offlineEntry, date: otherDay });
+    check('Gleiche clientId für anderen Tag 409 CLIENT_ID_CONFLICT', conflict.status === 409 && conflict.json?.code === 'CLIENT_ID_CONFLICT', conflict.json);
+    const sameDayNoId = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { ...offlineEntry, clientId: undefined });
+    check('Zweiter Eintrag am selben Tag ohne clientId 409 ENTRY_EXISTS', sameDayNoId.status === 409 && sameDayNoId.json?.code === 'ENTRY_EXISTS', sameDayNoId.json);
+
+    const invalid = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { date: '2026-13-01', startTime: '7 Uhr', endTime: '09:00' });
+    check(
+      'Eingabefehler 400 VALIDATION_ERROR mit Meldung je Feld',
+      invalid.status === 400 && invalid.json?.code === 'VALIDATION_ERROR' && invalid.json.fields?.date && invalid.json.fields?.startTime,
+      invalid.json
+    );
+
+    // Erneuerung mit Rotation; Tokens gelten nur auf ihrem Weg (App <-> Web)
+    const appRefresh = await appApi('POST', '/api/v1/auth/token/refresh', null, { refreshToken: pair?.refreshToken });
+    const pair2 = appRefresh.json?.data;
+    check('App-Erneuerung 200: neues Paar', appRefresh.status === 200 && pair2?.refreshToken && pair2.refreshToken !== pair?.refreshToken, appRefresh.json);
+    const oldAppToken = await appApi('POST', '/api/v1/auth/token/refresh', null, { refreshToken: pair?.refreshToken });
+    check('Altes App-Token direkt danach 409 REFRESH_IN_PROGRESS', oldAppToken.status === 409 && oldAppToken.json?.code === 'REFRESH_IN_PROGRESS', oldAppToken.json);
+
+    const webSession = newSession();
+    const webLogin = await api('POST', '/api/v1/auth/login', { session: webSession, body: { email: appUser.email, password: appUser.password } });
+    check(
+      'Web-Anmeldung über /api/v1: Erneuerungs-Cookie auf /api/v1/auth',
+      webLogin.setCookies.some((c) => c.startsWith('zeit_refresh=') && /path=\/api\/v1\/auth/i.test(c)),
+      webLogin.setCookies
+    );
+    const crossWeb = await appApi('POST', '/api/v1/auth/token/refresh', null, { refreshToken: webSession.jar.get('zeit_refresh') });
+    check('Web-Erneuerungs-Cookie als App-Token abgelehnt (401)', crossWeb.status === 401 && crossWeb.json?.code === 'INVALID_REFRESH_TOKEN', crossWeb.json);
+    const crossApp = newSession();
+    crossApp.jar.set('zeit_refresh', pair2?.refreshToken);
+    const crossAppRes = await api('POST', '/api/v1/auth/refresh', { token: crossApp });
+    check('App-Token als Web-Cookie abgelehnt (401)', crossAppRes.status === 401 && crossAppRes.json?.code === 'INVALID_REFRESH_TOKEN', crossAppRes.json);
+    check(
+      '… beide Sitzungen bleiben gültig',
+      (await appApi('GET', '/api/v1/auth/profile', pair2?.accessToken)).status === 200 &&
+        (await api('GET', '/api/v1/auth/profile', { token: webSession })).status === 200
+    );
+
+    const revoke = await appApi('POST', '/api/v1/auth/token/revoke', null, { refreshToken: pair2?.refreshToken });
+    const afterRevoke = await appApi('GET', '/api/v1/auth/profile', pair2?.accessToken);
+    check(
+      'App-Abmeldung: Zugriffs-Token sofort ungültig (401 SESSION_ENDED)',
+      revoke.status === 200 && afterRevoke.status === 401 && afterRevoke.json?.code === 'SESSION_ENDED',
+      afterRevoke.json
+    );
+
+    const unknownEndpoint = await api('GET', '/api/v1/gibt-es-nicht');
+    check('Unbekannter Endpunkt 404 ENDPOINT_NOT_FOUND', unknownEndpoint.status === 404 && unknownEndpoint.json?.code === 'ENDPOINT_NOT_FOUND', unknownEndpoint.json);
+
+    const spec = await api('GET', '/api/v1/openapi.json');
+    check(
+      'OpenAPI-Dokument: 3.1, App-Anmeldung und Fehlercodes enthalten',
+      spec.status === 200 && spec.json?.openapi === '3.1.0' && spec.json.paths?.['/auth/token']?.post &&
+        spec.json.components?.schemas?.Error?.properties?.code?.enum?.includes('ACCOUNT_LOCKED'),
+      spec.status
+    );
+
+    // ---- Konto-Sperre nach Fehlversuchen ----
+    console.log('\n[Konto-Sperre]');
+    const lockUser = { email: 'smoke.lock@schoppmann.de', password: 'LockUser123', name: 'Lock Tester' };
+    const lockCreated = await api('POST', '/api/v1/admin/users', { token: adminToken, body: { ...lockUser, role: 'mitarbeiter' } });
+    const lockUserId = lockCreated.json?.data?.user?.id;
+    const tryLogin = (password, email = lockUser.email) =>
+      api('POST', '/api/v1/auth/login', { session: newSession(), body: { email, password } });
+    const failures = [];
+    for (let i = 0; i < 5; i++) failures.push((await tryLogin('Falsch12345')).status);
+    check('5 Fehlversuche je 401', failures.every((st) => st === 401), failures);
+    const locked = await tryLogin(lockUser.password);
+    check(
+      'Danach gesperrt – auch mit richtigem Passwort: 429 ACCOUNT_LOCKED + Retry-After',
+      locked.status === 429 && locked.json?.code === 'ACCOUNT_LOCKED' && Number(locked.headers.get('retry-after')) > 0 && locked.json.retryAfter > 0,
+      locked.json
+    );
+    const lockedApp = await appApi('POST', '/api/v1/auth/token', null, { email: lockUser.email, password: lockUser.password });
+    check('Sperre gilt auch für die App-Anmeldung', lockedApp.status === 429 && lockedApp.json?.code === 'ACCOUNT_LOCKED', lockedApp.json);
+    const ghost = [];
+    for (let i = 0; i < 6; i++) ghost.push((await tryLogin('Falsch12345', 'niemand@schoppmann.de')).json?.code);
+    check('Unbekannte Adresse wird genauso gesperrt (verrät nicht, ob es das Konto gibt)', ghost[5] === 'ACCOUNT_LOCKED', ghost);
+    const lockAudit = await api('GET', `/api/v1/admin/audit?action=auth.account_locked&userId=${lockUserId}`, { token: adminToken });
+    check('Sperre steht im Protokoll', lockAudit.json?.data?.entries?.length === 1, lockAudit.json?.data?.entries);
+    await api('PUT', `/api/v1/admin/users/${lockUserId}`, { token: adminToken, body: { password: 'Entsperrt123' } });
+    const unlocked = await tryLogin('Entsperrt123');
+    check('Passwort-Reset durch Admin hebt die Sperre auf', unlocked.status === 200, unlocked.json);
+
+    // ---- Restliche Endpunkte: jede Erfolgsantwort einmal gegen ihr Schema prüfen ----
+    console.log('\n[Übrige Endpunkte]');
+    const misc = { email: 'smoke.misc@schoppmann.de', password: 'MiscUser123', name: 'Misc Tester' };
+    const miscCreated = await api('POST', '/api/v1/admin/users', { token: adminToken, body: { ...misc, role: 'mitarbeiter' } });
+    const miscId = miscCreated.json?.data?.user?.id;
+    const miscSession = newSession();
+    await api('POST', '/api/v1/auth/login', { session: miscSession, body: { email: misc.email, password: misc.password } });
+    const ok = async (label, method, endpoint, options) => {
+      const res = await api(method, endpoint, options);
+      check(label, res.status === 200, res.json);
+      return res;
+    };
+    await ok('Profil ändern (auth) 200', 'PUT', '/api/v1/auth/profile', { token: miscSession, body: { name: 'Misc Geändert' } });
+    await ok('Profil ändern (employee) 200', 'PUT', '/api/v1/employee/profile', { token: miscSession, body: { name: 'Misc Tester' } });
+    await ok('Passwort ändern (employee, mit Bestätigung) 200', 'PUT', '/api/v1/employee/change-password', {
+      token: miscSession, body: { currentPassword: misc.password, newPassword: 'MiscNeu123', confirmPassword: 'MiscNeu123' }
+    });
+    const mismatch = await api('PUT', '/api/v1/employee/change-password', {
+      token: miscSession, body: { currentPassword: 'MiscNeu123', newPassword: 'MiscNeu456', confirmPassword: 'Anders456' }
+    });
+    check('Bestätigung abweichend 400 mit Feld confirmPassword', mismatch.status === 400 && mismatch.json?.fields?.confirmPassword, mismatch.json);
+    await ok('Aktuelle Minijob-Grenze (Mitarbeiter) 200', 'GET', '/api/v1/employee/minijob/current', { token: miscSession });
+    await ok('Aktuelle Minijob-Grenze (Admin) 200', 'GET', '/api/v1/admin/minijob/settings/current', { token: adminToken });
+    const periodList = await ok('Abrechnungsperioden (Mitarbeiter) 200', 'GET', '/api/v1/timetracking/periods', { token: miscSession });
+    check('… genau eine laufende Periode', periodList.json?.data?.periods?.filter((p) => p.isCurrent).length === 1, periodList.json?.data?.currentPeriod);
+    await ok('Mehrmonats-Statistik 200', 'GET', '/api/v1/timetracking/stats/multi-month?months=3', { token: miscSession });
+    await ok('Abrechnungsperioden eines Mitarbeiters (Admin) 200', 'GET', `/api/v1/admin/timesheets/${miscId}/periods`, { token: adminToken });
+    await ok('Abmelden über /employee/logout 200', 'POST', '/api/v1/employee/logout', { token: miscSession });
+    const afterEmployeeLogout = await api('GET', '/api/v1/auth/profile', { token: miscSession });
+    check('… danach nicht mehr angemeldet (401)', afterEmployeeLogout.status === 401, afterEmployeeLogout.json);
+
     // ---- Sicherungsstatus ----
     const backupForbidden = await api('GET', '/api/admin/system/backup', { token: empToken });
     check('Sicherungsstatus: Mitarbeiter abgewiesen 403', backupForbidden.status === 403, backupForbidden.status);
@@ -479,6 +628,15 @@ async function main() {
     server.close();
     await sequelize.close();
     try { fs.unlinkSync(dbFile); } catch { /* ignore */ }
+  }
+
+  // Endpunkte, deren Erfolgsantwort in diesem Lauf nicht vorkam (Antwort-Schema dort ungeprüft)
+  const { routes } = require('../lib/openapi');
+  const { respondedRoutes } = require('../lib/route');
+  const untested = routes.map((r) => r.spec.routeKey).filter((key) => !respondedRoutes.has(key));
+  if (untested.length > 0) {
+    console.log(`\nOhne erfolgreiche Antwort im Smoke-Test (${untested.length}/${routes.length}):`);
+    untested.forEach((key) => console.log(`  · ${key}`));
   }
 
   console.log(`\n──────────────────────────────`);
