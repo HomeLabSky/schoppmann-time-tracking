@@ -1,517 +1,276 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ColumnDef } from '@tanstack/react-table'
+import { ChevronLeft, ChevronRight, Clock, Euro, Lock, MoreHorizontal, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { TimeTrackingService } from '@/lib/timetracking'
-import { formatCurrency, formatHours, toLocalDateString } from '@/lib/utils'
+import { useDeleteTimeEntry, useMyMonth, useMyPeriods } from '@/lib/queries'
+import type { TimeRecord } from '@/lib/timetracking'
+import { formatCurrency, formatDate, formatHours, getErrorMessage } from '@/lib/utils'
+import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
-import type {
-  TimeRecord,
-  MonthlyTimeRecords,
-  CreateTimeRecordRequest,
-  UpdateTimeRecordRequest,
-  BillingPeriod
-} from '@/lib/timetracking'
-
-interface FormData extends CreateTimeRecordRequest { }
-interface EditFormData extends UpdateTimeRecordRequest { }
+import { DataTable } from '@/components/ui/data-table'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { Select } from '@/components/ui/input'
+import { PageHeader } from '@/components/ui/page-header'
+import { Progress, StatCard } from '@/components/ui/stat-card'
+import { TimeEntryDialog } from '@/components/features/time/time-entry-dialog'
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
+  const periods = useMyPeriods()
+  const [month, setMonth] = useState('')
+  const [dialog, setDialog] = useState<TimeRecord | 'new' | null>(null)
+  const remove = useDeleteTimeEntry()
   const [confirm, confirmDialog] = useConfirm()
-  const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
-  const [currentMonth, setCurrentMonth] = useState<string>('')
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [editingRecord, setEditingRecord] = useState<TimeRecord | null>(null)
-  const [availablePeriods, setAvailablePeriods] = useState<BillingPeriod[]>([])
 
-  const [formData, setFormData] = useState<FormData>({
-    date: toLocalDateString(),
-    startTime: '09:00',
-    endTime: '17:00',
-    breakMinutes: 0,
-    description: ''
-  })
-
-  const [editFormData, setEditFormData] = useState<EditFormData>({
-    startTime: '09:00',
-    endTime: '17:00',
-    breakMinutes: 0,
-    description: ''
-  })
-
+  // Startwert: aktuelle Periode
   useEffect(() => {
-    if (user?.id) {
-      loadMonthlyData()
-      loadBillingPeriods() // Zuerst Perioden laden
+    if (!month && periods.data) setMonth(periods.data.currentPeriod?.value ?? periods.data.periods.at(-1)?.value ?? '')
+  }, [month, periods.data])
+
+  const sheet = useMyMonth(month)
+  const data = sheet.data
+  const summary = data?.summary
+  const closed = data?.period.status === 'closed'
+  const limitMissing = !closed && !!summary?.minijobLimitMissing
+
+  // Perioden chronologisch (älteste zuerst) für Vor/Zurück; künftige Perioden ausblenden
+  const currentPeriodValue = periods.data?.currentPeriod?.value
+  const periodList = useMemo(
+    () =>
+      [...(periods.data?.periods ?? [])]
+        .filter((p) => !currentPeriodValue || p.value <= currentPeriodValue)
+        .sort((a, b) => a.value.localeCompare(b.value)),
+    [periods.data, currentPeriodValue]
+  )
+  const index = periodList.findIndex((p) => p.value === month)
+
+  const usagePct = summary && summary.minijobLimit > 0 ? (summary.actualEarnings / summary.minijobLimit) * 100 : 0
+  const usageTone = limitMissing ? 'warning' : usagePct >= 100 ? 'danger' : usagePct >= 80 ? 'warning' : 'success'
+
+  // Vorschlag für neue Einträge: Zeiten des letzten Eintrags
+  const lastEntry = useMemo(() => [...(data?.records ?? [])].sort((a, b) => b.date.localeCompare(a.date))[0], [data?.records])
+
+  const { mutate: deleteEntry } = remove
+  const columns = useMemo<ColumnDef<TimeRecord, unknown>[]>(() => {
+    const askDelete = async (r: TimeRecord) => {
+      const ok = await confirm({
+        title: 'Eintrag löschen?',
+        message: `${formatDate(r.date)}, ${r.startTime} – ${r.endTime}. Die Löschung wird protokolliert.`,
+        confirmLabel: 'Löschen',
+        destructive: true,
+      })
+      if (ok) deleteEntry(r.id)
     }
-  }, [currentMonth, user?.id])
+    return [
+      {
+        id: 'date',
+        accessorFn: (r) => r.date,
+        header: 'Datum',
+        cell: ({ row }) => (
+          <span className="tabular">
+            {new Date(`${row.original.date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short' })}, {formatDate(row.original.date)}
+          </span>
+        ),
+      },
+      {
+        id: 'time',
+        accessorFn: (r) => r.startTime,
+        header: 'Zeit',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="tabular">
+            {row.original.startTime} – {row.original.endTime}
+            {row.original.endTime < row.original.startTime && <span className="ml-1 text-xs text-muted-foreground">(+1 Tag)</span>}
+          </span>
+        ),
+      },
+      {
+        id: 'break',
+        accessorFn: (r) => r.breakMinutes,
+        header: 'Pause',
+        meta: { className: 'text-right tabular' },
+        cell: ({ row }) => (row.original.breakMinutes ? `${row.original.breakMinutes} Min.` : '–'),
+      },
+      {
+        id: 'hours',
+        accessorFn: (r) => r.totalHours,
+        header: 'Arbeitszeit',
+        meta: { className: 'text-right tabular' },
+        cell: ({ row }) => formatHours(row.original.totalHours),
+      },
+      {
+        id: 'earnings',
+        accessorFn: (r) => r.earnings,
+        header: 'Verdienst',
+        meta: { className: 'text-right tabular' },
+        cell: ({ row }) => formatCurrency(row.original.earnings),
+      },
+      {
+        id: 'description',
+        accessorFn: (r) => r.description ?? '',
+        header: 'Tätigkeit',
+        enableSorting: false,
+        cell: ({ row }) => <span className="text-muted-foreground">{row.original.description || '–'}</span>,
+      },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Aktionen</span>,
+        enableSorting: false,
+        meta: { className: 'w-12 text-right' },
+        cell: ({ row }) =>
+          closed ? (
+            <Lock className="ml-auto h-4 w-4 text-muted-foreground" aria-label="Periode abgeschlossen" />
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label={`Aktionen für den Eintrag vom ${formatDate(row.original.date)}`}>
+                  <MoreHorizontal aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setDialog(row.original)}>
+                  <Pencil aria-hidden="true" /> Bearbeiten
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem destructive onSelect={() => askDelete(row.original)}>
+                  <Trash2 aria-hidden="true" /> Löschen
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ),
+      },
+    ]
+  }, [closed, confirm, deleteEntry])
 
-  const loadMonthlyData = async () => {
-    if (!user?.id || !currentMonth) return
-    try {
-      setLoading(true)
-      setError('')
-
-      // Neue API-Struktur: userId, year, month
-      const [yearStr, monthStr] = currentMonth.split('-')
-      const year = parseInt(yearStr)
-      const month = parseInt(monthStr)
-
-      const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
-      setMonthlyData(data)
-    } catch (err: any) {
-      setError(err.message || 'Fehler beim Laden der Zeitdaten')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const loadBillingPeriods = async () => {
-    if (!user?.id) return
-
-    try {
-      const periods = await TimeTrackingService.getBillingPeriods()
-      setAvailablePeriods(periods)
-
-      const currentPeriod = periods.find(p => p.isCurrent)
-      // Nur beim ersten Laden setzen, danach bleibt die Auswahl des Benutzers
-      if (currentPeriod && !currentMonth) {
-        setCurrentMonth(currentPeriod.value)
-      }
-    } catch {
-      // Fallback: Standard-Kalenderperioden generieren
-      const periods: BillingPeriod[] = []
-      const today = new Date()
-
-      for (let i = 0; i < 6; i++) {
-        const date = new Date(today.getFullYear(), today.getMonth() - i, 1)
-        const year = date.getFullYear()
-        const month = date.getMonth() + 1
-        const monthName = date.toLocaleDateString('de-DE', { month: 'long' })
-
-        periods.push({
-          value: `${year}-${String(month).padStart(2, '0')}`,
-          label: `${monthName} ${year}`,
-          year,
-          month,
-          monthName,
-          startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-          endDate: toLocalDateString(new Date(year, month, 0)),
-          isCurrent: i === 0
-        })
-      }
-
-      setAvailablePeriods(periods)
-
-      if (!currentMonth && periods.length > 0) {
-        setCurrentMonth(periods[0].value)
-      }
-    }
-  }
-
-  const handleCreateRecord = async () => {
-    try {
-      // Validate form data - Pausenzeit auf 0 setzen
-      const processedFormData = { ...formData, breakMinutes: 0 }
-      const validation = TimeTrackingService.validateTimeEntry(processedFormData)
-      if (!validation.isValid) {
-        setError(validation.errors.join(', '))
-        return
-      }
-
-      await TimeTrackingService.createTimeRecord(processedFormData)
-      await loadMonthlyData()
-      setShowAddForm(false)
-      resetForm()
-      setError('')
-    } catch (err: any) {
-      setError(err.message || 'Fehler beim Erstellen des Zeiteintrags')
-    }
-  }
-
-  const handleEditRecord = (record: TimeRecord) => {
-    setEditingRecord(record)
-    setEditFormData({
-      startTime: record.startTime,
-      endTime: record.endTime,
-      breakMinutes: 0, // Pausenzeit deaktiviert
-      description: record.description || ''
-    })
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editingRecord) return
-
-    try {
-      await TimeTrackingService.updateTimeRecord(editingRecord.id, editFormData)
-      await loadMonthlyData()
-      setEditingRecord(null)
-      setError('')
-    } catch (err: any) {
-      setError(err.message || 'Fehler beim Aktualisieren des Zeiteintrags')
-    }
-  }
-
-  const handleDeleteRecord = async (id: number) => {
-    const ok = await confirm({ title: 'Zeiteintrag löschen?', confirmLabel: 'Löschen', destructive: true })
-    if (!ok) return
-
-    try {
-      await TimeTrackingService.deleteTimeRecord(id)
-      await loadMonthlyData()
-      setError('')
-    } catch (err: any) {
-      setError(err.message || 'Fehler beim Löschen des Zeiteintrags')
-    }
-  }
-
-  const resetForm = () => {
-    setFormData({
-      date: toLocalDateString(),
-      startTime: '09:00',
-      endTime: '17:00',
-      breakMinutes: 0, // Pausenzeit deaktiviert
-      description: ''
-    })
-  }
-
-  const handleMonthChange = (newMonth: string) => {
-    setCurrentMonth(newMonth)
-  }
-
-  const isClosed = monthlyData?.period?.status === 'closed'
-  const summary = monthlyData?.summary
-  const limitMissing = !isClosed && !!summary?.minijobLimitMissing
-  const overLimit = !limitMissing && !!summary?.exceedsLimit
-
-  if (loading && !monthlyData) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-slate-600">Dashboard wird geladen...</p>
-        </div>
-      </div>
-    )
-  }
+  const loading = periods.isLoading || (!!month && sheet.isLoading)
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900">Zeiterfassung</h1>
-        <p className="text-slate-600 mt-2">
-          Willkommen, {user?.name}! Verwalten Sie hier Ihre Arbeitszeiten.
-        </p>
-      </div>
-
-      {/* Error Message */}
-      {error && (
-        <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-          <div className="flex">
-            <svg className="w-5 h-5 text-red-400 mr-2 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {isClosed && (
-        <div role="status" className="mb-6 rounded-lg border border-slate-300 bg-slate-100 p-4 text-sm text-slate-800">
-          <strong>Diese Periode ist abgeschlossen.</strong> Einträge können nicht mehr angelegt, geändert oder gelöscht werden.
-          Wenn etwas korrigiert werden muss, wenden Sie sich bitte an Ihren Administrator.
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-6">Arbeitszeit (Periode)</h3>
-          <div className="text-center">
-            <div className="text-4xl font-bold text-blue-600 mb-2">
-              {formatHours(summary?.totalHours)}
-            </div>
-            {monthlyData?.period && (
-              <p className="text-sm text-slate-500">
-                {monthlyData.period.monthName} {monthlyData.period.year}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Verdienst (nur diese Periode) */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-6">Verdienst (Periode)</h3>
-          <div className="text-center">
-            <div className={`text-4xl font-bold mb-2 ${overLimit ? 'text-orange-600' : 'text-green-600'}`}>
-              {formatCurrency(summary?.totalEarnings ?? 0)}
-            </div>
-            {overLimit && (
-              <p className="text-sm text-orange-600 font-medium">
-                Minijob-Grenze von {formatCurrency(summary?.minijobLimit ?? 0)} überschritten – der Rest wird übertragen.
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* Kontostand */}
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
-          <h3 className="text-lg font-medium text-slate-900 mb-4">Kontostand</h3>
-          <div className="space-y-2">
-            <div className="flex justify-between">
-              <span className="text-slate-600">Verdienst (aktueller Monat):</span>
-              <span className="font-medium">{formatCurrency(summary?.totalEarnings ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Übertrag aus Vormonat:</span>
-              <span className="font-medium">{formatCurrency(summary?.carryIn ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Auszahlung (aktueller Monat):</span>
-              <span className="font-medium">{formatCurrency(summary?.paidThisMonth ?? 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-600">Übertrag in kommenden Monat:</span>
-              <span className="font-medium">{formatCurrency(summary?.carryOut ?? 0)}</span>
-            </div>
-          </div>
-          {limitMissing && (
-            <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
-              Vorläufig: Für diesen Zeitraum ist noch keine Minijob-Grenze hinterlegt. Auszahlung und Übertrag können sich noch ändern.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Time Records Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-        {/* Table Header mit Periodenauswahl rechts */}
-        <div className="px-6 py-4 border-b border-slate-200">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h3 className="text-lg font-medium text-slate-900">
-                Zeiteinträge
-              </h3>
-              {monthlyData && (
-                <p className="text-sm text-slate-500 mt-1">
-                  {monthlyData.period?.monthName} {monthlyData.period?.year}
-                </p>
-              )}
-            </div>
-
-            {/* Rechte Seite: Periodenauswahl + Button */}
-            <div className="flex flex-wrap items-center gap-4">
-              {/* Periodenauswahl */}
-              <div className="flex items-center gap-2">
-                <label htmlFor="employee-period" className="text-sm font-medium text-slate-700">Abrechnungsperiode:</label>
-                <select
-                  id="employee-period"
-                  value={currentMonth}
-                  onChange={(e) => handleMonthChange(e.target.value)}
-                  className="block w-40 pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
-                >
-                  {availablePeriods.map(period => (
-                    <option key={period.value} value={period.value}>
-                      {period.label}{period.isClosed ? ' – abgeschlossen' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Add Button */}
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                disabled={isClosed}
-                title={isClosed ? 'Die Periode ist abgeschlossen' : undefined}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+    <>
+      <PageHeader
+        title="Zeiterfassung"
+        description={user ? `Hallo ${user.name.split(' ')[0]} – hier erfassen Sie Ihre Arbeitszeiten.` : undefined}
+        actions={
+          <>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Vorherige Periode"
+                disabled={index <= 0}
+                onClick={() => setMonth(periodList[index - 1].value)}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>Neue Arbeitszeit erfassen</span>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Add Form */}
-        {showAddForm && !isClosed && (
-          <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <div>
-                <label htmlFor="entry-1" className="block text-sm font-medium text-slate-700 mb-1">Datum</label>
-                <input
-                  id="entry-1"
-                  type="date"
-                  value={formData.date}
-                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="entry-2" className="block text-sm font-medium text-slate-700 mb-1">Startzeit</label>
-                <input
-                  id="entry-2"
-                  type="time"
-                  value={formData.startTime}
-                  onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="entry-3" className="block text-sm font-medium text-slate-700 mb-1">Endzeit</label>
-                <input
-                  id="entry-3"
-                  type="time"
-                  value={formData.endTime}
-                  onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label htmlFor="entry-4" className="block text-sm font-medium text-slate-700 mb-1">Beschreibung</label>
-                <input
-                  id="entry-4"
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="Optional..."
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex items-end space-x-2">
-                <button
-                  onClick={handleCreateRecord}
-                  className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors"
-                >
-                  Speichern
-                </button>
-                <button
-                  onClick={() => setShowAddForm(false)}
-                  className="bg-slate-500 text-white px-4 py-2 rounded-md hover:bg-slate-600 transition-colors"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Table Content */}
-        {!monthlyData?.records?.length ? (
-          <div className="p-8 text-center">
-            <svg className="w-12 h-12 text-slate-300 mx-auto mb-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-            </svg>
-            <p className="text-slate-500">Noch keine Zeiteinträge für diesen Monat.</p>
-            <p className="text-slate-400 text-sm mt-1">Erstellen Sie Ihren ersten Eintrag mit dem Button oben.</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Datum</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Zeit</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Arbeitszeit</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Verdienst</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Beschreibung</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Aktionen</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-200">
-                {monthlyData.records.map((record) => (
-                  <tr key={record.id} className="hover:bg-slate-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {new Date(record.date).toLocaleDateString('de-DE')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {editingRecord?.id === record.id ? (
-                        <div className="flex space-x-2">
-                          <input
-                            type="time"
-                            value={editFormData.startTime}
-                            onChange={(e) => setEditFormData({ ...editFormData, startTime: e.target.value })}
-                            className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
-                          />
-                          <span>-</span>
-                          <input
-                            type="time"
-                            value={editFormData.endTime}
-                            onChange={(e) => setEditFormData({ ...editFormData, endTime: e.target.value })}
-                            className="w-20 px-2 py-1 border border-slate-300 rounded text-xs"
-                          />
-                        </div>
-                      ) : (
-                        `${record.startTime} - ${record.endTime}`
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="text-sm font-medium text-slate-900">{record.workTime}</span>
-                      <span className="text-xs text-slate-500 block">{formatHours(record.totalHours)}</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                      {record.formattedEarnings}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-900">
-                      {editingRecord?.id === record.id ? (
-                        <input
-                          type="text"
-                          value={editFormData.description}
-                          onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-                          className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                          placeholder="Beschreibung..."
-                        />
-                      ) : (
-                        record.description || '-'
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      {isClosed ? (
-                        <span className="text-xs text-slate-400">gesperrt</span>
-                      ) : editingRecord?.id === record.id ? (
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={handleSaveEdit}
-                            className="text-green-600 hover:text-green-900"
-                          >
-                            Speichern
-                          </button>
-                          <button
-                            onClick={() => setEditingRecord(null)}
-                            className="text-slate-600 hover:text-slate-900"
-                          >
-                            Abbrechen
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="flex justify-end space-x-2">
-                          <button
-                            onClick={() => handleEditRecord(record)}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            Bearbeiten
-                          </button>
-                          <button
-                            onClick={() => handleDeleteRecord(record.id)}
-                            className="text-red-600 hover:text-red-900"
-                          >
-                            Löschen
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <label htmlFor="employee-period" className="sr-only">
+                Abrechnungsperiode
+              </label>
+              <Select id="employee-period" value={month} onChange={(e) => setMonth(e.target.value)} className="w-72">
+                {periodList.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                    {p.isClosed ? ' · abgeschlossen' : ''}
+                  </option>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                aria-label="Nächste Periode"
+                disabled={index === -1 || index >= periodList.length - 1}
+                onClick={() => setMonth(periodList[index + 1].value)}
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            </div>
+            <Button onClick={() => setDialog('new')} disabled={closed}>
+              <Plus aria-hidden="true" /> Arbeitszeit erfassen
+            </Button>
+          </>
+        }
+      />
+
+      <div className="space-y-4">
+        {(periods.isError || sheet.isError) && (
+          <Alert variant="danger" title="Daten konnten nicht geladen werden">
+            {getErrorMessage(periods.error ?? sheet.error)}
+          </Alert>
+        )}
+        {closed && (
+          <Alert variant="info" title="Diese Periode ist abgeschlossen">
+            Einträge können nicht mehr angelegt, geändert oder gelöscht werden. Für Korrekturen wenden Sie sich bitte an Ihren Administrator.
+          </Alert>
+        )}
+        {limitMissing && (
+          <Alert variant="warning" title="Beträge sind vorläufig">
+            Für diesen Zeitraum ist noch keine Minijob-Grenze hinterlegt. Auszahlung und Übertrag können sich noch ändern.
+          </Alert>
         )}
       </div>
+
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Arbeitszeit"
+          value={summary ? formatHours(summary.totalHours) : ''}
+          icon={Clock}
+          loading={loading}
+          hint={data ? `${formatDate(data.period.startDate)} – ${formatDate(data.period.endDate)}` : undefined}
+        />
+        <StatCard
+          label="Verdienst"
+          value={summary ? formatCurrency(summary.totalEarnings) : ''}
+          icon={Euro}
+          loading={loading}
+          hint={summary ? `${summary.entryCount} ${summary.entryCount === 1 ? 'Eintrag' : 'Einträge'}${summary.carryIn > 0 ? ` · + ${formatCurrency(summary.carryIn)} Übertrag` : ''}` : undefined}
+        />
+        <StatCard
+          label="Auszahlung"
+          value={summary ? formatCurrency(summary.paidThisMonth) : ''}
+          icon={Wallet}
+          tone={limitMissing ? 'warning' : 'default'}
+          loading={loading}
+          hint={summary ? (limitMissing ? 'vorläufig' : `Grenze ${formatCurrency(summary.minijobLimit)}`) : undefined}
+        >
+          {summary && !loading && <Progress value={usagePct} tone={usageTone} label="Ausschöpfung der Minijob-Grenze" />}
+        </StatCard>
+        <StatCard
+          label="Übertrag in nächste Periode"
+          value={summary ? formatCurrency(summary.carryOut) : ''}
+          tone={summary && summary.carryOut > 0 ? 'warning' : 'default'}
+          loading={loading}
+          hint={summary && summary.carryOut > 0 ? 'Über der Grenze – wird später ausgezahlt' : undefined}
+        />
+      </div>
+
+      <div className="mt-6">
+        <DataTable
+          caption="Ihre Zeiteinträge in dieser Periode"
+          columns={columns}
+          data={data?.records ?? []}
+          loading={loading}
+          getRowId={(r) => String(r.id)}
+          initialSorting={[{ id: 'date', desc: true }]}
+          pageSize={50}
+          empty={{
+            title: 'Noch keine Einträge',
+            description: closed ? 'In dieser Periode wurde nichts erfasst.' : 'Erfassen Sie Ihre erste Arbeitszeit in dieser Periode.',
+            action: closed ? undefined : (
+              <Button size="sm" onClick={() => setDialog('new')}>
+                <Plus aria-hidden="true" /> Arbeitszeit erfassen
+              </Button>
+            ),
+          }}
+        />
+      </div>
+
+      <TimeEntryDialog
+        entry={dialog}
+        onClose={() => setDialog(null)}
+        defaults={lastEntry ? { startTime: lastEntry.startTime, endTime: lastEntry.endTime, breakMinutes: lastEntry.breakMinutes } : undefined}
+      />
       {confirmDialog}
-    </div>
+    </>
   )
 }

@@ -1,7 +1,9 @@
 import { clsx, type ClassValue } from "clsx"
+import { twMerge } from "tailwind-merge"
 
+/** Klassen zusammenführen; spätere Tailwind-Klassen überschreiben frühere (z. B. `p-2` + `p-4` → `p-4`). */
 export function cn(...inputs: ClassValue[]) {
-  return clsx(inputs)
+  return twMerge(clsx(inputs))
 }
 
 export function formatCurrency(amount: number): string {
@@ -25,7 +27,7 @@ export function formatDate(dateString: string): string {
 
 export function formatDateTime(dateString: string): string {
   if (!dateString) return 'Kein Datum'
-  return new Date(dateString).toLocaleString('de-DE')
+  return new Date(dateString).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
 export function getInitials(name: string): string {
@@ -35,20 +37,6 @@ export function getInitials(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2)
-}
-
-export function capitalizeFirst(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
-}
-
-export function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text
-  return text.slice(0, maxLength) + '...'
-}
-
-export function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
 }
 
 export function validatePassword(password: string): {
@@ -79,40 +67,6 @@ export function validatePassword(password: string): {
   }
 }
 
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
-  wait: number
-): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null
-  
-  return (...args: Parameters<T>) => {
-    if (timeout) clearTimeout(timeout)
-    timeout = setTimeout(() => func(...args), wait)
-  }
-}
-
-export function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-export function isClient(): boolean {
-  return typeof window !== 'undefined'
-}
-
-export function getStorageItem(key: string): string | null {
-  if (!isClient()) return null
-  return localStorage.getItem(key)
-}
-
-export function setStorageItem(key: string, value: string): void {
-  if (!isClient()) return
-  localStorage.setItem(key, value)
-}
-
-export function removeStorageItem(key: string): void {
-  if (!isClient()) return
-  localStorage.removeItem(key)
-}
 /**
  * Lokales Kalenderdatum als YYYY-MM-DD.
  * `date.toISOString().split('T')[0]` liefert das UTC-Datum – in Deutschland zwischen

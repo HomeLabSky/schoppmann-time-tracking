@@ -46,6 +46,43 @@ jobs:
       - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
         run: npm audit --omit=dev --audit-level=high || echo "::warning::npm audit meldet Funde (siehe Log)"
 
+  # Ende-zu-Ende: echtes Backend (Wegwerf-DB mit Testdaten) + gebautes Frontend im Browser (Playwright)
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - name: Backend-Abhängigkeiten
+        working-directory: backend
+        run: npm ci
+      - name: Frontend-Abhängigkeiten
+        working-directory: frontend
+        run: npm ci
+      - name: Chromium für Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Frontend bauen (API-Adresse des Test-Backends)
+        working-directory: frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:5100
+        run: npm run build
+      - name: Ende-zu-Ende-Tests
+        working-directory: frontend
+        run: npm run e2e
+      - name: Bericht bei Fehlern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+
   # Prüft die Betriebsdateien (deploy/, Dockerfiles), die lokal nicht ohne Docker testbar sind
   docker:
     runs-on: ubuntu-latest
