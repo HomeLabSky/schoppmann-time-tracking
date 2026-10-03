@@ -22,6 +22,21 @@ const userIdParam = param('userId').isInt({ min: 1 }).withMessage('Ungültige Be
 const monthRule = (location) =>
   location('month').matches(/^\d{4}-(0[1-9]|1[0-2])$/).withMessage('Monat muss im Format YYYY-MM sein');
 
+// ✅ ÜBERSICHT ALLER MITARBEITER FÜR EINEN MONAT (vor /:userId registrieren)
+router.get('/overview',
+  requireAdmin,
+  [monthRule(query), handleValidationErrors],
+  async (req, res) => {
+    try {
+      const [year, month] = parseMonth(req.query.month);
+      const rows = await PeriodService.overview(year, month);
+      res.json({ success: true, message: 'Übersicht erfolgreich geladen', data: { month: req.query.month, rows } });
+    } catch (error) {
+      sendServiceError(res, error, { status: 500, code: 'TIMESHEET_OVERVIEW_ERROR', error: 'Übersicht konnte nicht geladen werden' });
+    }
+  }
+);
+
 // ✅ ABRECHNUNGSPERIODEN EINES MITARBEITERS (mit Abschluss-Kennzeichen)
 router.get('/:userId/periods',
   requireAdmin,

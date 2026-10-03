@@ -213,3 +213,8 @@ backups/
 # ============================================
 deploy/certs/*
 !deploy/certs/.gitkeep
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/blob-report/

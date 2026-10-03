@@ -444,3 +444,50 @@ Mitarbeiter sollen **mobil ausschließlich über eine später entwickelte App** 
 Bewusst offen (→ Phase 2/3): restliche Inline-SVGs und `gray`/`slate`-Mischung, Toasts statt Emoji-Statusmeldungen
 (`message.includes('✅')`), Logo als SVG/`next/image`, Tabellen mit Suche/Filter/Export, Übersicht aller Mitarbeiter in
 *Zeitnachweise*, Bereinigung der übrigen ~85 Lint-Warnungen.
+
+---
+
+## Status Frontend-Neuaufbau, Punkt 2 (Branch `claude/phase3-frontend`)
+
+Desktop-first gemäß Entscheidung „mobil nur per App“. Alle Seiten neu aufgebaut; Routen und API-Vertrag unverändert.
+
+| Thema | Vorher | Jetzt |
+|---|---|---|
+| Designsystem | keine Komponenten, Rohfarben (`gray` 260×, `slate` 96×) | `components/ui` im shadcn-Stil (Radix für Dialog, Menü, Tooltip): Button, Input/Select/Textarea, FormField, Card, Badge, Alert, Table, **DataTable**, StatCard/Progress, EmptyState, Skeleton, PageHeader |
+| Tokens & Marke | `tailwind.config.js` (in v4 wirkungslos), generisches Blau | CSS-first-Tokens in `globals.css` (Marineblau `#1F3A5F` aus dem Logo, getrennte Statusfarben), **Hell/Dunkel/System** umschaltbar, Geist-Schrift aktiv, Logo und Favicon als **SVG** (statt 1,1-MB-PNG) |
+| Grundlayout | zwei unterschiedliche Kopfzeilen, Menü ohne Funktion | **AppShell** mit Seitenleiste (Gruppen „Abrechnung“/„Verwaltung“), Benutzermenü (Einstellungen, Darstellung, Abmelden), Sprunglink „Zum Inhalt“, unter 1024 px schmale Symbolleiste |
+| Server-Daten | 77× `useState`, 30× `useEffect`, manuelles Nachladen | **TanStack Query** (`lib/queries.ts`): Cache, Lade-/Fehlerzustände, automatische Aktualisierung nach Änderungen, Cache wird beim Ab-/Anmelden geleert |
+| API-Client | Reste von 3 Clients, `any` | **ein** typisierter Client (`lib/api.ts`), einheitlicher `ApiError` inkl. feldgenauer Backend-Fehler |
+| Formulare | handgebaut, Prüfung verstreut | **react-hook-form + zod** (`src/schemas`, spiegelt die Backend-Regeln), Fehler direkt am Feld, Backend-Feldfehler werden zugeordnet |
+| Tabellen | ohne Suche/Filter/Sortierung/Export | DataTable mit **Suche, Sortierung, Seitenweise-Anzeige, Filtern, CSV-Export** (Excel-tauglich) |
+| Rückmeldungen | Emoji-Statusmeldungen (`message.includes('✅')`) | **Toasts**, Bestätigungsdialoge, Lade-Skelette, Leerzustände mit Handlungsaufforderung |
+| Seitenschutz | dreifach im Browser | eine Komponente `RequireRole` in den Bereichs-Layouts. *Next-Middleware ist nicht möglich*, weil die Sitzungs-Cookies nur für `/api` gelten – dokumentiert |
+| Qualität | 85 Lint-Warnungen, 39× `any`, 24 `console.log` | **0 Warnungen** (`--max-warnings 0`, `any` wieder als Fehler), kein `console.log`, ungenutzte Helfer/Typen/Platzhalter-Ordner entfernt, veraltetes `shared/` gelöscht |
+| Tests | keine Frontend-Tests | **Playwright-E2E** gegen das echte Backend (Wegwerf-DB, `backend/scripts/e2e-server.js`): Seitenschutz/Anmeldung, Benutzer anlegen mit Feldprüfung und Esc, Erfassung mit Pause, Abschluss + Wiedereröffnung + Protokoll; neuer CI-Job `e2e` |
+
+**Neue bzw. deutlich erweiterte Funktionen**
+
+- **Admin-Übersicht mit echten Kennzahlen:** aktive Mitarbeiter, Stunden und Auszahlung der laufenden Periode, offene
+  Abschlüsse des Vormonats (mit direktem Sprung), Auslastung der Minijob-Grenze je Mitarbeiter, letzte Änderungen,
+  Sicherungsstatus.
+- **Zeitnachweise: Monatsübersicht aller Mitarbeiter** (neuer Endpunkt `GET /api/admin/timesheets/overview`) mit Status
+  „läuft / bereit / abgeschlossen / Grenze fehlt“, Summen und CSV-Export; Detailansicht je Mitarbeiter mit Abschluss und
+  Wiedereröffnung. Monat und Mitarbeiter stehen in der URL (verlinkbar).
+- **Zeiterfassung:** Pause erfassbar (vorher fest 0), **Nachtschichten** über Mitternacht (vom Backend schon erlaubt,
+  vom alten Formular blockiert), Live-Berechnung der Arbeitszeit, Vorschlag aus dem letzten Eintrag, Fortschrittsbalken
+  zur Minijob-Grenze.
+- **Benutzer:** Filter nach Rolle/Status, Aktionsmenü (Bearbeiten, Abrechnungsdaten, Aktivieren/Deaktivieren, Löschen),
+  CSV-Export; eigene Rolle nicht änderbar.
+- **Admin-Einstellungen** (`/admin/settings`): Passwort ändern war für Admins bisher nicht möglich.
+
+**Prüfung:** `tsc` sauber, ESLint 0 Warnungen, `next build` erfolgreich; Backend 76 Unit-/Integrationstests und
+91 Smoke-Checks (neu: Monatsübersicht inkl. Rechte und Status); 4 Playwright-Tests grün im Dev- und im Produktionsmodus;
+alle Seiten im Browser in Hell und Dunkel durchgespielt. Beim Testen gefunden und behoben: Dialoge setzten den Fokus aufs
+Schließen-X (Enter schloss den Dialog), Spalten liefen bei 1280 px aus dem Bild.
+
+**Bewusst offen**
+
+- **Next 16** (behebt die verbleibenden 2 `npm audit`-Funde in `next`/`postcss`) – eigener Schritt wegen Breaking Changes.
+- Gemeinsames Schema-Paket für Frontend **und** Backend: kommt mit Phase 2 (Backend in TypeScript, npm-Workspaces);
+  bis dahin liegen die zod-Schemas im Frontend und spiegeln die Backend-Regeln.
+- PDF-Zeitnachweis/Lohnzettel, E-Mail-Versand (Phase 4), Admin-Korrekturen direkt an Einträgen.

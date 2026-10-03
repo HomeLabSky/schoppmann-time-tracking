@@ -189,6 +189,48 @@ class PeriodService {
     }
   }
 
+  /**
+   * Übersicht aller Mitarbeiter für einen Referenzmonat: Stunden, Beträge und Status je Mitarbeiter
+   * (jeweils in dessen eigener Abrechnungsperiode). Deaktivierte Konten erscheinen nur mit Einträgen.
+   * @param {number} year Referenzjahr
+   * @param {number} month Referenzmonat (1-12)
+   */
+  static async overview(year, month) {
+    const users = await User.findAll({
+      where: { role: 'mitarbeiter' },
+      attributes: ['id', 'name', 'email', 'isActive'],
+      order: [['name', 'ASC']]
+    });
+    const today = todayString();
+    const rows = [];
+    for (const user of users) {
+      const data = await TimeEntryService.getMonthlyTimeRecords(user.id, year, month);
+      if (!user.isActive && data.summary.entryCount === 0) continue;
+      const s = data.summary;
+      const closed = data.period.status === 'closed';
+      rows.push({
+        userId: user.id,
+        name: user.name,
+        email: user.email,
+        isActive: user.isActive,
+        periodStart: data.period.startDate,
+        periodEnd: data.period.endDate,
+        entryCount: s.entryCount,
+        totalHours: s.totalHours,
+        totalEarnings: s.totalEarnings,
+        paidThisMonth: s.paidThisMonth,
+        carryOut: s.carryOut,
+        minijobLimit: s.minijobLimit,
+        minijobLimitMissing: !closed && s.minijobLimitMissing,
+        exceedsLimit: s.exceedsLimit,
+        // open: läuft noch | ready: beendet, abschließbar | closed: abgeschlossen
+        status: closed ? 'closed' : today > data.period.endDate ? 'ready' : 'open',
+        closedAt: data.closure ? data.closure.closedAt : null
+      });
+    }
+    return rows;
+  }
+
   /** Alle aktuell abgeschlossenen Perioden eines Mitarbeiters (neueste zuerst). */
   static async listClosures(userId) {
     const rows = await PeriodClosure.findAll({ where: { userId }, order: [['periodStart', 'DESC']] });
