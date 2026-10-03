@@ -468,3 +468,24 @@ Bewusst offen (→ Phase 2/3): restliche Inline-SVGs und `gray`/`slate`-Mischung
 Bewusst offen (Phase 2, Teil 2): TypeScript, Drizzle + `better-sqlite3` mit versionierten Migrationen und DB-Prüfungen
 (CHECK) für Enums. Die verbleibenden `npm audit`-Funde (u. a. `tar` kritisch) hängen alle an `sqlite3`/`sequelize` und
 entfallen mit diesem Wechsel. Frontend: auf `/api/v1` umstellen und Typen aus `openapi.json` erzeugen (Phase 3).
+
+---
+
+## Status Phase 2, Teil 2: TypeScript und Drizzle (Branch `claude/phase2-ts`)
+
+| Punkt | Stand |
+|---|---|
+| TypeScript | gesamtes Backend in `src/` mit `strict` (+ `noUncheckedIndexedAccess`); Build nach `dist/`, Entwicklung und Tests über `tsx`. Routen sind typisiert: `req.valid` folgt den zod-Schemas, Fehlercodes nur aus der Liste in `lib/errors.ts` |
+| Datenbankzugriff | Sequelize 6 + `sqlite3` → **Drizzle + `better-sqlite3`**; Transaktionen synchron (keine Verzahnung paralleler Anfragen) |
+| Migrationen | **versioniert** in `drizzle/` (`npm run db:generate`), beim Start in **einer** Transaktion mit Sicherungskopie; CI bricht ab, wenn Schema und Migrationen auseinanderlaufen |
+| Bestehende Datenbanken | werden beim ersten Start **übernommen** (Formate unverändert, fehlende Spalten/Tabellen ergänzt). Geprüft mit einem Abzug einer Sequelize-Datenbank: alle Zeilen byte-gleich, auch sehr alte Stände (ohne Stundensatz-Snapshot) |
+| Prüfregeln (CHECK) | Rollen, Anmeldeweg, Pausen 0–480, Uhrzeit/Datum-Format, Beträge ≥ 0, Zeiträume – die Datenbank weist ungültige Werte auch bei Programmfehlern oder direktem SQL ab (früher wurde z. B. die Rolle `employee` gespeichert) |
+| **Gefundenes Risiko** | Das Nachrüsten von CHECK-Regeln baut Tabellen neu auf. Mit aktiven Fremdschlüsseln hätte das Löschen der alten `Users`-Tabelle per `ON DELETE CASCADE` **alle Zeiteinträge gelöscht**. Das von drizzle-kit erzeugte `PRAGMA foreign_keys=OFF` hilft nicht: SQLite ignoriert es innerhalb einer Transaktion. Die Migration schaltet sie deshalb außerhalb ab und prüft danach `foreign_key_check`; ein Test belegt den Fall (Mutation färbt ihn rot) |
+| Atomarität | Verletzt ein Altdatensatz eine Regel, bleibt die Datei byte-gleich, das Log nennt die Regel |
+| `npm audit` | Laufzeit-Abhängigkeiten: **0 Funde** (vorher 27, davon 1 kritisch über `sqlite3`/`tar`); in der CI jetzt blockierend |
+| Totcode | `DateService` von 17 auf 4 Funktionen, Model-Hilfsfunktionen ohne Aufrufer, doppelte Minijob-Logik |
+| Betrieb | Image baut TypeScript in einer eigenen Stufe; Wartungsbefehle heißen `node dist/scripts/…` (Compose, CI, Anleitung angepasst); `.env` und DB-Pfad unabhängig vom Startordner |
+| Prüfung | 91 Unit-/Integrationstests (neu: 5 Migrationstests), 124 Smoke-Checks mit Schema-Prüfung jeder Antwort (alle 48 Endpunkte); Typprüfung für Code und Tests; kompilierter Server gegen eine übernommene Bestands-Datenbank gestartet, CLI und Sicherung aus `dist/` ausgeführt |
+
+Bewusst offen: ESLint für das Backend, Sitzungsübersicht/„überall abmelden“ in der Oberfläche, Passwort-vergessen per
+E-Mail, Admin-Korrekturen direkt an Einträgen, mehrere Einträge pro Tag (heute eindeutiger Index `unique_user_date`).

@@ -128,14 +128,14 @@ Habt ihr eine **eigene Firmen-CA** oder ein Zertifikat? Dateien in `deploy/certs
 ## 5. Ersten Administrator anlegen
 
 ```bash
-docker compose exec backend node scripts/create-admin.js
+docker compose exec backend node dist/scripts/create-admin.js
 ```
 
 Das Skript fragt E-Mail, Name und Passwort (verdeckt) ab; mit `--generate` entsteht ein Zufallspasswort, das einmal angezeigt
 wird. Dann unter `https://<DOMAIN>/login` anmelden. Passwort vergessen:
 
 ```bash
-docker compose exec backend node scripts/reset-password.js admin@firma.de
+docker compose exec backend node dist/scripts/reset-password.js admin@firma.de
 ```
 
 Danach im Portal: **Minijob** → Grenze eintragen (gültig ab dem ersten Arbeitstag; ohne Eintrag rechnet das System mit einem
@@ -156,7 +156,7 @@ Der Dienst `backup` sichert **sofort beim Start** und danach **täglich um 02:30
 - Details: `docker compose logs backup`.
 
 ```bash
-docker compose exec backup node scripts/backup-db.js   # sofort eine Sicherung auslösen
+docker compose exec backup node dist/scripts/backup-db.js   # sofort eine Sicherung auslösen
 docker compose exec backup ls -l /backups              # lokale Sicherungen
 ls -l /mnt/nas-zeiterfassung                           # Sicherungen auf dem NAS
 ```
@@ -191,7 +191,7 @@ Volume erhalten; bei einer defekten Sicherung bricht der Vorgang ab, ohne etwas 
 - [ ] Admin-Startseite zeigt unter *Datensicherung* „Sicherung und NAS-Ablage sind aktuell“.
 - [ ] Auf dem NAS liegt eine Datei `timetracking-….db`.
 - [ ] **NAS-Ausfall simulieren:** NAS-Freigabe aushängen (`sudo umount /mnt/nas-zeiterfassung`), `docker compose exec backup node
-  scripts/backup-db.js` → Fehler „NAS nicht eingebunden“, Banner auf der Admin-Startseite. Wieder einhängen (`sudo mount -a`),
+  dist/scripts/backup-db.js` → Fehler „NAS nicht eingebunden“, Banner auf der Admin-Startseite. Wieder einhängen (`sudo mount -a`),
   Sicherung erneut auslösen → Banner verschwindet.
 - [ ] **Wiederherstellung auf einem zweiten Rechner/Testsystem einmal komplett durchgespielt.** Eine Sicherung, die nie
   wiederhergestellt wurde, ist nur eine Vermutung.
@@ -208,8 +208,17 @@ cd deploy
 docker compose up -d --build
 ```
 
-Schema-Änderungen laufen beim Start des Backends automatisch; vorher legt es eine Sicherung der Datenbankdatei an. Vor
-größeren Updates zusätzlich: `docker compose exec backup node scripts/backup-db.js`.
+Schema-Änderungen laufen beim Start des Backends automatisch (versionierte Migrationen, alle in einer Transaktion);
+vorher legt es eine Sicherung der Datenbankdatei an (`/data/timetracking.db.pre-migration-<Zeit>`). Vor größeren
+Updates zusätzlich: `docker compose exec backup node dist/scripts/backup-db.js`.
+
+> **Einmalig beim Update auf Phase 2 Teil 2 (TypeScript/Drizzle):** Die bestehende Datenbank wird beim ersten Start
+> übernommen und bekommt Prüfregeln (z. B. nur gültige Rollen und Pausen). Im Log steht dann
+> „Bestehende Datenbank (Sequelize) wird in die versionierten Migrationen übernommen“ und „Migrationen angewendet“.
+> Verletzt ein Altdatensatz eine Regel, startet das Backend ohne Datenbank (`/health` meldet 503), die Datei bleibt
+> **unverändert** und das Log nennt die Regel (z. B. `users_role_check`). Dann die Zeile korrigieren oder das
+> Update zurücknehmen (`git checkout <vorheriger Stand>` und neu bauen). Wartungsbefehle im Container heißen jetzt
+> `node dist/scripts/…` statt `node scripts/…`.
 
 ## 9. Fehlersuche
 
@@ -249,7 +258,8 @@ werden nach Anzahl (30 lokal, 90 auf dem NAS), nicht nach Rechtsfrist rotiert.
 2. `backend/.env` aus `backend/.env.example` anlegen (`NODE_ENV=production`, Geheimnisse, `CORS_ORIGIN`, `DB_STORAGE` mit
    absolutem Pfad, `TRUST_PROXY=1` hinter einem Proxy).
 3. Frontend bauen: `cd frontend && NEXT_PUBLIC_API_URL=https://<DOMAIN> npm run build`, starten mit `npm start` (Port 3000).
-4. Backend starten: `cd backend && npm start` (Port 5000) über einen Prozessmanager (pm2, Windows-Dienst via NSSM).
+4. Backend bauen und starten: `cd backend && npm run build && npm start` (Port 5000) über einen Prozessmanager (pm2,
+   Windows-Dienst via NSSM). Nach jedem Update erneut `npm ci && npm run build`.
 5. Reverse-Proxy mit HTTPS davor (Caddy, nginx, IIS): `/api/*` → Port 5000, alles andere → Port 3000.
 6. Sicherung als Dauerprozess: `cd backend && OFFSITE_DIR=<NAS-Ordner> npm run db:backup:loop` (oder einzeln per
    Aufgabenplanung/Cron: `npm run db:backup`). Im NAS-Ordner die Datei `.zeiterfassung-offsite` anlegen.

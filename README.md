@@ -5,7 +5,7 @@ Zeiterfassungssystem für Minijob-/Stundenabrechnung mit getrenntem Frontend und
 | Bereich | Technologie | Pfad |
 |---|---|---|
 | Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind | `frontend/` |
-| Backend | Express 5, zod, Sequelize, SQLite, pino; REST-API `/api/v1` mit OpenAPI-Vertrag | `backend/` |
+| Backend | TypeScript, Express 5, zod, Drizzle + SQLite (better-sqlite3), pino; REST-API `/api/v1` mit OpenAPI-Vertrag | `backend/` |
 | Shared | Geteilte TypeScript-Typen (noch nicht eingebunden) | `shared/` |
 
 ## Schnellstart
