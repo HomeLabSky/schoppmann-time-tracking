@@ -1,12 +1,12 @@
 # Frontend – Architektur
 
-Next.js 15 (App Router) · React 19 · TypeScript (strict) · Tailwind CSS v4.
+Next.js 16 (App Router, Turbopack für Dev und Build) · React 19 · TypeScript (strict) · Tailwind CSS v4.
 **Desktop-first:** Die Website ist die Arbeitsoberfläche für Verwaltung und Zeiterfassung am Arbeitsplatz.
 Mobil arbeiten Mitarbeiter später über eine eigene App gegen dieselbe REST-API (siehe `BERICHT_MODERNISIERUNG.md`).
 
 ```bash
 npm run dev        # http://localhost:3000 (API-Adresse: NEXT_PUBLIC_API_URL in .env.local)
-npm run lint       # ESLint, 0 Warnungen erlaubt
+npm run lint       # ESLint-CLI (Flat Config, inkl. React-Compiler-Regeln), 0 Warnungen erlaubt
 npx tsc --noEmit   # Typecheck
 npm run build      # Produktions-Build
 npm run e2e        # Ende-zu-Ende-Tests (Playwright, startet eigenes Test-Backend)
@@ -59,3 +59,11 @@ src/
 Benutzer anlegen (inkl. Feldprüfung und Esc im Dialog), Arbeitszeit mit Pause erfassen, Periode abschließen und mit
 Begründung wieder öffnen, Protokolleintrag. Das Test-Backend (`backend/scripts/e2e-server.js`) startet mit einer
 Wegwerf-Datenbank und festen Testdaten. Lokal ohne Browser-Download: `PW_CHANNEL=msedge npm run e2e`.
+
+## Hinweise zu Next.js 16
+
+- `next lint` gibt es nicht mehr; `npm run lint` ruft ESLint direkt auf (`eslint.config.mjs`). ESLint bleibt auf v9, weil
+  `eslint-plugin-react` (über `eslint-config-next`) mit ESLint 10 noch nicht läuft.
+- `next dev` schreibt nach `.next/dev`, `next build` nach `.next` – Dev-Server und Build bzw. E2E-Tests stören sich nicht.
+- `AGENTS.md`/`CLAUDE.md` legt `next dev` an (Verweis auf die zur Version passende Doku unter `node_modules/next/dist/docs/`)
+  und gehören ins Repository.

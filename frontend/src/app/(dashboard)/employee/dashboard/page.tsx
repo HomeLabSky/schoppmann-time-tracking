@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ChevronLeft, ChevronRight, Clock, Euro, Lock, MoreHorizontal, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
@@ -20,15 +20,13 @@ import { TimeEntryDialog } from '@/components/features/time/time-entry-dialog'
 export default function EmployeeDashboard() {
   const { user } = useAuth()
   const periods = useMyPeriods()
-  const [month, setMonth] = useState('')
+  const [selectedMonth, setMonth] = useState('')
   const [dialog, setDialog] = useState<TimeRecord | 'new' | null>(null)
   const remove = useDeleteTimeEntry()
   const [confirm, confirmDialog] = useConfirm()
 
-  // Startwert: aktuelle Periode
-  useEffect(() => {
-    if (!month && periods.data) setMonth(periods.data.currentPeriod?.value ?? periods.data.periods.at(-1)?.value ?? '')
-  }, [month, periods.data])
+  // Ohne eigene Auswahl: aktuelle Periode
+  const month = selectedMonth || periods.data?.currentPeriod?.value || periods.data?.periods.at(-1)?.value || ''
 
   const sheet = useMyMonth(month)
   const data = sheet.data

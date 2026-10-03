@@ -4,7 +4,7 @@ Zeiterfassungssystem für Minijob-/Stundenabrechnung mit getrenntem Frontend und
 
 | Bereich | Technologie | Pfad |
 |---|---|---|
-| Frontend | Next.js 15 (App Router), React 19, TypeScript, Tailwind v4, TanStack Query, react-hook-form + zod | `frontend/` |
+| Frontend | Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind v4, TanStack Query, react-hook-form + zod | `frontend/` |
 | Backend | Express 4, Sequelize, SQLite, JWT in httpOnly-Cookies | `backend/` |
 
 Die Website ist **desktop-first**; mobil arbeiten Mitarbeiter später über eine eigene App gegen dieselbe REST-API.

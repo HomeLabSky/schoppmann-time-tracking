@@ -36,7 +36,8 @@ function handleSessionExpired(): void {
     return
   }
   if (typeof window !== 'undefined' && !/^\/(login|register)/.test(window.location.pathname)) {
-    window.location.href = '/login'
+    // Notfall-Weg, falls der AuthProvider (noch) nicht eingehängt ist: harter Wechsel zur Anmeldung
+    window.location.replace(new URL('/login', window.location.origin).href)
   }
 }
 

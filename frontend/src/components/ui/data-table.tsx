@@ -84,6 +84,9 @@ export function DataTable<T>({
     [searchText]
   )
 
+  // TanStack Table gibt nicht memoisierbare Funktionen zurück; der React Compiler überspringt diese Komponente
+  // bewusst (bekannte Einschränkung, funktional unkritisch).
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data,
     columns,
