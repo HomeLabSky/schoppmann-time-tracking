@@ -19,10 +19,19 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - name: Unit-, Integrations- und Smoke-Tests (temporäre SQLite-DB)
+      - name: Typprüfung, Unit-, Integrations- und Smoke-Tests (temporäre SQLite-DB)
         run: npm test
+      - name: Produktions-Build (TypeScript → dist/)
+        run: npm run build
+      - name: Schema und Migrationen deckungsgleich (keine ungenerierte Schemaänderung)
+        run: |
+          npx drizzle-kit check
+          npx drizzle-kit generate --name ci-drift-check | tee drift.log
+          if ! grep -q "No schema changes" drift.log; then
+            echo "::error::src/db/schema.ts wurde geändert, aber keine Migration erzeugt (npm run db:generate)"; exit 1
+          fi
       - name: Sicherheitsprüfung (nur Laufzeit-Abhängigkeiten, ab "high")
-        run: npm audit --omit=dev --audit-level=high || echo "::warning::npm audit meldet Funde (siehe Log)"
+        run: npm audit --omit=dev --audit-level=high
 
   frontend:
     runs-on: ubuntu-latest
@@ -91,22 +100,24 @@ jobs:
             -e JWT_SECRET="$TEST_JWT_SECRET" -e JWT_REFRESH_SECRET="$TEST_JWT_REFRESH" zeit-backend
           docker run -d --name fe -p 3000:3000 zeit-frontend
           for i in $(seq 1 30); do curl -fs http://localhost:5000/health && break; sleep 2; done
+          # /health ist erst 200, wenn Datenbank und Migrationen bereit sind (sonst 503) – das muss hier gelten
+          curl -fs http://localhost:5000/health || { echo "Backend ohne Datenbank (Migration fehlgeschlagen?)"; docker logs be; exit 1; }
           curl -fs http://localhost:5000/api/status
           curl -fs -o /dev/null http://localhost:3000/login
           echo "Backend- und Frontend-Container antworten"
 
       - name: Admin anlegen, Sicherung auf simuliertes NAS, Status
         run: |
-          docker exec be node scripts/create-admin.js --email=ci@example.de --name=CI --generate
-          docker exec be node scripts/backup-db.js
+          docker exec be node dist/scripts/create-admin.js --email=ci@example.de --name=CI --generate
+          docker exec be node dist/scripts/backup-db.js
           echo "--- Inhalt des simulierten NAS:"; ls -la nas-test
           ls nas-test | grep -q '^timetracking-.*\.db$'
-          docker exec be node scripts/backup-healthcheck.js
+          docker exec be node dist/scripts/backup-healthcheck.js
 
       - name: NAS nicht eingebunden → Fehler wird erkannt (Markierungsdatei fehlt)
         run: |
           rm nas-test/.zeiterfassung-offsite
-          if docker exec be node scripts/backup-db.js; then
+          if docker exec be node dist/scripts/backup-db.js; then
             echo "FEHLER: Sicherung meldete Erfolg, obwohl das NAS nicht eingebunden war"; exit 1
           fi
           # die lokale Sicherung bleibt erhalten, der Zustand ist aber nicht mehr gesund oder zumindest gewarnt
@@ -116,7 +127,7 @@ jobs:
       - name: Backup-Dienst läuft als Dauerprozess
         run: |
           docker run --rm -v "$PWD/nas-test:/nas" -e OFFSITE_DIR=/nas -e BACKUP_DIR=/backups -e TZ=Europe/Berlin zeit-backend \
-            timeout 20 node scripts/backup-loop.js 2>&1 | tee loop.log || true
+            timeout 20 node dist/scripts/backup-loop.js 2>&1 | tee loop.log || true
           grep -q "Nächste Sicherung um 02:30" loop.log
 
       - name: Container-Logs bei Fehlern

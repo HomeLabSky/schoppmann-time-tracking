@@ -73,7 +73,7 @@ services:
     build:
       context: ../backend
     restart: unless-stopped
-    command: ["node", "scripts/backup-loop.js"]
+    command: ["node", "dist/scripts/backup-loop.js"]
     environment:
       TZ: ${TZ:-Europe/Berlin}
       DB_STORAGE: /data/timetracking.db
@@ -88,7 +88,7 @@ services:
       # Auf dem Docker-Host eingebundene NAS-Freigabe (siehe deploy/README.md, Abschnitt 3)
       - ${NAS_BACKUP_DIR:?NAS_BACKUP_DIR fehlt in deploy/.env (Ordner der eingebundenen NAS-Freigabe)}:/nas
     healthcheck:
-      test: ["CMD", "node", "scripts/backup-healthcheck.js"]
+      test: ["CMD", "node", "dist/scripts/backup-healthcheck.js"]
       interval: 1h
       timeout: 10s
       start_period: 2m

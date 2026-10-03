@@ -11,3 +11,4 @@ backups
 test
 Dockerfile
 .dockerignore
+dist

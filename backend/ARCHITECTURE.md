@@ -1,8 +1,11 @@
 # Backend-Architektur
 
-Express-API für die Zeiterfassung. Die REST-API ist das Produkt: **Web-Oberfläche und (spätere) App sind zwei
-gleichberechtigte Clients**. Ziel der Struktur: klare Schichten, eine Wahrheit je Domäne, ein maschinenlesbarer
-Vertrag (OpenAPI), der aus dem Code entsteht.
+Express-API für die Zeiterfassung in **TypeScript (strict)** mit **SQLite über Drizzle/better-sqlite3**. Die REST-API
+ist das Produkt: **Web-Oberfläche und (spätere) App sind zwei gleichberechtigte Clients**. Ziel der Struktur: klare
+Schichten, eine Wahrheit je Domäne, ein maschinenlesbarer Vertrag (OpenAPI), der aus dem Code entsteht.
+
+Quelltext liegt in `src/`, `npm run build` erzeugt `dist/` (läuft im Container). Entwicklung (`npm run dev`), Tests und
+Smoke-Test laufen direkt aus `src/` über `tsx`.
 
 ## Schichten (von außen nach innen)
 
@@ -10,52 +13,58 @@ Vertrag (OpenAPI), der aus dem Code entsteht.
 HTTP-Request
    │
    ▼
-routes/        Routen-Definition mit Vertrag (lib/route.js): Berechtigung, Eingabe- und Antwort-Schema.
+routes/        Routen-Definition mit Vertrag (lib/route.ts): Berechtigung, Eingabe- und Antwort-Schema.
    │           KEINE Geschäftslogik – übersetzt nur HTTP ↔ Service-Aufruf.
    ▼
 services/      GESAMTE Geschäftslogik. Eine Klasse je Domäne. Wirft AppError('CODE', 'Meldung').
    ▼
-models/        Sequelize-Models (Persistenz) + Model-eigene Hooks.
+models/        Domänen-Helfer ohne Datenbank: Passwort-Hashing, Antwortform eines Kontos/Zeiteintrags,
+   │           abgeleitete Werte (Arbeitszeit, Verdienst aus dem eingefrorenen Satz).
    ▼
-SQLite (config/database.js)
+db/            schema.ts (Drizzle-Tabellen, Prüfregeln), client.ts (Verbindung, Transaktionen),
+   │           migrate.ts (versionierte Migrationen, Übernahme alter Datenbanken)
+   ▼
+SQLite-Datei (DB_STORAGE)
 ```
 
 Querschnitt:
 
 ```
 schemas/       zod-Schemas je Domäne: Eingaben (geprüft, normalisiert) und Antworten (dokumentiert, in Tests geprüft).
-lib/           errors.js (AppError, Statuscode je Fehlercode), route.js (Routen mit Vertrag), openapi.js
-               (OpenAPI-3.1-Dokument), logger.js (pino, ohne personenbezogene Daten).
-middleware/    auth.js (Cookie oder Bearer), csrf.js, errorHandler.js (einziges Fehlerformat), security.js
-               (Helmet/CORS/Content-Type), rateLimiting.js.
-config/        Umgebungsvariablen, mit zod geprüft (ungültig = kein Start) + DB-Verbindung.
-utils/         Reine Hilfen: billing.js (Geldlogik), clock.js, authCookies.js, Sicherung.
+lib/           errors.ts (AppError, Statuscode je Fehlercode), route.ts (Routen mit Vertrag, typisiertes req.valid),
+               openapi.ts (OpenAPI-3.1-Dokument), logger.ts (pino, ohne personenbezogene Daten), paths.ts/env.ts
+               (Backend-Ordner und .env unabhängig vom Startverzeichnis).
+middleware/    auth.ts (Cookie oder Bearer), csrf.ts, errorHandler.ts (einziges Fehlerformat), security.ts
+               (Helmet/CORS/Content-Type), rateLimiting.ts.
+config/        Umgebungsvariablen, mit zod geprüft (ungültig = kein Start).
+utils/         Reine Hilfen: billing.ts (Geldlogik), clock.ts, authCookies.ts, Sicherung (dbBackup.ts, backupStatus.ts).
+scripts/       CLI: create-admin, reset-password, backup-db/-loop/-healthcheck, restore-db, openapi.
 ```
 
 ## Einstiegspunkte
 
 | Datei | Verantwortung |
 |---|---|
-| `app.js` | Baut die Express-App auf (Request-Log, Sicherheit, Routen, Error-Handler). Kein `listen()`. |
-| `server.js` | DB-Initialisierung, startet den HTTP-Listener, Prozess-Lifecycle. |
-| `routes/index.js` | Registriert alle Domänen-Router; eingehängt unter `/api/v1` und (Alias) `/api`. |
-| `models/index.js` | Model-Beziehungen und `initDatabase()` (Migrationen vor und nach `sync()`). |
+| `src/app.ts` | Baut die Express-App auf (Request-Log, Sicherheit, Routen, Error-Handler). Kein `listen()`. |
+| `src/server.ts` | DB-Initialisierung, startet den HTTP-Listener, Prozess-Lifecycle. |
+| `src/routes/index.ts` | Registriert alle Domänen-Router; eingehängt unter `/api/v1` und (Alias) `/api`. |
+| `src/db/index.ts` | `initDatabase()`: Verbindung, Migrationen, Minijob-Aktivkennzeichen. |
 
 ## Domänen / Modul-Landkarte
 
 Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 
-| Domäne | Route | Service | Model |
+| Domäne | Route | Service | Tabellen |
 |---|---|---|---|
-| Anmeldung (Web + App) | `routes/auth.js` (`/auth`) | `authService.js`, `sessionService.js`, `loginThrottle.js`, `userService.js` | `User`, `Session`, `LoginThrottle` |
-| Zeiterfassung | `routes/timetracking.js` (`/timetracking`) | `timeEntryService.js`, `dateService.js` | `TimeEntry` |
-| Mitarbeiter (Selbstbedienung) | `routes/employee.js` (`/employee`) | `userService.js` | `User`, `MinijobSetting` |
-| Benutzerverwaltung | `routes/admin.js` (`/admin`) | `userService.js` | `User` |
-| Minijob-Grenzen | `routes/minijob.js` (`/admin/minijob`) | `minijobService.js` | `MinijobSetting` |
-| Zeitnachweise & Monatsabschluss | `routes/timesheets.js` (`/admin/timesheets`) | `periodService.js`, `periodGuard.js` | `PeriodClosure` |
-| Änderungsprotokoll (nur lesend) | `routes/audit.js` (`/admin/audit`) | `auditService.js` | `AuditLog` |
-| Systemstatus | `routes/system.js` (`/admin/system`) | `utils/backupStatus.js` | – |
-| Wartung (nur lokal, kein HTTP) | `scripts/create-admin.js`, `scripts/reset-password.js` | `models/` direkt | `User` |
+| Anmeldung (Web + App) | `routes/auth.ts` (`/auth`) | `authService.ts`, `sessionService.ts`, `loginThrottle.ts`, `userService.ts` | `Users`, `Sessions`, `LoginThrottles` |
+| Zeiterfassung | `routes/timetracking.ts` (`/timetracking`) | `timeEntryService.ts`, `dateService.ts` | `TimeEntries` |
+| Mitarbeiter (Selbstbedienung) | `routes/employee.ts` (`/employee`) | `userService.ts`, `minijobService.ts` | `Users`, `MinijobSettings` |
+| Benutzerverwaltung | `routes/admin.ts` (`/admin`) | `userService.ts` | `Users` |
+| Minijob-Grenzen | `routes/minijob.ts` (`/admin/minijob`) | `minijobService.ts` | `MinijobSettings` |
+| Zeitnachweise & Monatsabschluss | `routes/timesheets.ts` (`/admin/timesheets`) | `periodService.ts`, `periodGuard.ts` | `PeriodClosures` |
+| Änderungsprotokoll (nur lesend) | `routes/audit.ts` (`/admin/audit`) | `auditService.ts` | `AuditLogs` |
+| Systemstatus | `routes/system.ts` (`/admin/system`) | `utils/backupStatus.ts` | – |
+| Wartung (nur lokal, kein HTTP) | `scripts/create-admin.ts`, `scripts/reset-password.ts` | Drizzle direkt | `Users` |
 
 ## API-Vertrag (verbindlich)
 
@@ -66,7 +75,7 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 - Erfolg: `{ success: true, message, data }`
 - Fehler: `{ success: false, error, code }`, bei Eingabefehlern zusätzlich `fields` (Meldung je Feld) und `details`;
   bei `ACCOUNT_LOCKED` `retryAfter` (+ Header `Retry-After`); bei `INTERNAL_ERROR` die `requestId`.
-  Alle Codes mit Status stehen in `lib/errors.js` (`ERROR_STATUS`) und im OpenAPI-Schema `Error`.
+  Alle Codes mit Status stehen in `lib/errors.ts` (`ERROR_STATUS`) und im OpenAPI-Schema `Error`.
 - `401` heißt ausschließlich „nicht (mehr) angemeldet“ – der Client erneuert dann still die Sitzung. Fachliche
   Ablehnungen bei bestehender Sitzung (z. B. `INVALID_CURRENT_PASSWORD`) sind **nie 401**, sondern 400/403/409.
 - **Statuscodes und `code`-Werte dürfen nicht stillschweigend geändert werden** – sie sind Teil des Vertrags.
@@ -74,16 +83,39 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 ## Konventionen
 
 - **Neue Route** = `api.get/post/…(pfad, { summary, auth, params, query, body, response, status, errors }, handler)`
-  in `routes/*.js` (siehe `lib/route.js`). Der Handler bekommt geprüfte Eingaben in `req.valid` und gibt
+  in `routes/*.ts` (siehe `lib/route.ts`). Der Handler bekommt geprüfte Eingaben in `req.valid` und gibt
   `{ data, message, status }` zurück. Unbekannte Body-Felder werden entfernt (kein Mass-Assignment).
 - **Berechtigung** steht an der Route (`auth: 'public' | 'user' | 'employee' | 'admin'`); `/admin/*` prüft zusätzlich
   am Einhängepunkt.
-- **Fehler**: `throw new AppError('CODE', 'Meldung')` – neue Codes in `lib/errors.js` mit Status eintragen. Kein
-  try/catch in Routen: Express 5 reicht Fehler an `middleware/errorHandler.js` weiter.
+- **Fehler**: `throw new AppError('CODE', 'Meldung')` – neue Codes in `lib/errors.ts` mit Status eintragen (der Typ
+  `ErrorCode` lässt nur eingetragene Codes zu). Kein try/catch in Routen: Express 5 reicht Fehler an
+  `middleware/errorHandler.ts` weiter.
 - **Antwort-Schemas** werden im Smoke-Test (`VALIDATE_RESPONSES=1`) gegen jede echte Antwort geprüft; er listet
   Endpunkte ohne geprüfte Erfolgsantwort auf.
-- **Logging** nur über `lib/logger.js` bzw. `req.log`; keine E-Mail-Adressen, Namen oder Tokens, Personen als ID.
+- **Logging** nur über `lib/logger.ts` bzw. `req.log`; keine E-Mail-Adressen, Namen oder Tokens, Personen als ID.
   `console` nur in CLI-Skripten.
+- **Datenbankzugriff** nur in Services (und CLI-Skripten) über Drizzle (`db()`); Routen fragen nie direkt ab.
+- **Transaktionen** sind synchron (better-sqlite3): `transaction(() => { … })` aus `db/client.ts`, darin **kein `await`**
+  (Passwort-Hashing u. Ä. vorher erledigen). Änderung und Protokolleintrag gehören in dieselbe Transaktion.
+
+## Datenbank und Migrationen
+
+- **Schema** in `src/db/schema.ts` (Tabellen, Indizes, Fremdschlüssel, **Prüfregeln/CHECK**: Rollen, Anmeldeweg,
+  Pausen 0–480, Uhrzeiten `HH:MM:SS`, Datum `YYYY-MM-DD`, Grenzen ≥ 0, Zeiträume Ende nach Beginn …). Was die
+  zod-Schemas an der API prüfen, sichert die Datenbank ein zweites Mal ab – auch gegen Fehler im Code und direktes SQL.
+- **Speicherformate** wie zur Sequelize-Zeit (bestehende Datenbanken laufen ohne Umwandlung weiter): Zeitpunkte als
+  Text `YYYY-MM-DD HH:MM:SS.SSS +00:00` (UTC), Wahrheitswerte 0/1 – siehe `src/db/columns.ts`.
+- **Schema ändern:** `src/db/schema.ts` anpassen → `npm run db:generate` → neue Datei in `drizzle/` prüfen und
+  einchecken. Eigenes SQL (Trigger, Datenbereinigung): `npx drizzle-kit generate --custom --name <name>`.
+  Die CI schlägt fehl, wenn Schema und Migrationen auseinanderlaufen.
+- **Anwenden** beim Start (`src/db/migrate.ts`): Sicherungskopie `*.pre-migration-<Zeit>`, dann **alle ausstehenden
+  Migrationen in einer Transaktion** mit ausgeschalteten Fremdschlüsseln (der Tabellen-Neuaufbau für CHECK-Regeln
+  würde sonst per ON DELETE CASCADE abhängige Zeilen löschen) und anschließender `foreign_key_check`. Scheitert ein
+  Schritt – z. B. weil Altdaten eine Prüfregel verletzen –, bleibt die Datei unverändert und der Server nennt die Regel.
+- **Übernahme alter Datenbanken:** Hat eine Datenbank Tabellen, aber noch keinen Migrationsverlauf
+  (`__drizzle_migrations`), stammt sie aus der Sequelize-Zeit. Fehlende Spalten/Tabellen/Indizes werden ergänzt, die
+  Ausgangsmigration `0000_baseline` als angewendet eingetragen, danach laufen die weiteren Migrationen normal.
+  Getestet mit einem Abzug einer echten Sequelize-Datenbank (`test/fixtures/legacy-sequelize.sql`).
 
 ## Anmeldung (Web: Cookies, App: Bearer-Token)
 
@@ -111,12 +143,12 @@ Beide Cookies: `HttpOnly`, `SameSite=Strict`, in Produktion `Secure`.
 - **Authorization-Header hat Vorrang**: Ist er vorhanden, werden Cookies ignoriert (kein Rückfall). Solche Anfragen
   brauchen keinen CSRF-Header – eine fremde Webseite kann den Header ohne CORS-Freigabe nicht setzen, und
   `Authorization` ist in CORS nicht freigegeben.
-- **Prüfung bei jeder Anfrage** (`middleware/auth.js`): Sitzung nicht beendet, Benutzer aktiv; Rolle, Name und E-Mail
+- **Prüfung bei jeder Anfrage** (`middleware/auth.ts`): Sitzung nicht beendet, Benutzer aktiv; Rolle, Name und E-Mail
   kommen aus der Datenbank. **Abmelden, Sperren und Rollenänderungen wirken sofort.**
-- **Rotation mit Wiederverwendungs-Erkennung** (`services/sessionService.js`): Jede Erneuerung ersetzt das Token.
+- **Rotation mit Wiederverwendungs-Erkennung** (`services/sessionService.ts`): Jede Erneuerung ersetzt das Token.
   Taucht ein bereits ausgetauschtes Token später wieder auf, gilt es als gestohlen → die ganze Sitzung wird beendet
   (`REFRESH_TOKEN_REUSED`). Innerhalb von 10 Sekunden gilt ein altes Token nur als „Erneuerung läuft“ (`409`).
-- **Konto-Sperre** (`services/loginThrottle.js`): nach 5 Fehlversuchen je E-Mail-Adresse 15 Minuten
+- **Konto-Sperre** (`services/loginThrottle.ts`): nach 5 Fehlversuchen je E-Mail-Adresse 15 Minuten
   (`429 ACCOUNT_LOCKED`, `Retry-After`), jede weitere Serie doppelt so lange, höchstens 24 h. Während der Sperre wird
   das Passwort nicht geprüft. Gezählt wird auch für unbekannte Adressen (die Sperre verrät nicht, ob ein Konto
   existiert); unbekannte Adressen kosten dieselbe Rechenzeit wie falsche Passwörter. Erfolgreiche Anmeldung und
@@ -138,10 +170,10 @@ Weitere eindeutige Konflikte: `ENTRY_EXISTS` (Tag schon erfasst), `PERIOD_CLOSED
 
 ## Rechenlogik (Abrechnung)
 
-Die Geldlogik liegt als **reine Funktionen** in `utils/billing.js` (kein DB-Zugriff, keine
+Die Geldlogik liegt als **reine Funktionen** in `utils/billing.ts` (kein DB-Zugriff, keine
 Systemzeit): Arbeitsminuten, Verdienst, Fachregeln für Zeiteinträge, Auflösung der
 Minijob-Grenze zu einem Stichtag und die Übertrag-Verrechnung (`foldCarry`). Beträge werden
-in **ganzen Cent** gerechnet; erst die API-Antwort wandelt in Euro um. `utils/clock.js`
+in **ganzen Cent** gerechnet; erst die API-Antwort wandelt in Euro um. `utils/clock.ts`
 liefert den Kalendertag in `Europe/Berlin` (nie `toISOString()` für „heute“ verwenden).
 
 Wichtige Regeln:
@@ -153,8 +185,7 @@ Wichtige Regeln:
   bleibt `0`.
 - Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
 
-Schema-Änderungen für bestehende Datenbanken: `models/migrations.js` (idempotent; neue Spalten vor `sync()`,
-Datenpflege danach; legt vor der ersten Änderung eine Sicherungskopie der DB-Datei an).
+Schema-Änderungen: siehe *Datenbank und Migrationen*.
 
 ## Änderungsprotokoll (Audit-Log)
 
@@ -164,8 +195,8 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 
 - **Gleiche Transaktion:** `AuditService.record(..., { transaction })` läuft zusammen mit der Änderung. Schlägt
   eine von beiden fehl, passiert keine – es gibt nie eine Änderung ohne Eintrag.
-- **Unveränderlich:** Model-Hooks verhindern Update/Delete; zusätzlich brechen SQLite-Trigger
-  (`auditlogs_no_update` / `auditlogs_no_delete`, angelegt in `models/migrations.js`) jedes UPDATE/DELETE – auch
+- **Unveränderlich:** SQLite-Trigger (`auditlogs_no_update` / `auditlogs_no_delete`, Migration
+  `drizzle/0001_audit_triggers_and_cleanup.sql`) brechen jedes UPDATE/DELETE ab – auch
   bei direktem SQL. Für eine gewollte Bereinigung müssen die Trigger bewusst entfernt werden.
 - **Keine Geheimnisse:** Snapshots enthalten nie Passwörter; `stripSecrets` entfernt zusätzlich Felder wie
   `password` und `token` aus allen Einträgen.
@@ -176,7 +207,7 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 ## Monatsabschluss
 
 `PeriodClosure` hält je (Mitarbeiter, Abrechnungsperiode) die eingefrorenen Zahlen (Minuten, Verdienst, Grenze,
-Übertrag ein/aus, Auszahlung). Regeln (`services/periodService.js`):
+Übertrag ein/aus, Auszahlung). Regeln (`services/periodService.ts`):
 
 - Abschluss erst **nach Periodenende** und nur, wenn frühere Perioden **mit Einträgen** bereits abgeschlossen sind
   (der Übertrag baut aufeinander auf).
@@ -190,15 +221,19 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 
 ## Tests
 
-- `npm test` führt alles aus: `npm run test:unit` (`test/*.test.js`, Node-Testrunner) und
-  `npm run smoke` (End-to-End gegen die HTTP-API).
-- `test/billing.test.js`: tabellengetriebene Tests der reinen Rechenlogik.
-- `test/timeEntryService.test.js`: Integrationstests gegen eine temporäre SQLite-DB (Pause,
+- `npm test` führt alles aus: `npm run typecheck` (Code strikt, Tests), `npm run test:unit` (`test/*.test.ts`,
+  Node-Testrunner über tsx) und `npm run smoke` (End-to-End gegen die HTTP-API, `test/smoke.ts`).
+- Jede Testdatei bekommt eine eigene, frische SQLite-Datei (`test/env/unit-env.ts` als erster Import);
+  Datensätze für Ausgangslagen legen die Helfer in `test/helpers.ts` direkt an.
+- `test/billing.test.ts`: tabellengetriebene Tests der reinen Rechenlogik.
+- `test/timeEntryService.test.ts`: Integrationstests gegen eine temporäre SQLite-DB (Pause,
   eingefrorener Stundensatz, Grenze je Periode, Monatsende, Periode 22.–21., Fachregeln).
-- `test/sessions.test.js`: Sitzungen – Rotation, Wiederverwendungs-Erkennung, Ablauf, Widerruf, Besitznachweis beim Abmelden.
-- `test/audit-closure.test.js`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
+- `test/sessions.test.ts`: Sitzungen – Rotation, Wiederverwendungs-Erkennung, Ablauf, Widerruf, Besitznachweis beim Abmelden.
+- `test/audit-closure.test.ts`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
   eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung.
-- `test/phase2-api.test.js`: Konto-Sperre (Eskalation, Verfall), App-Sitzungen (Laufzeit, Weg-Bindung), idempotente
+- `test/phase2-api.test.ts`: Konto-Sperre (Eskalation, Verfall), App-Sitzungen (Laufzeit, Weg-Bindung), idempotente
   Anlage, Fehlerformat, CSRF-Ausnahmen, Konfigurationsprüfung, OpenAPI-Dokument aktuell.
+- `test/migrate.test.ts`: Übernahme einer Sequelize-Datenbank ohne Datenverlust (auch sehr alte Stände), Prüfregeln
+  aktiv, zweiter Start ohne Änderung, atomarer Abbruch bei Altdaten, die eine Prüfregel verletzen.
 - Smoke-Test: prüft jede Erfolgsantwort gegen ihr Schema und listet Endpunkte ohne Erfolgsfall auf.
 - Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.
