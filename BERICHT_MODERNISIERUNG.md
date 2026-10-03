@@ -350,3 +350,97 @@ Bewusst offen: Lauf auf dem echten Server/NAS (Abnahme-Liste in `deploy/README.m
 
 Bewusst offen: Konto-Sperre nach Fehlversuchen (heute nur Begrenzung pro IP), Verwaltung eigener Sitzungen/„überall abmelden“
 in der Oberfläche, Passwort-vergessen-Ablauf per E-Mail.
+
+---
+
+## Kritische Prüfung: Architektur & Oberfläche im Enterprise-Maßstab (03.10.2026)
+
+Basis: `main` nach Cookie-Login (Commit `9cd9df0`). Die Anwendung lief lokal mit Wegwerf-Datenbank und Testkonten. Geprüft
+wurde als Admin und als Mitarbeiter im Browser, am Desktop und in Handybreite (375 px). Zusätzlich liefen `tsc`, ESLint,
+Unit-Tests und `npm audit`.
+
+### Gesamturteil
+
+| Bereich | Urteil |
+|---|---|
+| Fachlogik & Sicherheit (Backend) | **gut**: Sitzungen, Änderungsprotokoll, Monatsabschluss, Cent-Rechnung; 74/74 Tests grün |
+| Technik Backend | **veraltet**: sauber geschichtet, aber JavaScript, Express 4, Sequelize mit `sync()`, Fehler als Text `CODE:Nachricht`, `console.log` statt Logger, keine API-Doku |
+| Frontend | **Prototyp-Niveau**, für den Enterprise-Bereich nicht vorzeigbar; größte Baustelle |
+
+### Oberfläche (im Browser bestätigt)
+
+| # | Befund |
+|---|---|
+| U1 | **Dialoge mit deckend schwarzem Hintergrund**: `bg-opacity-50` gibt es in Tailwind v4 nicht mehr (Annahme aus 4.4 damit bestätigt). Kein `role="dialog"`, Esc schließt nicht, kein Fokus-Management |
+| U2 | **Handybreite**: Navigation verschwindet ohne Ersatz; Periodenwahl und „Neue Arbeitszeit erfassen“ ragen aus dem Bild; Menü-Knopf im Admin-Kopf ohne Funktion. *Einordnung siehe Entscheidung unten.* |
+| U3 | **Uneinheitliche Zahlen**: „128.25 €“ / „9.5h“ (Dashboard) neben „74,25 €“ (Tabelle); „13.5€“ in der Benutzerliste |
+| U4 | **Stille Ersatz-Grenze**: Ohne Minijob-Einstellung meldet die Minijob-Seite „Keine aktuelle Einstellung“, das Dashboard „N/A“ – die Zeitnachweise rechnen aber still mit **550 €** (`DEFAULT_LIMIT_CENTS`). Ein Monatsabschluss würde mit einer nie festgelegten Grenze festgeschrieben |
+| U5 | **Test-Elemente im Produktivbetrieb**: Karte „System-Test / Test starten“ (Admin-Start), Knopf „API Test“ (Benutzerverwaltung) |
+| U6 | **Toter Link**: „Einstellungen“ → `/employee/settings` = 404; Mitarbeiter können ihr Passwort im Portal nicht ändern, obwohl das Backend es anbietet |
+| U7 | **Barrierefreiheit**: Login-Felder ohne verknüpftes Label (Screenreader liest den Platzhalter), im ganzen Frontend 5× `aria-`, 7× `htmlFor`; Löschen per `confirm()` |
+| U8 | **Kein durchgängiges Erscheinungsbild**: Seitenköpfe mal als Karte, mal frei; Admin `gray` (260×), Mitarbeiter `slate` (96×), `blue-600` 34× fest; kein Dunkelmodus; Logo als 1,1-MB-PNG; Footer „© 2024“ |
+| U9 | **Fehlende Enterprise-Standards**: Tabellen ohne Suche/Filter/Sortierung/Paginierung, kein CSV/PDF-Export, keine Toasts, keine Lade-Skelette; Zeitnachweise nur je Mitarbeiter, keine Übersicht „offen/abgeschlossen“ über alle |
+
+### Frontend-Architektur (gemessen)
+
+- **0 wiederverwendbare Komponenten**: `components/` enthält nur leere Ordner; 15 Seiten mit 4.060 Zeilen, `admin/users` 813, `admin/minijob` 763.
+- **Server-Daten von Hand**: 77× `useState`, 30× `useEffect`, kein Cache-/Query-Layer.
+- **Alles Client-Komponenten**: alle Layouts `'use client'`, Login-Schutz dreifach im Browser, keine Next-Middleware.
+- **Installiert, aber ungenutzt**: `lucide-react`, `date-fns` (0 Importe); stattdessen 49 kopierte Inline-SVGs.
+- **Altlasten**: 39× `any`, 85 Lint-Warnungen, 24 `console.log` im Browser-Code, Prototyp-Kommentare („VERBESSERTE VERSION“, `// ✅ ÄNDERUNGEN`), `shared/` weiterhin von niemandem importiert, keine Frontend-Tests.
+
+### Backend-Architektur
+
+- JavaScript statt TypeScript, Express 4, Fehler als Text `CODE:Nachricht` (per Split geparst).
+- `sequelize.sync()` + handgeschriebene Migrationen; **Enum-Werte werden in SQLite nicht erzwungen** (eine ungültige Rolle `employee` wurde beim Test ohne Fehler gespeichert).
+- 48× `console.log` mit Emojis in Routen/Services, teils mit E-Mail-Adressen; keine OpenAPI.
+- `npm audit --omit=dev`: **Backend 27 Funde (1 kritisch, 16 hoch)** – kritisch ist `tar` über `sqlite3`/`node-gyp`, hoch u. a. `express`, `sequelize`, `express-rate-limit`. Frontend: 2 (1 hoch, 1 mittel).
+
+### Entscheidung: mobile Nutzung über eigene App (03.10.2026)
+
+Mitarbeiter sollen **mobil ausschließlich über eine später entwickelte App** arbeiten. Daraus folgt:
+
+- Die **Website ist eine Desktop-Anwendung** (Verwaltung, Prüfung, Abschluss, Zeiterfassung am Arbeitsplatz). Eine mobile
+  Variante der Website ist **nicht erforderlich**. Das Zielbild „mobile-first“ für Mitarbeiter in 5.2 entfällt; U2 wird nur
+  so weit behoben, dass schmale Desktop-Fenster (ab ca. 1024 px, Split-Screen) nicht abschneiden.
+- Die **Trennung Frontend/Backend wird dadurch zum Kern der Architektur**: Die REST-API ist das Produkt, Web und App sind zwei
+  gleichberechtigte Clients. Konsequenzen für Phase 2/3:
+  - **API-Vertrag maschinenlesbar** (OpenAPI aus zod-Schemas in `shared/`), damit die App einen generierten Client nutzen kann.
+  - **Anmeldung für die App**: httpOnly-Cookies mit `SameSite=Strict` passen zum Browser, nicht zu nativen Apps. Für die App
+    braucht es einen zweiten Weg auf derselben Sitzungs-Tabelle (z. B. Bearer-Access-Token + Refresh-Token im sicheren
+    Gerätespeicher, gleiche Rotation/Wiederverwendungs-Erkennung). Die CSRF-Prüfung gilt dann nur für Cookie-Anfragen.
+  - **API-Versionierung** (`/api/v1`), weil installierte App-Versionen nicht sofort aktualisiert werden.
+  - **Fachregeln ausschließlich serverseitig** (bereits weitgehend umgesetzt): Die App darf keine Rechenlogik duplizieren.
+  - **Offline-Erfassung in der App** braucht idempotente Anlage (Client-ID je Eintrag) und eindeutige Konfliktmeldungen
+    (`PERIOD_CLOSED`, `ENTRY_EXISTS`).
+
+### Angepasster Plan
+
+1. **Sofortmaßnahmen** (U1, U3–U7 und U2 nur für schmale Desktop-Fenster) – siehe Status unten.
+2. **Frontend neu aufbauen (Phase 3, desktop-first)**: Designsystem mit Tokens (shadcn/ui auf Tailwind v4), App-Shell mit
+   Seitenleiste, TanStack Query, react-hook-form + zod aus `shared/`, Daten-Tabellen mit Suche/Filter/Sortierung/Export,
+   Middleware-Login-Schutz, Toasts, Dunkelmodus, Playwright-Tests. Mobile Layouts nur als „bricht nicht“.
+3. **Backend als App-taugliche API (Phase 2)**: TypeScript, Express 5, zod + OpenAPI, `/api/v1`, Token-Anmeldung für die App,
+   pino-Logging ohne personenbezogene Daten, `better-sqlite3` + Drizzle mit versionierten Migrationen (beseitigt die
+   kritische `sqlite3`/`tar`-Kette), DB-seitige Prüfungen (CHECK) für Enums.
+
+### Status Sofortmaßnahmen (Branch `claude/modern-architecture-ui-review-57b766`)
+
+| Punkt | Stand |
+|---|---|
+| U1 Dialoge | gemeinsame Komponente `components/ui/Modal.tsx`: halbtransparenter Hintergrund, `role="dialog"`/`aria-modal`, Überschrift als Name, Esc und Klick daneben schließen, Fokus bleibt im Dialog und kehrt zurück. Alle 6 Dialoge (Benutzer, Minijob, Zeitnachweise) umgestellt |
+| U2 Breite | nur für schmale Desktop-Fenster: Werkzeugleiste der Zeiteinträge bricht um (geprüft bei 1024 und 800 px); Menü-Knopf ohne Funktion entfernt, Navigation immer sichtbar mit Markierung der aktiven Seite (`aria-current`) |
+| U3 Zahlen | einheitlich über `Intl` (`formatCurrency`, neu `formatHours`): „128,25 €“, „9,50 Std.“, „13,50 €“; doppelte lokale Formatierer entfernt |
+| U4 Ersatz-Grenze | API meldet `summary.minijobLimitMissing`, wenn für die Periode oder eine frühere offene Periode im Übertrag keine Grenze gilt; **Abschluss wird abgelehnt** (`409 MINIJOB_LIMIT_MISSING`). Oberfläche: Warnung + gesperrter Abschluss in *Zeitnachweise*, „Nicht hinterlegt“ auf der Admin-Startseite, Hinweis „vorläufig“ beim Mitarbeiter |
+| U4 Folgeänderung | Minijob-Grenzen dürfen jetzt **rückwirkend** beginnen. Vorher war das verboten – dann hätte sich eine Periode ohne Grenze nie abschließen lassen. Abgeschlossene Perioden behalten ihre eingefrorene Grenze, betroffen sind nur offene |
+| U5 Test-Elemente | „System-Test“-Karte (ersetzt durch „Zeitnachweise prüfen“) und „API Test“-Knopf entfernt; Debug-`console.log` aus Mitarbeiter-Dashboard, Benutzer- und Minijob-Seite entfernt |
+| U6 Einstellungen | neue Seite `/employee/settings`: Konto, Stundenlohn/Abrechnungszeitraum (nur lesend), Lohnzettel-E-Mail, Passwort ändern. Toter Link „Zum Employee Dashboard“ im Admin-Kopf entfernt (der Mitarbeiterbereich leitet Admins zurück) |
+| U7 Barrierefreiheit | Labels mit Feldern verknüpft (Login, Registrierung, Benutzer-, Minijob-, Zeiterfassungs-Formulare), `autocomplete` am Login, `confirm()` durch eigenen Bestätigungsdialog ersetzt (`useConfirm`), Meldungen mit `role="alert"`/`"status"` |
+| U8 (Teil) | Footer-Jahr dynamisch |
+| **Neu gefunden: Mitarbeiter konnten ihren Stundenlohn selbst ändern** | `PUT /api/employee/settings` übernahm `stundenlohn`, `abrechnungStart`, `abrechnungEnde` ungeprüft vom Mitarbeiter (der Smoke-Test prüfte das sogar als gewollt). Behoben: nur noch Lohnzettel-E-Mail, sonst `403 SETTINGS_ADMIN_ONLY` |
+| **Neu gefunden: falsches Passwort meldete ab** | `INVALID_CURRENT_PASSWORD` kam als 401; der Client deutete das als abgelaufene Sitzung und meldete ab. Jetzt 400; Regel in `backend/ARCHITECTURE.md` festgehalten (fachliche Ablehnungen nie 401) |
+| Prüfung | 76 Unit-/Integrationstests (neu: fehlende Grenze), 88 Smoke-Checks (neu: Abschluss ohne Grenze, Stundenlohn-Sperre, falsches Passwort ohne Abmeldung); `tsc`, ESLint ohne Fehler, `next build` erfolgreich; alle Punkte im Browser als Admin und Mitarbeiter durchgespielt |
+
+Bewusst offen (→ Phase 2/3): restliche Inline-SVGs und `gray`/`slate`-Mischung, Toasts statt Emoji-Statusmeldungen
+(`message.includes('✅')`), Logo als SVG/`next/image`, Tabellen mit Suche/Filter/Export, Übersicht aller Mitarbeiter in
+*Zeitnachweise*, Bereinigung der übrigen ~85 Lint-Warnungen.

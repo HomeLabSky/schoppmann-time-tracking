@@ -62,6 +62,8 @@ Das Frontend (`frontend/src/lib/api.ts`) hängt fest an diesem Format:
 - Fehler: `{ success: false, error, code }` mit passendem HTTP-Status
 - Auth: httpOnly-Cookies (siehe *Anmeldung*), keine Tokens im Body. Bei `401` versucht das Frontend still
   `POST /api/auth/refresh` und wiederholt die Anfrage einmal. `403` heißt: angemeldet, aber nicht berechtigt.
+  Fachliche Ablehnungen bei bestehender Sitzung (z. B. falsches aktuelles Passwort, `INVALID_CURRENT_PASSWORD`) sind
+  deshalb **nie 401**, sondern 400 – sonst würde der Client die Sitzung erneuern und abmelden.
 - Ändernde Anfragen (POST/PUT/PATCH/DELETE) brauchen den Header `X-CSRF-Protection: 1`.
 
 **Statuscodes und `code`-Werte dürfen bei Refactorings nicht stillschweigend

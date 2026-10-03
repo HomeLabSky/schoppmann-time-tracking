@@ -86,6 +86,13 @@ test('limitCentsForDate: nimmt die zum Stichtag gültige Grenze', () => {
   assert.equal(billing.limitCentsForDate([], '2026-01-01'), billing.DEFAULT_LIMIT_CENTS);
 });
 
+test('hasLimitForDate: erkennt Zeiträume ohne hinterlegte Grenze', () => {
+  const settings = [{ monthlyLimit: '603.00', validFrom: '2026-01-01', validUntil: null }];
+  assert.equal(billing.hasLimitForDate(settings, '2026-10-02'), true);
+  assert.equal(billing.hasLimitForDate(settings, '2025-12-31'), false);
+  assert.equal(billing.hasLimitForDate([], '2026-10-02'), false);
+});
+
 test('foldCarry: Übertrag über mehrere Perioden', () => {
   const rows = billing.foldCarry([
     { earningsCents: 40000, limitCents: 50000 }, // unter Limit

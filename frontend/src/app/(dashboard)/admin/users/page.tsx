@@ -5,6 +5,9 @@
 import { useState, useEffect } from 'react'
 import { authManager, useAuth } from '@/lib/auth'
 import { API_BASE_URL } from '@/lib/config'
+import { formatCurrency } from '@/lib/utils'
+import { Modal } from '@/components/ui/Modal'
+import { RefreshCw } from 'lucide-react'
 
 // TypeScript Interfaces
 interface User {
@@ -76,28 +79,22 @@ export default function UsersPage() {
     setLoadingUsers(true)
     setMessage('')
     
-    console.log('🔍 Starte Benutzer-Laden...')
     
     try {
       const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`)
       
-      console.log('📡 Response Status:', response.status)
       console.log('📡 Response OK:', response.ok)
       
       const data = await response.json()
-      console.log('📊 Response Data:', data)
       
       if (response.ok) {
-        console.log('✅ Benutzer erfolgreich geladen:', data.data?.users)
         setAllUsers(data.data?.users || [])
         setMessage(`✅ ${data.data?.total || 0} Benutzer geladen`)
         setTimeout(() => setMessage(''), 3000)
       } else {
-        console.error('❌ API Fehler:', data)
         setMessage(`❌ ${data.error}`)
       }
     } catch (error: any) {
-      console.error('❌ Network/Auth Error:', error)
       
       if (error.message === 'SESSION_EXPIRED') {
         setMessage('⏰ Sitzung abgelaufen - Sie werden ausgeloggt...')
@@ -210,10 +207,8 @@ export default function UsersPage() {
         body: JSON.stringify(updateData),
       })
 
-      console.log('📡 Response Status:', response.status)
       
       const data = await response.json()
-      console.log('📊 Response Data:', data)
 
       if (response.ok) {
         setMessage(`✅ ${data.message}`)
@@ -231,7 +226,6 @@ export default function UsersPage() {
         }
       }
     } catch (error: any) {
-      console.error('❌ Network Error:', error)
       if (error.message === 'SESSION_EXPIRED') {
         setMessage('⏰ Sitzung abgelaufen - Sie werden ausgeloggt...')
         setTimeout(handleSessionExpired, 2000)
@@ -315,10 +309,7 @@ export default function UsersPage() {
     return name.charAt(0).toUpperCase()
   }
 
-  const formatCurrency = (amount?: number) => {
-    if (!amount) return 'Nicht gesetzt'
-    return `${amount}€`
-  }
+  const formatRate = (amount?: number) => (amount ? formatCurrency(Number(amount)) : 'Nicht gesetzt')
 
   if (loading) {
     return (
@@ -360,30 +351,12 @@ export default function UsersPage() {
           </h3>
           <div className="flex space-x-2">
             <button
-              onClick={async () => {
-                console.log('🧪 Test Admin API-Verbindung...')
-                try {
-                  const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/admin/users`)
-                  const data = await response.json()
-                  console.log('🧪 Admin API Test:', { status: response.status, data })
-                  setMessage(`🧪 Admin API: ${response.ok ? 'OK' : 'FEHLER'} - Status: ${response.status}`)
-                } catch (error) {
-                  console.error('🧪 Admin API Test Fehler:', error)
-                  setMessage(`🧪 Admin API Fehler: ${error instanceof Error ? error.message : String(error)}`)
-                }
-              }}
-              className="px-3 py-1 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              onClick={loadAllUsers}
+              disabled={loadingUsers}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
             >
-              🧪 API Test
-            </button>
-            <button
-              onClick={() => {
-                console.log('🔄 Lade Benutzer neu...')
-                loadAllUsers()
-              }}
-              className="px-3 py-1 text-xs font-medium text-blue-600 bg-blue-100 rounded-md hover:bg-blue-200 transition-colors"
-            >
-              🔄 Neu laden
+              <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
+              Neu laden
             </button>
           </div>
         </div>
@@ -441,7 +414,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(user.stundenlohn)}
+                      {formatRate(user.stundenlohn)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -513,291 +486,275 @@ export default function UsersPage() {
       {/* ===== MODALS ===== */}
 
       {/* Create User Modal */}
-      {showCreateUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Neuen Benutzer erstellen</h3>
-              <button
-                onClick={() => setShowCreateUser(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={createNewUser} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Vollständiger Name
-                </label>
-                <input
-                  type="text"
-                  value={newUserForm.name}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                  placeholder="z.B. Max Mustermann"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  E-Mail-Adresse
-                </label>
-                <input
-                  type="email"
-                  value={newUserForm.email}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                  placeholder="name@schoppmann.de"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Passwort
-                </label>
-                <input
-                  type="password"
-                  value={newUserForm.password}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                  placeholder="Mindestens 8 Zeichen"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rolle
-                </label>
-                <select
-                  value={newUserForm.role}
-                  onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value as 'admin' | 'mitarbeiter' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                >
-                  <option value="mitarbeiter">Mitarbeiter</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loadingAction}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                >
-                  {loadingAction ? 'Erstelle...' : 'Benutzer erstellen'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateUser(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
+      <Modal
+        open={showCreateUser}
+        onClose={() => setShowCreateUser(false)}
+        title="Neuen Benutzer erstellen"
+        size="max-w-md"
+        dismissible={!loadingAction}
+      >
+        <form onSubmit={createNewUser} className="p-6 space-y-4">
+          <div>
+            <label htmlFor="user-1" className="block text-sm font-medium text-gray-700 mb-2">
+              Vollständiger Name
+            </label>
+            <input
+              id="user-1"
+              type="text"
+              value={newUserForm.name}
+              onChange={(e) => setNewUserForm({ ...newUserForm, name: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+              placeholder="z.B. Max Mustermann"
+              required
+            />
           </div>
-        </div>
-      )}
+
+          <div>
+            <label htmlFor="user-2" className="block text-sm font-medium text-gray-700 mb-2">
+              E-Mail-Adresse
+            </label>
+            <input
+              id="user-2"
+              type="email"
+              value={newUserForm.email}
+              onChange={(e) => setNewUserForm({ ...newUserForm, email: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+              placeholder="name@schoppmann.de"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="user-3" className="block text-sm font-medium text-gray-700 mb-2">
+              Passwort
+            </label>
+            <input
+              id="user-3"
+              type="password"
+              value={newUserForm.password}
+              onChange={(e) => setNewUserForm({ ...newUserForm, password: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+              placeholder="Mindestens 8 Zeichen"
+              required
+            />
+          </div>
+
+          <div>
+            <label htmlFor="user-4" className="block text-sm font-medium text-gray-700 mb-2">
+              Rolle
+            </label>
+            <select
+              id="user-4"
+              value={newUserForm.role}
+              onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value as 'admin' | 'mitarbeiter' })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+            >
+              <option value="mitarbeiter">Mitarbeiter</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+
+          <div className="flex space-x-3 pt-4">
+            <button
+              type="submit"
+              disabled={loadingAction}
+              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+            >
+              {loadingAction ? 'Erstelle...' : 'Benutzer erstellen'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreateUser(false)}
+              className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Edit User Modal */}
       {showEditUser && editingUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Benutzer bearbeiten</h3>
-              <button
-                onClick={() => setShowEditUser(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+        <Modal
+          open
+          onClose={() => setShowEditUser(false)}
+          title="Benutzer bearbeiten"
+          size="max-w-md"
+          dismissible={!loadingAction}
+        >
+          <form onSubmit={updateUser} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="user-5" className="block text-sm font-medium text-gray-700 mb-2">
+                Name
+              </label>
+              <input
+                id="user-5"
+                type="text"
+                value={editingUser.name}
+                onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
             </div>
 
-            <form onSubmit={updateUser} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Name
-                </label>
-                <input
-                  type="text"
-                  value={editingUser.name}
-                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  required
-                />
-              </div>
+            <div>
+              <label htmlFor="user-6" className="block text-sm font-medium text-gray-700 mb-2">
+                E-Mail
+              </label>
+              <input
+                id="user-6"
+                type="email"
+                value={editingUser.email}
+                onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  E-Mail
-                </label>
-                <input
-                  type="email"
-                  value={editingUser.email}
-                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  required
-                />
-              </div>
+            <div>
+              <label htmlFor="user-7" className="block text-sm font-medium text-gray-700 mb-2">
+                Neues Passwort (leer lassen um beizubehalten)
+              </label>
+              <input
+                id="user-7"
+                type="password"
+                value={editingUser.password}
+                onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
+                placeholder="Leer lassen für keine Änderung"
+              />
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Neues Passwort (leer lassen um beizubehalten)
-                </label>
-                <input
-                  type="password"
-                  value={editingUser.password}
-                  onChange={(e) => setEditingUser({ ...editingUser, password: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
-                  placeholder="Leer lassen für keine Änderung"
-                />
-              </div>
+            <div>
+              <label htmlFor="user-8" className="block text-sm font-medium text-gray-700 mb-2">
+                Rolle
+              </label>
+              <select
+                id="user-8"
+                value={editingUser.role}
+                onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'mitarbeiter' })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+              >
+                <option value="mitarbeiter">Mitarbeiter</option>
+                <option value="admin">Administrator</option>
+              </select>
+            </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Rolle
-                </label>
-                <select
-                  value={editingUser.role}
-                  onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value as 'admin' | 'mitarbeiter' })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                >
-                  <option value="mitarbeiter">Mitarbeiter</option>
-                  <option value="admin">Administrator</option>
-                </select>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loadingAction}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                >
-                  {loadingAction ? 'Aktualisiere...' : 'Aktualisieren'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEditUser(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="submit"
+                disabled={loadingAction}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              >
+                {loadingAction ? 'Aktualisiere...' : 'Aktualisieren'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEditUser(false)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* User Settings Modal */}
       {showUserSettings && userSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">
-                Einstellungen für {allUsers.find(u => u.id === userSettings.id)?.name}
-              </h3>
-              <button
-                onClick={() => setShowUserSettings(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+        <Modal
+          open
+          onClose={() => setShowUserSettings(false)}
+          title={`Einstellungen für ${allUsers.find(u => u.id === userSettings.id)?.name ?? ''}`}
+          size="max-w-lg"
+          dismissible={!loadingAction}
+        >
+          <form onSubmit={updateUserSettings} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="user-9" className="block text-sm font-medium text-gray-700 mb-2">
+                Stundenlohn (€)
+              </label>
+              <input
+                id="user-9"
+                type="number"
+                step="0.01"
+                min="0"
+                max="999"
+                value={userSettings.stundenlohn}
+                onChange={(e) => setUserSettings({ ...userSettings, stundenlohn: parseFloat(e.target.value) || 0 })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Der Betrag in Euro, den der Benutzer pro Arbeitsstunde erhält.
+              </p>
             </div>
 
-            <form onSubmit={updateUserSettings} className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Stundenlohn (€)
+                <label htmlFor="user-10" className="block text-sm font-medium text-gray-700 mb-2">
+                  Abrechnungszeitraum Start (Tag)
                 </label>
                 <input
+                  id="user-10"
                   type="number"
-                  step="0.01"
-                  min="0"
-                  max="999"
-                  value={userSettings.stundenlohn}
-                  onChange={(e) => setUserSettings({ ...userSettings, stundenlohn: parseFloat(e.target.value) || 0 })}
+                  min="1"
+                  max="31"
+                  value={userSettings.abrechnungStart}
+                  onChange={(e) => setUserSettings({ ...userSettings, abrechnungStart: parseInt(e.target.value) || 1 })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   required
                 />
-                <p className="text-xs text-gray-500 mt-1">
-                  Der Betrag in Euro, den der Benutzer pro Arbeitsstunde erhält.
-                </p>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Abrechnungszeitraum Start (Tag)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={userSettings.abrechnungStart}
-                    onChange={(e) => setUserSettings({ ...userSettings, abrechnungStart: parseInt(e.target.value) || 1 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Abrechnungszeitraum Ende (Tag)
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="31"
-                    value={userSettings.abrechnungEnde}
-                    onChange={(e) => setUserSettings({ ...userSettings, abrechnungEnde: parseInt(e.target.value) || 31 })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    required
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  E-Mail für Lohnzettel
+                <label htmlFor="user-11" className="block text-sm font-medium text-gray-700 mb-2">
+                  Abrechnungszeitraum Ende (Tag)
                 </label>
                 <input
-                  type="email"
-                  value={userSettings.lohnzettelEmail}
-                  onChange={(e) => setUserSettings({ ...userSettings, lohnzettelEmail: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
-                  placeholder="E-Mail für Lohnzettel-Versand"
+                  id="user-11"
+                  type="number"
+                  min="1"
+                  max="31"
+                  value={userSettings.abrechnungEnde}
+                  onChange={(e) => setUserSettings({ ...userSettings, abrechnungEnde: parseInt(e.target.value) || 31 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                  required
                 />
               </div>
+            </div>
 
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loadingAction}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                >
-                  {loadingAction ? 'Speichere...' : 'Speichern'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowUserSettings(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div>
+              <label htmlFor="user-12" className="block text-sm font-medium text-gray-700 mb-2">
+                E-Mail für Lohnzettel
+              </label>
+              <input
+                id="user-12"
+                type="email"
+                value={userSettings.lohnzettelEmail}
+                onChange={(e) => setUserSettings({ ...userSettings, lohnzettelEmail: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-500"
+                placeholder="E-Mail für Lohnzettel-Versand"
+              />
+            </div>
+
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="submit"
+                disabled={loadingAction}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              >
+                {loadingAction ? 'Speichere...' : 'Speichern'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowUserSettings(false)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Messages */}

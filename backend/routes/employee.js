@@ -147,14 +147,30 @@ router.get('/settings', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ EIGENE ARBEITSEINSTELLUNGEN AKTUALISIEREN (nur Mitarbeiter/Admin)
+// Lohn und Abrechnungszeitraum legt nur ein Admin fest (PUT /api/admin/users/:id/settings)
+const ADMIN_ONLY_SETTINGS = ['stundenlohn', 'abrechnungStart', 'abrechnungEnde'];
+
+// ✅ EIGENE ARBEITSEINSTELLUNGEN AKTUALISIEREN (Selbstbedienung: nur Lohnzettel-E-Mail)
 router.put('/settings',
   requireEmployee,
   ...validateUserSettings,
   handleValidationErrors,
   async (req, res) => {
+    const forbidden = ADMIN_ONLY_SETTINGS.filter((field) => req.body[field] !== undefined);
+    if (forbidden.length > 0) {
+      return res.status(403).json({
+        success: false,
+        error: 'Stundenlohn und Abrechnungszeitraum können nur von einem Administrator geändert werden',
+        code: 'SETTINGS_ADMIN_ONLY',
+        fields: forbidden
+      });
+    }
     try {
-      const settings = await UserService.updateUserSettings(req.user.userId, req.body);
+      const settings = await UserService.updateUserSettings(
+        req.user.userId,
+        { lohnzettelEmail: req.body.lohnzettelEmail },
+        { id: req.user.userId, email: req.user.email }
+      );
 
       console.log(`⚙️ Arbeitseinstellungen aktualisiert: User ${req.user.userId}`);
       res.json({ success: true, message: 'Arbeitseinstellungen erfolgreich aktualisiert', data: { settings } });

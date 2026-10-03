@@ -4,8 +4,10 @@
 
 import { useState, useEffect } from 'react'
 import { authManager, useAuth } from '@/lib/auth'
-import { toLocalDateString } from '@/lib/utils'
+import { formatCurrency, formatDate, toLocalDateString } from '@/lib/utils'
 import { API_BASE_URL } from '@/lib/config'
+import { Modal } from '@/components/ui/Modal'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 
 // TypeScript Interfaces
 interface MinijobSetting {
@@ -38,6 +40,7 @@ interface AutoAdjustedSetting {
 
 export default function MinijobSettingsPage() {
   const { handleSessionExpired } = useAuth()
+  const [confirm, confirmDialog] = useConfirm()
 
   // States
   const [settings, setSettings] = useState<MinijobSetting[]>([])
@@ -112,7 +115,6 @@ export default function MinijobSettingsPage() {
         setCurrentSetting(null)
       }
     } catch (error: any) {
-      console.error('Fehler beim Laden der aktuellen Einstellung:', error)
     }
   }
 
@@ -234,7 +236,13 @@ export default function MinijobSettingsPage() {
 
   // Einstellung löschen
   const deleteSetting = async (settingId: number) => {
-    if (!confirm('Sind Sie sicher, dass Sie diese Einstellung löschen möchten?\n\nVorherige Einstellungen werden automatisch angepasst.')) return
+    const ok = await confirm({
+      title: 'Einstellung löschen?',
+      message: 'Vorherige Einstellungen werden automatisch angepasst. Abgeschlossene Perioden behalten ihre Grenze.',
+      confirmLabel: 'Löschen',
+      destructive: true
+    })
+    if (!ok) return
 
     setLoadingAction(true)
     setMessage('')
@@ -278,7 +286,12 @@ export default function MinijobSettingsPage() {
 
   // Zeiträume neu berechnen
   const recalculatePeriods = async () => {
-    if (!confirm('Alle Minijob-Zeiträume neu berechnen?\n\nDies korrigiert eventuelle Inkonsistenzen in den Gültigkeitszeiträumen.')) return
+    const ok = await confirm({
+      title: 'Alle Zeiträume neu berechnen?',
+      message: 'Dies korrigiert eventuelle Inkonsistenzen in den Gültigkeitszeiträumen.',
+      confirmLabel: 'Neu berechnen'
+    })
+    if (!ok) return
 
     setLoadingAction(true)
     setMessage('')
@@ -315,17 +328,6 @@ export default function MinijobSettingsPage() {
   }
 
   // Hilfsfunktionen
-  const formatDate = (dateString: string) => {
-    return new Date(dateString + 'T12:00:00').toLocaleDateString('de-DE')
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(amount)
-  }
-
   const getStatusBadge = (setting: MinijobSetting) => {
     const today = toLocalDateString()
 
@@ -557,198 +559,197 @@ export default function MinijobSettingsPage() {
 
       {/* Create Setting Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Neue Minijob-Einstellung</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        <Modal
+          open
+          onClose={() => setShowCreateModal(false)}
+          title="Neue Minijob-Einstellung"
+          size="max-w-lg"
+          dismissible={!loadingAction}
+        >
+          <form onSubmit={createNewSetting} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="minijob-1" className="block text-sm font-medium text-gray-700 mb-2">Monatliches Limit (€)</label>
+              <input
+                id="minijob-1"
+                type="number"
+                step="0.01"
+                min="0"
+                max="999999.99"
+                value={newSettingForm.monthlyLimit}
+                onChange={(e) => setNewSettingForm({ ...newSettingForm, monthlyLimit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+                placeholder="z.B. 600.00"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="minijob-2" className="block text-sm font-medium text-gray-700 mb-2">Beschreibung</label>
+              <input
+                id="minijob-2"
+                type="text"
+                value={newSettingForm.description}
+                onChange={(e) => setNewSettingForm({ ...newSettingForm, description: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+                placeholder="z.B. Neue gesetzliche Minijob-Grenze 2026"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="minijob-3" className="block text-sm font-medium text-gray-700 mb-2">Gültig ab</label>
+              <input
+                id="minijob-3"
+                type="date"
+                value={newSettingForm.validFrom}
+                onChange={(e) => setNewSettingForm({ ...newSettingForm, validFrom: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
+            </div>
+
+            {/* Erweiterte Optionen */}
+            <div className="pt-4 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+                className="flex items-center text-sm text-gray-600 hover:text-gray-900 font-medium"
+              >
+                <svg className={`w-4 h-4 mr-2 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
+                Erweiterte Optionen
               </button>
             </div>
 
-            <form onSubmit={createNewSetting} className="p-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Monatliches Limit (€)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="999999.99"
-                  value={newSettingForm.monthlyLimit}
-                  onChange={(e) => setNewSettingForm({ ...newSettingForm, monthlyLimit: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                  placeholder="z.B. 600.00"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Beschreibung</label>
-                <input
-                  type="text"
-                  value={newSettingForm.description}
-                  onChange={(e) => setNewSettingForm({ ...newSettingForm, description: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                  placeholder="z.B. Neue gesetzliche Minijob-Grenze 2026"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Gültig ab</label>
-                <input
-                  type="date"
-                  value={newSettingForm.validFrom}
-                  onChange={(e) => setNewSettingForm({ ...newSettingForm, validFrom: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  min={toLocalDateString()}
-                  required
-                />
-              </div>
-
-              {/* Erweiterte Optionen */}
-              <div className="pt-4 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
-                  className="flex items-center text-sm text-gray-600 hover:text-gray-900 font-medium"
-                >
-                  <svg className={`w-4 h-4 mr-2 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                  Erweiterte Optionen
-                </button>
-              </div>
-
-              {showAdvancedOptions && (
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Gültig bis (optional)
-                      <span className="text-xs text-gray-500 ml-2">Leer lassen für unbegrenzte Gültigkeit</span>
-                    </label>
-                    <input
-                      type="date"
-                      value={newSettingForm.validUntil}
-                      onChange={(e) => setNewSettingForm({ ...newSettingForm, validUntil: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
-                      min={newSettingForm.validFrom}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Empfehlung: Leer lassen, da zukünftige Änderungen automatisch angepasst werden
-                    </p>
-                  </div>
+            {showAdvancedOptions && (
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div>
+                  <label htmlFor="minijob-4" className="block text-sm font-medium text-gray-700 mb-2">
+                    Gültig bis (optional)
+                    <span className="text-xs text-gray-500 ml-2">Leer lassen für unbegrenzte Gültigkeit</span>
+                  </label>
+                  <input
+                    id="minijob-4"
+                    type="date"
+                    value={newSettingForm.validUntil}
+                    onChange={(e) => setNewSettingForm({ ...newSettingForm, validUntil: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900 placeholder-gray-400"
+                    min={newSettingForm.validFrom}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Empfehlung: Leer lassen, da zukünftige Änderungen automatisch angepasst werden
+                  </p>
                 </div>
-              )}
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loadingAction}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                >
-                  {loadingAction ? 'Erstelle...' : 'Einstellung erstellen'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Abbrechen
-                </button>
               </div>
-            </form>
-          </div>
-        </div>
+            )}
+
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="submit"
+                disabled={loadingAction}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              >
+                {loadingAction ? 'Erstelle...' : 'Einstellung erstellen'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* Edit Setting Modal */}
       {showEditModal && editingSetting && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900">Einstellung bearbeiten</h3>
-              <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+        <Modal
+          open
+          onClose={() => setShowEditModal(false)}
+          title="Einstellung bearbeiten"
+          size="max-w-lg"
+          dismissible={!loadingAction}
+        >
+          <form onSubmit={updateSetting} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="minijob-5" className="block text-sm font-medium text-gray-700 mb-2">Monatliches Limit (€)</label>
+              <input
+                id="minijob-5"
+                type="number"
+                step="0.01"
+                min="0"
+                max="999999.99"
+                value={newSettingForm.monthlyLimit}
+                onChange={(e) => setNewSettingForm({ ...newSettingForm, monthlyLimit: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
             </div>
 
-            <form onSubmit={updateSetting} className="p-6 space-y-4">
+            <div>
+              <label htmlFor="minijob-6" className="block text-sm font-medium text-gray-700 mb-2">Beschreibung</label>
+              <input
+                id="minijob-6"
+                type="text"
+                value={newSettingForm.description}
+                onChange={(e) => setNewSettingForm({ ...newSettingForm, description: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Monatliches Limit (€)</label>
+                <label htmlFor="minijob-7" className="block text-sm font-medium text-gray-700 mb-2">Gültig ab</label>
                 <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  max="999999.99"
-                  value={newSettingForm.monthlyLimit}
-                  onChange={(e) => setNewSettingForm({ ...newSettingForm, monthlyLimit: e.target.value })}
+                  id="minijob-7"
+                  type="date"
+                  value={newSettingForm.validFrom}
+                  onChange={(e) => setNewSettingForm({ ...newSettingForm, validFrom: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   required
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Beschreibung</label>
+                <label htmlFor="minijob-8" className="block text-sm font-medium text-gray-700 mb-2">
+                  Gültig bis (optional)
+                  <span className="text-xs text-gray-500 block">Leer = unbegrenzt</span>
+                </label>
                 <input
-                  type="text"
-                  value={newSettingForm.description}
-                  onChange={(e) => setNewSettingForm({ ...newSettingForm, description: e.target.value })}
+                  id="minijob-8"
+                  type="date"
+                  value={newSettingForm.validUntil}
+                  onChange={(e) => setNewSettingForm({ ...newSettingForm, validUntil: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                  required
+                  min={newSettingForm.validFrom}
                 />
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Gültig ab</label>
-                  <input
-                    type="date"
-                    value={newSettingForm.validFrom}
-                    onChange={(e) => setNewSettingForm({ ...newSettingForm, validFrom: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Gültig bis (optional)
-                    <span className="text-xs text-gray-500 block">Leer = unbegrenzt</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={newSettingForm.validUntil}
-                    onChange={(e) => setNewSettingForm({ ...newSettingForm, validUntil: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                    min={newSettingForm.validFrom}
-                  />
-                </div>
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="submit"
-                  disabled={loadingAction}
-                  className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
-                >
-                  {loadingAction ? 'Aktualisiere...' : 'Aktualisieren'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
-                >
-                  Abbrechen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            <div className="flex space-x-3 pt-4">
+              <button
+                type="submit"
+                disabled={loadingAction}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              >
+                {loadingAction ? 'Aktualisiere...' : 'Aktualisieren'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 px-4 rounded-md hover:bg-gray-300 font-medium transition-colors"
+              >
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
+
+      {confirmDialog}
 
       {/* Messages */}
       {message && (

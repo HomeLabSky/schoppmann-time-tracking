@@ -98,10 +98,11 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Name */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="register-1" className="block text-sm font-semibold text-slate-700 mb-2">
               Vollständiger Name
             </label>
             <input
+              id="register-1"
               type="text"
               placeholder="Max Mustermann"
               value={formData.name}
@@ -117,10 +118,11 @@ export default function RegisterPage() {
 
           {/* Email */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="register-2" className="block text-sm font-semibold text-slate-700 mb-2">
               E-Mail-Adresse
             </label>
             <input
+              id="register-2"
               type="email"
               placeholder="max.mustermann@unternehmen.de"
               value={formData.email}
@@ -132,10 +134,11 @@ export default function RegisterPage() {
 
           {/* Password */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="register-3" className="block text-sm font-semibold text-slate-700 mb-2">
               Passwort
             </label>
             <input
+              id="register-3"
               type="password"
               placeholder="Sicheres Passwort eingeben"
               value={formData.password}
@@ -177,10 +180,11 @@ export default function RegisterPage() {
 
           {/* Confirm Password */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="register-4" className="block text-sm font-semibold text-slate-700 mb-2">
               Passwort bestätigen
             </label>
             <input
+              id="register-4"
               type="password"
               placeholder="Passwort wiederholen"
               value={formData.confirmPassword}
@@ -241,7 +245,7 @@ export default function RegisterPage() {
 
         <div className="mt-8 pt-4 border-t border-slate-200 text-center">
           <p className="text-xs text-slate-500">
-            © 2024 SCHOPPMANN Immobilien &amp; Vermögensverwaltung
+            © {new Date().getFullYear()} SCHOPPMANN Immobilien &amp; Vermögensverwaltung
           </p>
         </div>
       </div>

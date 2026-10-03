@@ -6,7 +6,11 @@
  * Funktion ist mit festen Eingaben testbar (siehe backend/test/billing.test.js).
  */
 
-/** Fallback, wenn für einen Zeitraum keine Minijob-Einstellung existiert (Cent). */
+/**
+ * Rechnerischer Ersatzwert, wenn für einen Zeitraum keine Minijob-Einstellung existiert (Cent).
+ * Ergebnisse damit sind nur vorläufig: Die API meldet `minijobLimitMissing`, und ein
+ * Monatsabschluss wird abgelehnt (MINIJOB_LIMIT_MISSING), bis eine Grenze hinterlegt ist.
+ */
 const DEFAULT_LIMIT_CENTS = 55000;
 /** Fallback-Stundensatz für Altdaten ohne eingefrorenen Satz (Cent). */
 const DEFAULT_HOURLY_RATE_CENTS = 1200;
@@ -100,17 +104,30 @@ const validateEntryRules = (entry, { today, checkDateWindow = false }) => {
 };
 
 /**
- * Minijob-Grenze (Cent), die an einem Stichtag galt.
+ * Minijob-Einstellung, die an einem Stichtag galt (bei Überschneidung die jüngste), sonst null.
  * @param {Array<{monthlyLimit:number|string, validFrom:string, validUntil:string|null}>} settings
  * @param {string} date YYYY-MM-DD
  */
-const limitCentsForDate = (settings, date) => {
+const findLimitSetting = (settings, date) => {
   let best = null;
   for (const s of settings) {
     if (s.validFrom <= date && (!s.validUntil || s.validUntil >= date)) {
       if (!best || s.validFrom > best.validFrom) best = s;
     }
   }
+  return best;
+};
+
+/** Ist zum Stichtag eine Minijob-Grenze hinterlegt? */
+const hasLimitForDate = (settings, date) => findLimitSetting(settings, date) !== null;
+
+/**
+ * Minijob-Grenze (Cent), die an einem Stichtag galt; ohne Einstellung der Ersatzwert.
+ * @param {Array<{monthlyLimit:number|string, validFrom:string, validUntil:string|null}>} settings
+ * @param {string} date YYYY-MM-DD
+ */
+const limitCentsForDate = (settings, date) => {
+  const best = findLimitSetting(settings, date);
   return best ? toCents(best.monthlyLimit) : DEFAULT_LIMIT_CENTS;
 };
 
@@ -153,6 +170,7 @@ module.exports = {
   resolveBreakMinutes,
   addMonths,
   validateEntryRules,
+  hasLimitForDate,
   limitCentsForDate,
   foldCarry
 };

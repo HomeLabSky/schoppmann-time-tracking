@@ -127,10 +127,13 @@ class TimeEntryService {
           // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
           minutes: closure ? closure.totalMinutes : own.reduce((sum, e) => sum + e.workMinutes, 0),
           earningsCents: closure ? closure.earningsCents : own.reduce((sum, e) => sum + e.earningsCents, 0),
-          limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate)
+          limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate),
+          limitMissing: !closure && !billing.hasLimitForDate(settings, period.endDate)
         };
       });
       const folded = billing.foldCarry(rows);
+      // Ersatz-Grenze ist nur relevant, wo tatsächlich verrechnet wird (Verdienst oder Übertrag > 0)
+      const limitMissing = rows.some((row, i) => row.limitMissing && folded[i].actualCents > 0);
 
       const current = rows[rows.length - 1];
       const result = folded[folded.length - 1];
@@ -156,6 +159,9 @@ class TimeEntryService {
           minijobLimit: billing.toEuros(result.limitCents),
           hourlyRate,
           exceedsLimit: result.actualCents > result.limitCents,
+          // true: Für diese oder eine frühere offene Periode im Übertrag ist keine Minijob-Grenze
+          // hinterlegt – Auszahlung/Übertrag sind vorläufig (Ersatzwert), Abschluss ist gesperrt.
+          minijobLimitMissing: limitMissing,
           entryCount: current.entries.length
         },
         period: {

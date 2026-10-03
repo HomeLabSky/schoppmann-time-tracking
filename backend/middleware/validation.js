@@ -123,15 +123,9 @@ const validateMinijobSetting = [
   body('validFrom')
     .isISO8601({ strict: true })
     .toDate()
-    .withMessage('Gültigkeit-Von muss ein gültiges Datum sein (YYYY-MM-DD)')
-    .custom((date) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0); // Nur Datum vergleichen
-      if (date < today) {
-        throw new Error('Startdatum darf nicht in der Vergangenheit liegen');
-      }
-      return true;
-    }),
+    // Rückwirkend erlaubt: Abgeschlossene Perioden haben ihre Grenze eingefroren, betroffen sind nur
+    // offene Perioden – sonst ließen sich Perioden ohne hinterlegte Grenze nie abschließen.
+    .withMessage('Gültigkeit-Von muss ein gültiges Datum sein (YYYY-MM-DD)'),
   body('validUntil')
     .optional({ nullable: true })
     .isISO8601({ strict: true })

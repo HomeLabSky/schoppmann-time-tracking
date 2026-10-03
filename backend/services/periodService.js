@@ -104,6 +104,12 @@ class PeriodService {
 
         const data = await TimeEntryService.getMonthlyTimeRecords(userId, year, month, { transaction });
         const s = data.summary;
+        if (s.minijobLimitMissing) {
+          throw new Error(
+            'MINIJOB_LIMIT_MISSING:Für diese Periode (oder eine frühere offene Periode im Übertrag) ist keine ' +
+            'Minijob-Grenze hinterlegt. Bitte zuerst unter „Minijob“ eine Grenze für diesen Zeitraum anlegen.'
+          );
+        }
 
         const closure = await PeriodClosure.create({
           userId,
