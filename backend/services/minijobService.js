@@ -568,10 +568,7 @@ class MinijobService {
       return { isValid: false, error: `Ungültiges Startdatum: ${fromValidation.error}` };
     }
 
-    // Startdatum darf nicht in der Vergangenheit liegen
-    if (DateService.isDateInPast(validFrom)) {
-      return { isValid: false, error: 'Startdatum darf nicht in der Vergangenheit liegen' };
-    }
+    // Rückwirkende Startdaten sind erlaubt (abgeschlossene Perioden behalten ihre eingefrorene Grenze)
 
     // Enddatum validieren (falls vorhanden)
     if (validUntil) {

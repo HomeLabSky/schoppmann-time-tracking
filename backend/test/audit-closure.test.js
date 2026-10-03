@@ -263,6 +263,24 @@ test('Abschluss: frühere Perioden mit Einträgen müssen zuerst abgeschlossen w
   assert.equal((await PeriodService.listClosures(user.id)).length, 2);
 });
 
+test('Abschluss: ohne hinterlegte Minijob-Grenze vorläufig markiert und gesperrt', async () => {
+  const user = await makeUser();
+  await addEntry(user, '2023-06-05'); // vor der ersten Einstellung (2024) → nur Ersatzwert
+
+  const june = await TimeEntryService.getMonthlyTimeRecords(user.id, 2023, 6);
+  assert.equal(june.summary.minijobLimitMissing, true);
+  await reject(PeriodService.closePeriod(user.id, 2023, 6, adminActor), /MINIJOB_LIMIT_MISSING/);
+  assert.equal((await PeriodService.listClosures(user.id)).length, 0);
+
+  const later = await TimeEntryService.getMonthlyTimeRecords(user.id, 2025, 3);
+  assert.equal(later.summary.minijobLimitMissing, true, 'offene Periode ohne Grenze geht in den Übertrag ein');
+
+  const other = await makeUser();
+  await addEntry(other, '2025-03-03');
+  const covered = await TimeEntryService.getMonthlyTimeRecords(other.id, 2025, 3);
+  assert.equal(covered.summary.minijobLimitMissing, false, 'mit hinterlegter Grenze nicht vorläufig');
+});
+
 test('Abschluss: leere frühere Perioden blockieren nichts', async () => {
   const user = await makeUser();
   await addEntry(user, '2024-07-03');

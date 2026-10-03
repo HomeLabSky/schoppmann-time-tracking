@@ -56,11 +56,13 @@ export default function LoginPage() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-2">
               E-Mail-Adresse
             </label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="username"
               placeholder="ihre.email@unternehmen.de"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -70,11 +72,13 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-2">
               Passwort
             </label>
             <input
+              id="login-password"
               type="password"
+              autoComplete="current-password"
               placeholder="Ihr Passwort"
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
@@ -128,7 +132,7 @@ export default function LoginPage() {
 
         {/* Message */}
         {message && (
-          <div className={`mt-6 p-4 rounded-lg ${
+          <div role={message.includes('✅') ? 'status' : 'alert'} className={`mt-6 p-4 rounded-lg ${
             message.includes('✅')
               ? 'bg-green-50 border border-green-200 text-green-800'
               : 'bg-red-50 border border-red-200 text-red-800'
@@ -140,7 +144,7 @@ export default function LoginPage() {
         {/* Footer */}
         <div className="mt-8 pt-6 border-t border-gray-200 text-center">
           <p className="text-sm text-gray-500">
-            © 2024 SCHOPPMANN Immobilien & Vermögensverwaltung
+            © {new Date().getFullYear()} SCHOPPMANN Immobilien & Vermögensverwaltung
           </p>
         </div>
       </div>

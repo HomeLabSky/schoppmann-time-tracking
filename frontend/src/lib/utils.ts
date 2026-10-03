@@ -11,6 +11,13 @@ export function formatCurrency(amount: number): string {
   }).format(amount)
 }
 
+const hoursFormat = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+/** Stunden als Dezimalzahl im deutschen Format, z. B. "9,50 Std.". */
+export function formatHours(hours: number | null | undefined): string {
+  return `${hoursFormat.format(hours ?? 0)} Std.`
+}
+
 export function formatDate(dateString: string): string {
   if (!dateString) return 'Kein Datum'
   return new Date(dateString + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })

@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { adminApi } from '@/lib/api'
-import { formatCurrency, formatDate, getErrorMessage, toLocalDateString } from '@/lib/utils'
+import Link from 'next/link'
+import { AlertTriangle } from 'lucide-react'
+import { formatCurrency, formatDate, formatHours, getErrorMessage, toLocalDateString } from '@/lib/utils'
+import { Modal } from '@/components/ui/Modal'
 import type { User } from '@/types/api'
 import type { Timesheet, TimesheetPeriod } from '@/types/audit'
 
@@ -100,6 +103,7 @@ export default function TimesheetsPage() {
   const closed = sheet?.period?.status === 'closed'
   const periodEnded = sheet ? sheet.period.endDate < toLocalDateString() : false
   const summary = sheet?.summary
+  const limitMissing = !closed && !!summary?.minijobLimitMissing
 
   if (loading) {
     return <p className="text-center py-12 text-gray-600">Zeitnachweise werden geladen…</p>
@@ -160,10 +164,14 @@ export default function TimesheetsPage() {
             <div className="flex items-center gap-3">
               <span
                 className={`inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ${
-                  closed ? 'bg-slate-800 text-white' : 'bg-green-100 text-green-800'
+                  closed ? 'bg-slate-800 text-white' : limitMissing ? 'bg-amber-100 text-amber-900' : 'bg-green-100 text-green-800'
                 }`}
               >
-                {closed ? 'Abgeschlossen' : periodEnded ? 'Offen – bereit zum Abschluss' : 'Offen – Periode läuft noch'}
+                {closed
+                  ? 'Abgeschlossen'
+                  : limitMissing
+                    ? 'Offen – Minijob-Grenze fehlt'
+                    : periodEnded ? 'Offen – bereit zum Abschluss' : 'Offen – Periode läuft noch'}
               </span>
               {closed && sheet.closure && (
                 <span className="text-sm text-gray-600">am {formatDateTime(sheet.closure.closedAt)}</span>
@@ -180,8 +188,12 @@ export default function TimesheetsPage() {
               ) : (
                 <button
                   onClick={() => setDialog('close')}
-                  disabled={!periodEnded}
-                  title={periodEnded ? undefined : `Abschluss erst nach Periodenende (${formatDate(sheet.period.endDate)}) möglich`}
+                  disabled={!periodEnded || limitMissing}
+                  title={
+                    limitMissing
+                      ? 'Abschluss erst möglich, wenn eine Minijob-Grenze für diesen Zeitraum hinterlegt ist'
+                      : periodEnded ? undefined : `Abschluss erst nach Periodenende (${formatDate(sheet.period.endDate)}) möglich`
+                  }
                   className="rounded-md bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Periode abschließen…
@@ -190,11 +202,29 @@ export default function TimesheetsPage() {
             </div>
           </div>
 
+          {limitMissing && (
+            <div role="alert" className="mb-4 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+              <AlertTriangle className="mt-0.5 h-5 w-5 flex-shrink-0" aria-hidden="true" />
+              <div>
+                <p className="font-medium">Keine Minijob-Grenze hinterlegt – Beträge sind vorläufig.</p>
+                <p className="mt-1">
+                  Für diese Periode (oder eine frühere offene Periode im Übertrag) gibt es keine gültige Grenze. Auszahlung
+                  und Übertrag sind deshalb nur geschätzt, der Abschluss ist gesperrt.{' '}
+                  <Link href="/admin/minijob" className="font-medium underline">Grenze anlegen</Link>
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
             {[
-              { label: 'Arbeitszeit', value: `${summary.totalHours.toFixed(2).replace('.', ',')} Std.` },
+              { label: 'Arbeitszeit', value: `${formatHours(summary.totalHours)}` },
               { label: 'Verdienst', value: formatCurrency(summary.totalEarnings) },
-              { label: `Auszahlung (Grenze ${formatCurrency(summary.minijobLimit)})`, value: formatCurrency(summary.paidThisMonth) },
+              {
+                label: limitMissing ? 'Auszahlung (vorläufig, keine Grenze)' : `Auszahlung (Grenze ${formatCurrency(summary.minijobLimit)})`,
+                value: formatCurrency(summary.paidThisMonth),
+                warn: limitMissing,
+              },
               { label: 'Übertrag in nächste Periode', value: formatCurrency(summary.carryOut), warn: summary.carryOut > 0 },
             ].map((card) => (
               <div key={card.label} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -245,16 +275,20 @@ export default function TimesheetsPage() {
       )}
 
       {dialog && sheet && summary && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="ts-dialog-title" className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <Modal
+          open
+          onClose={() => { setDialog(null); setReason('') }}
+          title={dialog === 'close' ? 'Periode abschließen?' : 'Periode wieder öffnen'}
+          dismissible={!busy}
+        >
+          <div className="px-6 py-4">
             {dialog === 'close' ? (
               <>
-                <h3 id="ts-dialog-title" className="text-lg font-semibold text-gray-900">Periode abschließen?</h3>
-                <p className="mt-2 text-sm text-gray-600">
+                <p className="text-sm text-gray-600">
                   {selectedUser?.name}: {formatDate(sheet.period.startDate)} – {formatDate(sheet.period.endDate)}
                 </p>
                 <ul className="mt-3 space-y-1 text-sm text-gray-700">
-                  <li>{sheet.records.length} Einträge, {summary.totalHours.toFixed(2).replace('.', ',')} Std.</li>
+                  <li>{sheet.records.length} Einträge, {formatHours(summary.totalHours)}</li>
                   <li>Verdienst {formatCurrency(summary.totalEarnings)}, Auszahlung {formatCurrency(summary.paidThisMonth)}</li>
                   <li>Übertrag {formatCurrency(summary.carryOut)}</li>
                 </ul>
@@ -275,8 +309,7 @@ export default function TimesheetsPage() {
               </>
             ) : (
               <>
-                <h3 id="ts-dialog-title" className="text-lg font-semibold text-gray-900">Periode wieder öffnen</h3>
-                <p className="mt-2 text-sm text-gray-600">
+                <p className="text-sm text-gray-600">
                   Der Mitarbeiter kann danach Einträge dieser Periode wieder ändern. Bitte eine Begründung angeben – sie wird im
                   Änderungsprotokoll festgehalten.
                 </p>
@@ -303,7 +336,7 @@ export default function TimesheetsPage() {
               </>
             )}
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   )

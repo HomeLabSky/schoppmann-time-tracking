@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { Clock } from 'lucide-react'
 import { authManager, useAuth } from '@/lib/auth'
 import { adminApi } from '@/lib/api'
 import { ACTION_LABELS } from '@/lib/auditLabels'
-import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils'
 import type { BackupStatus } from '@/types/audit'
 import type { 
   User, 
@@ -82,9 +83,8 @@ export default function AdminDashboard() {
             currentMinijobLimit: minijobData.data.setting!.monthlyLimit
           }))
         }
-      } catch (error) {
-        // Minijob setting might not exist
-        console.log('No current minijob setting found')
+      } catch {
+        // Keine aktuelle Minijob-Einstellung → Karte zeigt die Warnung
       }
 
       // Letzte Aktivitäten aus dem Änderungsprotokoll
@@ -115,41 +115,11 @@ export default function AdminDashboard() {
       if (errorMessage === 'SESSION_EXPIRED') {
         handleSessionExpired()
       } else {
-        console.error('Fehler beim Laden der Dashboard-Daten:', error)
         setMessage('❌ Fehler beim Laden der Dashboard-Daten')
       }
     } finally {
       setLoading(false)
     }
-  }
-
-  const testProtectedRoute = async (): Promise<void> => {
-    try {
-      const response = await authManager.authenticatedFetch(`${API_BASE_URL}/api/auth/profile`)
-      const data = await response.json()
-
-      if (response.ok) {
-        setMessage('✅ System-Test erfolgreich: API-Verbindung funktioniert einwandfrei')
-      } else {
-        setMessage(`❌ System-Test fehlgeschlagen: ${data.error || 'Unbekannter Fehler'}`)
-      }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      
-      if (errorMessage === 'SESSION_EXPIRED') {
-        setMessage('⏰ Sitzung abgelaufen - Sie werden ausgeloggt...')
-        setTimeout(handleSessionExpired, 2000)
-      } else {
-        setMessage('❌ System-Test fehlgeschlagen: Server nicht erreichbar')
-      }
-    }
-  }
-
-  const formatCurrency = (amount: number): string => {
-    return new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR'
-    }).format(amount)
   }
 
   const getActivityIcon = (type: Activity['type']) => {
@@ -318,18 +288,20 @@ export default function AdminDashboard() {
                   </div>
                 </div>
                 <div className="ml-4">
-                  <div className="text-2xl font-bold text-gray-900">
-                    {dashboardStats.currentMinijobLimit ? formatCurrency(dashboardStats.currentMinijobLimit) : 'N/A'}
-                  </div>
-                  <div className="text-sm text-gray-600">Aktuelles Limit</div>
+                  {dashboardStats.currentMinijobLimit ? (
+                    <div className="text-2xl font-bold text-gray-900">{formatCurrency(dashboardStats.currentMinijobLimit)}</div>
+                  ) : (
+                    <div className="text-lg font-bold text-amber-700">Nicht hinterlegt</div>
+                  )}
+                  <div className="text-sm text-gray-600">Aktuelle Minijob-Grenze</div>
                 </div>
               </div>
               <div className="mt-4">
-                <Link 
+                <Link
                   href="/admin/minijob"
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                  className={`text-sm font-medium ${dashboardStats.currentMinijobLimit ? 'text-blue-600 hover:text-blue-800' : 'text-amber-700 hover:text-amber-900'}`}
                 >
-                  Konfigurieren →
+                  {dashboardStats.currentMinijobLimit ? 'Konfigurieren →' : 'Jetzt anlegen – ohne Grenze kein Monatsabschluss →'}
                 </Link>
               </div>
             </div>
@@ -380,26 +352,21 @@ export default function AdminDashboard() {
                   </div>
                 </Link>
 
-                {/* System Test */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                  <div className="flex items-center mb-4">
-                    <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                      </svg>
+                {/* Zeitnachweise */}
+                <Link
+                  href="/admin/timesheets"
+                  className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow group"
+                >
+                  <div className="flex items-center">
+                    <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center group-hover:bg-slate-200 transition-colors">
+                      <Clock className="w-6 h-6 text-slate-700" aria-hidden="true" />
                     </div>
                     <div className="ml-4">
-                      <h4 className="text-lg font-semibold text-gray-900">System-Test</h4>
-                      <p className="text-sm text-gray-600">API-Verbindung prüfen</p>
+                      <h4 className="text-lg font-semibold text-gray-900">Zeitnachweise prüfen</h4>
+                      <p className="text-sm text-gray-600">Perioden kontrollieren und abschließen</p>
                     </div>
                   </div>
-                  <button
-                    onClick={testProtectedRoute}
-                    className="w-full bg-purple-600 text-white font-medium py-2 px-4 rounded-md hover:bg-purple-700 transition-colors"
-                  >
-                    Test starten
-                  </button>
-                </div>
+                </Link>
 
                 {/* User Management */}
                 <Link

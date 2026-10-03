@@ -31,6 +31,8 @@ export interface TimeRecordSummary {
   minijobLimit: number
   hourlyRate: number
   exceedsLimit: boolean
+  /** Keine Minijob-Grenze hinterlegt: Auszahlung/Übertrag nur vorläufig, Abschluss gesperrt. */
+  minijobLimitMissing?: boolean
   entryCount: number
   totalDays?: number
   averageHoursPerDay?: number

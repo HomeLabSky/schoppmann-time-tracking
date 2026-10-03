@@ -1,15 +1,10 @@
-// ✅ ÄNDERUNGEN:
-// 1. currentPeriodData State entfernt
-// 2. Alle Summary Cards verwenden monthlyData
-// 3. loadCurrentPeriodData() Aufrufe entfernt
-// 4. loadCurrentPeriodData() Funktion entfernt
-
 'use client'
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth'
 import { TimeTrackingService } from '@/lib/timetracking'
-import { toLocalDateString } from '@/lib/utils'
+import { formatCurrency, formatHours, toLocalDateString } from '@/lib/utils'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import type {
   TimeRecord,
   MonthlyTimeRecords,
@@ -23,9 +18,9 @@ interface EditFormData extends UpdateTimeRecordRequest { }
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
+  const [confirm, confirmDialog] = useConfirm()
   const [monthlyData, setMonthlyData] = useState<MonthlyTimeRecords | null>(null)
-  // ✅ ENTFERNT: currentPeriodData State nicht mehr nötig
-  const [currentMonth, setCurrentMonth] = useState<string>('')  // ✅ Leer lassen, wird vom Backend gesetzt
+  const [currentMonth, setCurrentMonth] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
@@ -54,16 +49,11 @@ export default function EmployeeDashboard() {
     }
   }, [currentMonth, user?.id])
 
-  // ✅ ENTFERNT: useEffect für currentPeriodData
-
   const loadMonthlyData = async () => {
-    if (!user?.id || !currentMonth) return  // ✅ Prüfe auch ob currentMonth gesetzt ist
-
+    if (!user?.id || !currentMonth) return
     try {
       setLoading(true)
       setError('')
-
-      console.log(`📅 Lade Daten für Periode: ${currentMonth}`)
 
       // Neue API-Struktur: userId, year, month
       const [yearStr, monthStr] = currentMonth.split('-')
@@ -72,44 +62,26 @@ export default function EmployeeDashboard() {
 
       const data = await TimeTrackingService.getMonthlyTimeRecords(user.id, year, month)
       setMonthlyData(data)
-
-      console.log(`📅 Daten geladen für Periode:`, data.period)
     } catch (err: any) {
       setError(err.message || 'Fehler beim Laden der Zeitdaten')
-      console.error('Error loading monthly data:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  // ✅ ENTFERNT: loadCurrentPeriodData() Funktion nicht mehr nötig
-
   const loadBillingPeriods = async () => {
     if (!user?.id) return
 
     try {
-      // ✅ KORRIGIERT: Backend-API verwenden für benutzerdefinierte Abrechnungsperioden
       const periods = await TimeTrackingService.getBillingPeriods()
       setAvailablePeriods(periods)
 
-      console.log('📅 DEBUG: Alle geladenen Perioden:')
-      periods.forEach((period, index) => {
-        console.log(`  ${index}: Label="${period.label}" | Value="${period.value}" | isCurrent=${period.isCurrent}`)
-        console.log(`       StartDate=${period.startDate} | EndDate=${period.endDate}`)
-      })
-
-      // ✅ KORRIGIERT: Nur setzen wenn currentMonth noch leer ist (beim ersten Laden)
       const currentPeriod = periods.find(p => p.isCurrent)
-      if (currentPeriod && !currentMonth) {  // ← NUR wenn currentMonth leer ist!
-        console.log(`📅 Setze aktuelle Periode beim ersten Laden: ${currentPeriod.value} (${currentPeriod.label})`)
+      // Nur beim ersten Laden setzen, danach bleibt die Auswahl des Benutzers
+      if (currentPeriod && !currentMonth) {
         setCurrentMonth(currentPeriod.value)
-      } else if (currentMonth) {
-        console.log(`📅 Behalte Benutzerauswahl bei: ${currentMonth}`)
       }
-
-    } catch (err) {
-      console.error('Error loading billing periods:', err)
-
+    } catch {
       // Fallback: Standard-Kalenderperioden generieren
       const periods: BillingPeriod[] = []
       const today = new Date()
@@ -134,7 +106,6 @@ export default function EmployeeDashboard() {
 
       setAvailablePeriods(periods)
 
-      // ✅ KORRIGIERT: Auch hier nur beim ersten Laden setzen
       if (!currentMonth && periods.length > 0) {
         setCurrentMonth(periods[0].value)
       }
@@ -152,7 +123,7 @@ export default function EmployeeDashboard() {
       }
 
       await TimeTrackingService.createTimeRecord(processedFormData)
-      await loadMonthlyData() // ✅ Nur noch diese eine Funktion
+      await loadMonthlyData()
       setShowAddForm(false)
       resetForm()
       setError('')
@@ -176,7 +147,7 @@ export default function EmployeeDashboard() {
 
     try {
       await TimeTrackingService.updateTimeRecord(editingRecord.id, editFormData)
-      await loadMonthlyData()  // ✅ Nur noch diese eine Funktion
+      await loadMonthlyData()
       setEditingRecord(null)
       setError('')
     } catch (err: any) {
@@ -185,11 +156,12 @@ export default function EmployeeDashboard() {
   }
 
   const handleDeleteRecord = async (id: number) => {
-    if (!confirm('Möchten Sie diesen Zeiteintrag wirklich löschen?')) return
+    const ok = await confirm({ title: 'Zeiteintrag löschen?', confirmLabel: 'Löschen', destructive: true })
+    if (!ok) return
 
     try {
       await TimeTrackingService.deleteTimeRecord(id)
-      await loadMonthlyData()  // ✅ Nur noch diese eine Funktion
+      await loadMonthlyData()
       setError('')
     } catch (err: any) {
       setError(err.message || 'Fehler beim Löschen des Zeiteintrags')
@@ -207,22 +179,13 @@ export default function EmployeeDashboard() {
   }
 
   const handleMonthChange = (newMonth: string) => {
-    console.log(`🔍 DEBUG: User wählte Monat: ${newMonth}`)
-
-    // Zeige Details der gewählten Periode
-    const selectedPeriod = availablePeriods.find(p => p.value === newMonth)
-    if (selectedPeriod) {
-      console.log(`📅 DEBUG: Gewählte Periode:`)
-      console.log(`  Label: ${selectedPeriod.label}`)
-      console.log(`  Value: ${selectedPeriod.value}`)
-      console.log(`  StartDate: ${selectedPeriod.startDate}`)
-      console.log(`  EndDate: ${selectedPeriod.endDate}`)
-    }
-
     setCurrentMonth(newMonth)
   }
 
   const isClosed = monthlyData?.period?.status === 'closed'
+  const summary = monthlyData?.summary
+  const limitMissing = !isClosed && !!summary?.minijobLimitMissing
+  const overLimit = !limitMissing && !!summary?.exceedsLimit
 
   if (loading && !monthlyData) {
     return (
@@ -264,14 +227,12 @@ export default function EmployeeDashboard() {
         </div>
       )}
 
-      {/* ✅ KORRIGIERT: Summary Cards - alle verwenden jetzt monthlyData */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* ✅ KORRIGIERT: Arbeitszeit verwendet jetzt monthlyData statt currentPeriodData */}
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-medium text-slate-900 mb-6">Arbeitszeit (Periode)</h3>
           <div className="text-center">
             <div className="text-4xl font-bold text-blue-600 mb-2">
-              {monthlyData?.summary?.totalHours?.toFixed(1) || '0.0'}h
+              {formatHours(summary?.totalHours)}
             </div>
             {monthlyData?.period && (
               <p className="text-sm text-slate-500">
@@ -285,15 +246,12 @@ export default function EmployeeDashboard() {
         <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
           <h3 className="text-lg font-medium text-slate-900 mb-6">Verdienst (Periode)</h3>
           <div className="text-center">
-            <div className={`text-4xl font-bold mb-2 ${(monthlyData?.summary?.totalEarnings || 0) > (monthlyData?.summary?.minijobLimit || 0)
-              ? 'text-orange-600'
-              : 'text-green-600'
-              }`}>
-              {monthlyData?.summary?.totalEarnings?.toFixed(2) || '0.00'} €
+            <div className={`text-4xl font-bold mb-2 ${overLimit ? 'text-orange-600' : 'text-green-600'}`}>
+              {formatCurrency(summary?.totalEarnings ?? 0)}
             </div>
-            {(monthlyData?.summary?.totalEarnings || 0) > (monthlyData?.summary?.minijobLimit || 0) && (
+            {overLimit && (
               <p className="text-sm text-orange-600 font-medium">
-                Limit von {monthlyData?.summary?.minijobLimit?.toFixed(2) || '0.00'} € überschritten!
+                Minijob-Grenze von {formatCurrency(summary?.minijobLimit ?? 0)} überschritten – der Rest wird übertragen.
               </p>
             )}
           </div>
@@ -305,21 +263,26 @@ export default function EmployeeDashboard() {
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-slate-600">Verdienst (aktueller Monat):</span>
-              <span className="font-medium">{monthlyData?.summary?.totalEarnings?.toFixed(2) || '0.00'} €</span>
+              <span className="font-medium">{formatCurrency(summary?.totalEarnings ?? 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-600">Übertrag aus Vormonat:</span>
-              <span className="font-medium">{monthlyData?.summary?.carryIn?.toFixed(2) || '0.00'} €</span>
+              <span className="font-medium">{formatCurrency(summary?.carryIn ?? 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-600">Auszahlung (aktueller Monat):</span>
-              <span className="font-medium">{monthlyData?.summary?.paidThisMonth?.toFixed(2) || '0.00'} €</span>
+              <span className="font-medium">{formatCurrency(summary?.paidThisMonth ?? 0)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-600">Übertrag in kommenden Monat:</span>
-              <span className="font-medium">{monthlyData?.summary?.carryOut?.toFixed(2) || '0.00'} €</span>
+              <span className="font-medium">{formatCurrency(summary?.carryOut ?? 0)}</span>
             </div>
           </div>
+          {limitMissing && (
+            <p className="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+              Vorläufig: Für diesen Zeitraum ist noch keine Minijob-Grenze hinterlegt. Auszahlung und Übertrag können sich noch ändern.
+            </p>
+          )}
         </div>
       </div>
 
@@ -327,7 +290,7 @@ export default function EmployeeDashboard() {
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
         {/* Table Header mit Periodenauswahl rechts */}
         <div className="px-6 py-4 border-b border-slate-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-medium text-slate-900">
                 Zeiteinträge
@@ -340,11 +303,12 @@ export default function EmployeeDashboard() {
             </div>
 
             {/* Rechte Seite: Periodenauswahl + Button */}
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-wrap items-center gap-4">
               {/* Periodenauswahl */}
-              <div className="flex items-center space-x-2">
-                <label className="text-sm font-medium text-slate-700">Abrechnungsperiode:</label>
+              <div className="flex items-center gap-2">
+                <label htmlFor="employee-period" className="text-sm font-medium text-slate-700">Abrechnungsperiode:</label>
                 <select
+                  id="employee-period"
                   value={currentMonth}
                   onChange={(e) => handleMonthChange(e.target.value)}
                   className="block w-40 pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
@@ -362,7 +326,7 @@ export default function EmployeeDashboard() {
                 onClick={() => setShowAddForm(!showAddForm)}
                 disabled={isClosed}
                 title={isClosed ? 'Die Periode ist abgeschlossen' : undefined}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -373,14 +337,14 @@ export default function EmployeeDashboard() {
           </div>
         </div>
 
-        {/* Rest des Codes bleibt gleich... */}
         {/* Add Form */}
         {showAddForm && !isClosed && (
           <div className="px-6 py-4 bg-slate-50 border-b border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Datum</label>
+                <label htmlFor="entry-1" className="block text-sm font-medium text-slate-700 mb-1">Datum</label>
                 <input
+                  id="entry-1"
                   type="date"
                   value={formData.date}
                   onChange={(e) => setFormData({ ...formData, date: e.target.value })}
@@ -388,8 +352,9 @@ export default function EmployeeDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Startzeit</label>
+                <label htmlFor="entry-2" className="block text-sm font-medium text-slate-700 mb-1">Startzeit</label>
                 <input
+                  id="entry-2"
                   type="time"
                   value={formData.startTime}
                   onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
@@ -397,8 +362,9 @@ export default function EmployeeDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Endzeit</label>
+                <label htmlFor="entry-3" className="block text-sm font-medium text-slate-700 mb-1">Endzeit</label>
                 <input
+                  id="entry-3"
                   type="time"
                   value={formData.endTime}
                   onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
@@ -406,8 +372,9 @@ export default function EmployeeDashboard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Beschreibung</label>
+                <label htmlFor="entry-4" className="block text-sm font-medium text-slate-700 mb-1">Beschreibung</label>
                 <input
+                  id="entry-4"
                   type="text"
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -484,7 +451,7 @@ export default function EmployeeDashboard() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="text-sm font-medium text-slate-900">{record.workTime}</span>
-                      <span className="text-xs text-slate-500 block">{record.totalHours.toFixed(2).replace('.', ',')} Std.</span>
+                      <span className="text-xs text-slate-500 block">{formatHours(record.totalHours)}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                       {record.formattedEarnings}
@@ -544,6 +511,7 @@ export default function EmployeeDashboard() {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   )
 }

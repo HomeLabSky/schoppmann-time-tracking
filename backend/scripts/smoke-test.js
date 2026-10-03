@@ -178,13 +178,23 @@ async function main() {
     console.log('\n[Employee]');
     const empProfile = await api('GET', '/api/employee/profile', { token: empToken });
     check('Employee-Profil 200', empProfile.status === 200, empProfile.status);
+    const empRateBefore = (await api('GET', '/api/employee/settings', { token: empToken })).json?.data?.settings?.stundenlohn;
+    const empRaise = await api('PUT', '/api/employee/settings', {
+      token: empToken,
+      body: { stundenlohn: 99, abrechnungStart: 1, abrechnungEnde: 31 }
+    });
+    check('Employee darf eigenen Stundenlohn nicht ändern 403 SETTINGS_ADMIN_ONLY', empRaise.status === 403 && empRaise.json?.code === 'SETTINGS_ADMIN_ONLY', empRaise.json);
     const empSettings = await api('PUT', '/api/employee/settings', {
       token: empToken,
-      body: { stundenlohn: 13.5, abrechnungStart: 1, abrechnungEnde: 31 }
+      body: { lohnzettelEmail: 'lohn.smoke@schoppmann.de' }
     });
-    check('Employee-Settings aktualisiert', empSettings.status === 200 && empSettings.json?.data?.settings?.stundenlohn === 13.5, empSettings.json);
+    check('Employee-Settings (Lohnzettel-E-Mail) aktualisiert', empSettings.status === 200 && empSettings.json?.data?.settings?.lohnzettelEmail === 'lohn.smoke@schoppmann.de', empSettings.json);
     const empSettingsGet = await api('GET', '/api/employee/settings', { token: empToken });
-    check('Employee-Settings gelesen', empSettingsGet.status === 200 && !!empSettingsGet.json?.data?.userInfo, empSettingsGet.json);
+    check(
+      'Employee-Settings gelesen, Stundenlohn unverändert',
+      empSettingsGet.status === 200 && !!empSettingsGet.json?.data?.userInfo && empSettingsGet.json.data.settings.stundenlohn === empRateBefore,
+      empSettingsGet.json
+    );
     const empDashboard = await api('GET', '/api/employee/dashboard', { token: empToken });
     check('Employee-Dashboard 200', empDashboard.status === 200 && !!empDashboard.json?.data?.user, empDashboard.status);
     const empAccount = await api('GET', '/api/employee/account-status', { token: empToken });
@@ -295,6 +305,18 @@ async function main() {
     const closeRunning = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: currentMonthParam } });
     check('Abschluss laufender Periode 409 PERIOD_NOT_ENDED', closeRunning.status === 409 && closeRunning.json?.code === 'PERIOD_NOT_ENDED', closeRunning.json);
 
+    const closeNoLimit = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: prevMonth } });
+    check(
+      'Abschluss ohne Minijob-Grenze 409 MINIJOB_LIMIT_MISSING',
+      closeNoLimit.status === 409 && closeNoLimit.json?.code === 'MINIJOB_LIMIT_MISSING' && sheet.json?.data?.summary?.minijobLimitMissing === true,
+      closeNoLimit.json
+    );
+    const limitForClose = await api('POST', '/api/admin/minijob/settings', {
+      token: adminToken,
+      body: { monthlyLimit: 603.0, description: 'Smoke Grenze für Abschluss', validFrom: '2020-01-01', validUntil: null }
+    });
+    check('Minijob-Grenze für Abschluss angelegt 201', limitForClose.status === 201, limitForClose.json);
+
     const closed = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: prevMonth } });
     check('Periode abgeschlossen 201', closed.status === 201 && closed.json?.data?.closure?.earningsCents === 9600, closed.json);
 
@@ -401,6 +423,12 @@ async function main() {
     const sb = newSession();
     await loginAs(sa);
     await loginAs(sb);
+    const wrongCurrent = await api('PUT', '/api/auth/change-password', { token: sa, body: { currentPassword: 'Falsch12345', newPassword: 'Neu12345x' } });
+    check(
+      'Falsches aktuelles Passwort 400 INVALID_CURRENT_PASSWORD (kein 401 → keine Abmeldung)',
+      wrongCurrent.status === 400 && wrongCurrent.json?.code === 'INVALID_CURRENT_PASSWORD' && (await profileOf(sa)).status === 200,
+      wrongCurrent.json
+    );
     const changed = await api('PUT', '/api/auth/change-password', { token: sa, body: { currentPassword: authUser.password, newPassword: 'Neu12345x' } });
     authUser.password = 'Neu12345x';
     check('Passwortwechsel 200', changed.status === 200, changed.json);

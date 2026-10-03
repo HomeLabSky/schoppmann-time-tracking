@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import Link from 'next/link'
 
@@ -11,6 +11,7 @@ export default function EmployeeLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { user: currentUser, loading, logout } = useAuth()
 
   useEffect(() => {
@@ -54,19 +55,25 @@ export default function EmployeeLayout({
             </div>
 
             {/* Navigation */}
-            <nav className="hidden md:flex space-x-8">
-              <Link
-                href="/employee/dashboard"
-                className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/employee/settings"
-                className="text-slate-600 hover:text-slate-900 px-3 py-2 rounded-md text-sm font-medium transition-colors"
-              >
-                Einstellungen
-              </Link>
+            <nav aria-label="Hauptnavigation" className="flex gap-2 lg:gap-6">
+              {[
+                { href: '/employee/dashboard', label: 'Zeiterfassung' },
+                { href: '/employee/settings', label: 'Einstellungen' },
+              ].map((item) => {
+                const isActive = pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                )
+              })}
             </nav>
 
             {/* User Info & Actions */}
@@ -89,6 +96,7 @@ export default function EmployeeLayout({
                 onClick={logout}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
                 title="Abmelden"
+                aria-label="Abmelden"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
