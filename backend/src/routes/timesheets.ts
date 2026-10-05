@@ -10,7 +10,7 @@ import TimeEntryService from '../services/timeEntryService';
 import PeriodService from '../services/periodService';
 import { actorOf } from '../middleware/auth';
 import { MonthQuery, MonthlyRecords, PeriodsData } from '../schemas/timeEntry';
-import { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData } from '../schemas/admin';
+import { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData, TimesheetOverviewData } from '../schemas/admin';
 
 const api = createApiRouter('/admin/timesheets', { tags: ['Zeitnachweise'] });
 
@@ -18,6 +18,20 @@ const parseMonth = (month: string): [number, number] => {
   const [year = 0, monthNumber = 0] = month.split('-').map(Number);
   return [year, monthNumber];
 };
+
+// Vor '/:userId' registrieren, sonst wird "overview" als Benutzer-ID gelesen
+api.get('/overview', {
+  summary: 'Monatsübersicht aller Mitarbeiter',
+  description: 'Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. ' +
+    'Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.',
+  auth: 'admin',
+  query: MonthQuery,
+  response: TimesheetOverviewData,
+  message: 'Übersicht erfolgreich geladen'
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.query.month);
+  return { data: { month: req.valid.query.month, rows: PeriodService.overview(year, month) } };
+});
 
 api.get('/:userId/periods', {
   summary: 'Abrechnungsperioden eines Mitarbeiters (mit Abschluss-Kennzeichen)',

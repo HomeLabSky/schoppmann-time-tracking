@@ -10,6 +10,7 @@
     "test": "npm run typecheck && npm run test:unit && npm run smoke",
     "test:unit": "node --import tsx --test \"test/**/*.test.ts\"",
     "smoke": "tsx test/smoke.ts",
+    "e2e:server": "tsx test/e2e-server.ts",
     "openapi": "tsx src/scripts/openapi.ts",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",

@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect, useContext, createContext, useCallback, ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQueryClient } from '@tanstack/react-query'
 import type { User, RegisterData, ApiError } from '@/types/api'
-import { authApi, authenticatedFetch, setSessionExpiredHandler } from './api'
+import { authApi, setSessionExpiredHandler } from './api'
 
 /**
  * Anmeldung im Frontend.
@@ -36,11 +37,14 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+  // Zwischengespeicherte Server-Daten gehören zur Sitzung: bei Benutzerwechsel verwerfen
+  const queryClient = useQueryClient()
 
   const handleSessionExpired = useCallback((): void => {
     setUser(null)
+    queryClient.clear()
     router.push('/login')
-  }, [router])
+  }, [router, queryClient])
 
   // Sitzung abgelaufen (Erneuerung fehlgeschlagen) → zur Anmeldung
   useEffect(() => {
@@ -64,6 +68,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
   const login = async (email: string, password: string): Promise<{ success: boolean, message?: string, error?: string }> => {
     try {
       const response = await authApi.login({ email, password })
+      queryClient.clear()
       setUser(response.data.user)
       router.push(homePathFor(response.data.user))
       return { success: true, message: response.message || 'Login erfolgreich' }
@@ -92,6 +97,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
       // Auch wenn der Server nicht erreichbar ist: lokal abmelden
     }
     setUser(null)
+    queryClient.clear()
     router.push('/login')
   }
 
@@ -102,8 +108,8 @@ export function AuthProvider({ children }: AuthProviderProps): React.JSX.Element
       if (response.success && response.data?.user) {
         setUser(response.data.user)
       }
-    } catch (error) {
-      console.error('Failed to refresh user:', error)
+    } catch {
+      // Profil bleibt unverändert; Sitzungsablauf behandelt der API-Client
     }
   }
 
@@ -136,39 +142,6 @@ export function useAuth(): AuthContextType {
 
 export const authUtils = {
   getRedirectPath: (user: User): string => homePathFor(user)
-}
-
-interface UseRequireAuthOptions {
-  redirectTo?: string
-  requiredRole?: 'admin' | 'mitarbeiter'
-}
-
-/** Seitenschutz: leitet nicht angemeldete Benutzer zur Anmeldung, falsche Rollen zu ihrem Bereich. */
-export function useRequireAuth(options: UseRequireAuthOptions = {}) {
-  const { user, loading } = useAuth()
-  const router = useRouter()
-  const { redirectTo = '/login', requiredRole } = options
-
-  useEffect(() => {
-    if (loading) return
-    if (!user) {
-      router.push(redirectTo)
-      return
-    }
-    if (requiredRole && user.role !== requiredRole) {
-      router.push(authUtils.getRedirectPath(user))
-    }
-  }, [user, loading, router, redirectTo, requiredRole])
-
-  return { user, loading }
-}
-
-/**
- * Für Seiten, die mit eigener URL abfragen: fetch mit Cookies und stiller Sitzungserneuerung.
- * Wirft Error('SESSION_EXPIRED'), wenn keine gültige Sitzung mehr besteht.
- */
-export const authManager = {
-  authenticatedFetch
 }
 
 export default useAuth

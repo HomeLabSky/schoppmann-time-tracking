@@ -4,9 +4,11 @@ Zeiterfassungssystem für Minijob-/Stundenabrechnung mit getrenntem Frontend und
 
 | Bereich | Technologie | Pfad |
 |---|---|---|
-| Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind | `frontend/` |
+| Frontend | Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind v4, TanStack Query, react-hook-form + zod | `frontend/` |
 | Backend | TypeScript, Express 5, zod, Drizzle + SQLite (better-sqlite3), pino; REST-API `/api/v1` mit OpenAPI-Vertrag | `backend/` |
-| Shared | Geteilte TypeScript-Typen (noch nicht eingebunden) | `shared/` |
+
+Die Website ist **desktop-first**; mobil arbeiten Mitarbeiter später über eine eigene App gegen dieselbe REST-API.
+Frontend-Aufbau und Regeln: [`frontend/README.md`](frontend/README.md).
 
 ## Schnellstart
 
@@ -88,6 +90,7 @@ npm run db:restore -- backups/timetracking-JJJJMMTT-HHMMSS.db   # Backend vorher
 cd backend  && npm test                   # Unit-/Integrationstests (node:test) + End-to-End-Smoke-Test der API
 cd backend  && npm run test:unit          # nur die Unit-/Integrationstests (Rechenlogik, Zeiterfassung)
 cd frontend && npx tsc --noEmit && npm run lint && npm run build
+cd frontend && npm run e2e                # Ende-zu-Ende im Browser (Playwright; einmalig: npx playwright install chromium)
 ```
 
 Dieselben Prüfungen laufen in GitHub Actions (`.github/workflows/ci.yml`).

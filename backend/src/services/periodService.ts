@@ -11,6 +11,27 @@ import { TimeEntryService } from './timeEntryService';
 
 const MIN_REASON_LENGTH = 5;
 
+/** Zeile der Monatsübersicht (Beträge in Euro) */
+export interface TimesheetOverviewRow {
+  userId: number;
+  name: string;
+  email: string;
+  isActive: boolean;
+  periodStart: string;
+  periodEnd: string;
+  entryCount: number;
+  totalHours: number;
+  totalEarnings: number;
+  paidThisMonth: number;
+  carryOut: number;
+  minijobLimit: number;
+  minijobLimitMissing: boolean;
+  exceedsLimit: boolean;
+  /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
+  status: 'open' | 'ready' | 'closed';
+  closedAt: Date | null;
+}
+
 const displayRange = (start: string, end: string): string =>
   `${DateService.formatDateForDisplay(start)} – ${DateService.formatDateForDisplay(end)}`;
 
@@ -156,6 +177,48 @@ export class PeriodService {
       });
       return { periodStart: closure.periodStart, periodEnd: closure.periodEnd };
     });
+  }
+
+  /**
+   * Übersicht aller Mitarbeiter für einen Referenzmonat: Stunden, Beträge und Status je Mitarbeiter (jeweils in
+   * dessen eigener Abrechnungsperiode). Deaktivierte Konten erscheinen nur, wenn sie in der Periode Einträge haben.
+   * @param month Referenzmonat (1-12)
+   */
+  static overview(year: number, month: number): TimesheetOverviewRow[] {
+    const employees = db().select({ id: users.id, name: users.name, email: users.email, isActive: users.isActive })
+      .from(users)
+      .where(eq(users.role, 'mitarbeiter'))
+      .orderBy(asc(users.name))
+      .all();
+    const today = todayString();
+    const rows: TimesheetOverviewRow[] = [];
+    for (const employee of employees) {
+      const isActive = employee.isActive !== false;
+      const data = TimeEntryService.getMonthlyTimeRecordsSync(employee.id, year, month);
+      const s = data.summary;
+      if (!isActive && s.entryCount === 0) continue;
+      const closed = data.period.status === 'closed';
+      rows.push({
+        userId: employee.id,
+        name: employee.name,
+        email: employee.email,
+        isActive,
+        periodStart: data.period.startDate,
+        periodEnd: data.period.endDate,
+        entryCount: s.entryCount,
+        totalHours: s.totalHours,
+        totalEarnings: s.totalEarnings,
+        paidThisMonth: s.paidThisMonth,
+        carryOut: s.carryOut,
+        minijobLimit: s.minijobLimit,
+        // Abgeschlossene Perioden rechnen mit der eingefrorenen Grenze – dort fehlt nichts
+        minijobLimitMissing: !closed && s.minijobLimitMissing,
+        exceedsLimit: s.exceedsLimit,
+        status: closed ? 'closed' : today > data.period.endDate ? 'ready' : 'open',
+        closedAt: data.closure ? data.closure.closedAt : null
+      });
+    }
+    return rows;
   }
 
   /** Alle aktuell abgeschlossenen Perioden eines Mitarbeiters (neueste zuerst). */

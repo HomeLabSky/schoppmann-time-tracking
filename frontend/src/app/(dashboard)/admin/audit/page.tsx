@@ -1,242 +1,221 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useState } from 'react'
-import { adminApi } from '@/lib/api'
-import { formatCurrency, formatDate, getErrorMessage } from '@/lib/utils'
-import { ACTION_LABELS } from '@/lib/auditLabels'
-import type { User } from '@/types/api'
-import type { AuditEntry, Pagination } from '@/types/audit'
+import { Fragment, useMemo, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, RotateCcw, ScrollText } from 'lucide-react'
+import { useAuditLog, useUsers } from '@/lib/queries'
+import { ACTION_FILTERS, ACTION_LABELS, FIELD_LABELS, changesOf, formatValue } from '@/lib/auditLabels'
+import { formatDateTime, getErrorMessage } from '@/lib/utils'
+import { Alert } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Input, Select } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { PageHeader } from '@/components/ui/page-header'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { cn } from '@/lib/utils'
 
-const ACTION_FILTERS = [
-  { value: '', label: 'Alle Vorgänge' },
-  { value: 'time_entry', label: 'Zeiteinträge' },
-  { value: 'period', label: 'Monatsabschluss' },
-  { value: 'user', label: 'Benutzer' },
-  { value: 'auth', label: 'Anmeldungen' },
-  { value: 'minijob_setting', label: 'Minijob-Grenzen' },
-]
+const PAGE_SIZE = 25
+const EMPTY_FILTERS = { userId: '', action: '', from: '', to: '' }
 
-const FIELD_LABELS: Record<string, string> = {
-  date: 'Datum',
-  startTime: 'Beginn',
-  endTime: 'Ende',
-  breakMinutes: 'Pause (Min.)',
-  description: 'Beschreibung',
-  hourlyRateCents: 'Stundensatz',
-  email: 'E-Mail',
-  name: 'Name',
-  role: 'Rolle',
-  isActive: 'Aktiv',
-  stundenlohn: 'Stundenlohn',
-  abrechnungStart: 'Abrechnung ab Tag',
-  abrechnungEnde: 'Abrechnung bis Tag',
-  lohnzettelEmail: 'Lohnzettel-E-Mail',
-  monthlyLimit: 'Monatsgrenze',
-  validFrom: 'Gültig ab',
-  validUntil: 'Gültig bis',
-  periodStart: 'Periode von',
-  periodEnd: 'Periode bis',
-  entryCount: 'Einträge',
-  totalMinutes: 'Minuten',
-  earnings: 'Verdienst',
-  limit: 'Grenze',
-  carryIn: 'Übertrag Vorperiode',
-  paid: 'Auszahlung',
-  carryOut: 'Übertrag',
-  reason: 'Grund',
-  ip: 'IP-Adresse',
+const actionTone = (action: string): 'neutral' | 'info' | 'warning' | 'danger' | 'success' => {
+  if (action.endsWith('.delete') || action === 'auth.session_reuse_detected' || action === 'auth.login_failed') return 'danger'
+  if (action === 'period.reopen' || action === 'user.deactivate') return 'warning'
+  if (action === 'period.close') return 'success'
+  if (action.startsWith('auth.')) return 'neutral'
+  return 'info'
 }
-
-const MONEY_FIELDS = new Set(['earnings', 'limit', 'carryIn', 'paid', 'carryOut', 'stundenlohn', 'monthlyLimit'])
-
-const formatValue = (key: string, value: unknown): string => {
-  if (value === null || value === undefined || value === '') return '–'
-  if (key === 'hourlyRateCents') return `${formatCurrency(Number(value) / 100)}/Std.`
-  if (MONEY_FIELDS.has(key)) return formatCurrency(Number(value))
-  if (typeof value === 'boolean') return value ? 'ja' : 'nein'
-  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return formatDate(String(value))
-  return String(value)
-}
-
-interface Change { key: string; from?: unknown; to?: unknown }
-
-/** Nur geänderte Felder (Update), bzw. alle Felder bei Anlegen/Löschen. */
-const changesOf = (entry: AuditEntry): Change[] => {
-  const before = entry.before ?? {}
-  const after = entry.after ?? {}
-  if (entry.before && entry.after) {
-    return Object.keys({ ...before, ...after })
-      .filter((key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]))
-      .map((key) => ({ key, from: before[key], to: after[key] }))
-  }
-  const single = (entry.after ?? entry.before ?? {}) as Record<string, unknown>
-  return Object.keys(single).map((key) => ({ key, to: entry.after ? single[key] : undefined, from: entry.after ? undefined : single[key] }))
-}
-
-const formatDateTime = (value: string) =>
-  new Date(value).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'medium' })
 
 export default function AuditPage() {
-  const [entries, setEntries] = useState<AuditEntry[]>([])
-  const [pagination, setPagination] = useState<Pagination | null>(null)
-  const [users, setUsers] = useState<User[]>([])
-  const [filters, setFilters] = useState({ userId: '', action: '', from: '', to: '' })
+  const users = useUsers()
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
   const [page, setPage] = useState(1)
   const [openId, setOpenId] = useState<number | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const audit = useAuditLog({ ...filters, page, limit: PAGE_SIZE })
 
-  useEffect(() => {
-    adminApi.getUsers({ limit: 200 }).then((res) => setUsers(res.data.users)).catch(() => undefined)
-  }, [])
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const res = await adminApi.getAuditLog({ ...filters, page, limit: 25 })
-      setEntries(res.data.entries)
-      setPagination(res.data.pagination)
-    } catch (err) {
-      setError(getErrorMessage(err, 'Änderungsprotokoll konnte nicht geladen werden'))
-    } finally {
-      setLoading(false)
-    }
-  }, [filters, page])
-
-  useEffect(() => {
-    load()
-  }, [load])
+  const nameById = useMemo(() => new Map((users.data ?? []).map((u) => [u.id, u.name])), [users.data])
+  const entries = audit.data?.entries ?? []
+  const pagination = audit.data?.pagination
+  const filtered = Object.values(filters).some(Boolean)
 
   const setFilter = (key: keyof typeof filters, value: string) => {
     setPage(1)
+    setOpenId(null)
     setFilters((prev) => ({ ...prev, [key]: value }))
   }
 
-  const userName = (id: number | null) => {
-    if (id === null) return '–'
-    const u = users.find((x) => x.id === id)
-    return u ? u.name : `Benutzer #${id}`
-  }
-
   return (
-    <div>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Änderungsprotokoll</h2>
-        <p className="mt-1 text-gray-600">
-          Wer hat wann was geändert? Das Protokoll ist unveränderlich und enthält keine Passwörter.
-        </p>
-      </div>
+    <>
+      <PageHeader title="Änderungsprotokoll" description="Wer hat wann was geändert? Unveränderlich und ohne Passwörter." />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm md:grid-cols-4">
-        <div>
-          <label htmlFor="au-user" className="mb-1 block text-sm font-medium text-gray-700">Betroffener Benutzer</label>
-          <select id="au-user" value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+      <Card className="mb-4 grid gap-4 p-4 md:grid-cols-[1fr_1fr_auto_auto_auto] md:items-end">
+        <div className="space-y-1.5">
+          <Label htmlFor="au-user">Betroffener Benutzer</Label>
+          <Select id="au-user" value={filters.userId} onChange={(e) => setFilter('userId', e.target.value)}>
             <option value="">Alle</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
+            {(users.data ?? []).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
         </div>
-        <div>
-          <label htmlFor="au-action" className="mb-1 block text-sm font-medium text-gray-700">Vorgang</label>
-          <select id="au-action" value={filters.action} onChange={(e) => setFilter('action', e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
-            {ACTION_FILTERS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-          </select>
+        <div className="space-y-1.5">
+          <Label htmlFor="au-action">Vorgang</Label>
+          <Select id="au-action" value={filters.action} onChange={(e) => setFilter('action', e.target.value)}>
+            {ACTION_FILTERS.map((f) => (
+              <option key={f.value} value={f.value}>
+                {f.label}
+              </option>
+            ))}
+          </Select>
         </div>
-        <div>
-          <label htmlFor="au-from" className="mb-1 block text-sm font-medium text-gray-700">Von</label>
-          <input id="au-from" type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+        <div className="space-y-1.5">
+          <Label htmlFor="au-from">Von</Label>
+          <Input id="au-from" type="date" value={filters.from} onChange={(e) => setFilter('from', e.target.value)} />
         </div>
-        <div>
-          <label htmlFor="au-to" className="mb-1 block text-sm font-medium text-gray-700">Bis</label>
-          <input id="au-to" type="date" value={filters.to} onChange={(e) => setFilter('to', e.target.value)} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+        <div className="space-y-1.5">
+          <Label htmlFor="au-to">Bis</Label>
+          <Input id="au-to" type="date" value={filters.to} min={filters.from || undefined} onChange={(e) => setFilter('to', e.target.value)} />
         </div>
-      </div>
+        <Button variant="ghost" disabled={!filtered} onClick={() => { setFilters(EMPTY_FILTERS); setPage(1) }}>
+          <RotateCcw aria-hidden="true" /> Zurücksetzen
+        </Button>
+      </Card>
 
-      {error && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {audit.isError && (
+        <Alert variant="danger" title="Änderungsprotokoll konnte nicht geladen werden" className="mb-4">
+          {getErrorMessage(audit.error)}
+        </Alert>
+      )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
+      <div className={cn('overflow-hidden rounded-lg border bg-card transition-opacity', audit.isFetching && !audit.isLoading && 'opacity-70')}>
+        <Table>
           <caption className="sr-only">Änderungsprotokoll</caption>
-          <thead className="bg-gray-50 text-left text-xs uppercase tracking-wider text-gray-500">
-            <tr>
-              <th scope="col" className="px-4 py-3">Zeitpunkt</th>
-              <th scope="col" className="px-4 py-3">Vorgang</th>
-              <th scope="col" className="px-4 py-3">Durchgeführt von</th>
-              <th scope="col" className="px-4 py-3">Betrifft</th>
-              <th scope="col" className="px-4 py-3"><span className="sr-only">Details</span></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {loading && entries.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Wird geladen…</td></tr>
-            )}
-            {!loading && entries.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-500">Keine Einträge für diese Auswahl.</td></tr>
-            )}
-            {entries.map((entry) => {
-              const changes = changesOf(entry)
-              const reason = typeof entry.meta?.reason === 'string' ? entry.meta.reason : null
-              const hasDetails = changes.length > 0 || reason || entry.meta
-              const open = openId === entry.id
-              return (
-                <Fragment key={entry.id}>
-                  <tr className="align-top">
-                    <td className="whitespace-nowrap px-4 py-3">{formatDateTime(entry.createdAt)}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{ACTION_LABELS[entry.action] ?? entry.action}</td>
-                    <td className="px-4 py-3">{entry.actorEmail}</td>
-                    <td className="px-4 py-3">{userName(entry.targetUserId)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {hasDetails && (
-                        <button
-                          onClick={() => setOpenId(open ? null : entry.id)}
-                          aria-expanded={open}
-                          className="text-sm text-blue-600 hover:text-blue-800"
-                        >
-                          {open ? 'Ausblenden' : 'Details'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                  {open && (
-                    <tr className="bg-gray-50">
-                      <td colSpan={5} className="px-4 py-3">
-                        {reason && <p className="mb-2 text-sm"><span className="font-medium">Begründung:</span> {reason}</p>}
-                        {changes.length > 0 && (
-                          <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-                            {changes.map((c) => (
-                              <div key={c.key} className="flex gap-2">
-                                <dt className="font-medium text-gray-700">{FIELD_LABELS[c.key] ?? c.key}:</dt>
-                                <dd className="text-gray-700">
-                                  {entry.before && entry.after
-                                    ? <>{formatValue(c.key, c.from)} → <strong>{formatValue(c.key, c.to)}</strong></>
-                                    : formatValue(c.key, c.to ?? c.from)}
-                                </dd>
-                              </div>
-                            ))}
-                          </dl>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-44">Zeitpunkt</TableHead>
+              <TableHead>Vorgang</TableHead>
+              <TableHead>Durchgeführt von</TableHead>
+              <TableHead>Betrifft</TableHead>
+              <TableHead className="w-28 text-right">
+                <span className="sr-only">Details</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {audit.isLoading ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <TableRow key={i} className="hover:bg-transparent">
+                  <TableCell colSpan={5}>
+                    <Skeleton className="h-5" />
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : entries.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={5}>
+                  <EmptyState icon={ScrollText} title="Keine Einträge" description={filtered ? 'Für diese Auswahl gibt es keine Einträge.' : undefined} />
+                </TableCell>
+              </TableRow>
+            ) : (
+              entries.map((entry) => {
+                const changes = changesOf(entry)
+                const reason = typeof entry.meta?.reason === 'string' ? entry.meta.reason : null
+                const hasDetails = changes.length > 0 || !!reason || !!entry.meta
+                const open = openId === entry.id
+                const detailsId = `audit-details-${entry.id}`
+                return (
+                  <Fragment key={entry.id}>
+                    <TableRow>
+                      <TableCell className="tabular whitespace-nowrap text-muted-foreground">{formatDateTime(entry.createdAt)}</TableCell>
+                      <TableCell>
+                        <Badge variant={actionTone(entry.action)}>{ACTION_LABELS[entry.action] ?? entry.action}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-56 truncate">{entry.actorEmail}</TableCell>
+                      <TableCell>{entry.targetUserId === null ? '–' : nameById.get(entry.targetUserId) ?? `Benutzer #${entry.targetUserId}`}</TableCell>
+                      <TableCell className="text-right">
+                        {hasDetails && (
+                          <Button variant="ghost" size="sm" onClick={() => setOpenId(open ? null : entry.id)} aria-expanded={open} aria-controls={detailsId}>
+                            Details <ChevronDown className={cn('transition-transform', open && 'rotate-180')} aria-hidden="true" />
+                          </Button>
                         )}
-                        {entry.meta && !reason && (
-                          <pre className="mt-2 whitespace-pre-wrap text-xs text-gray-500">{JSON.stringify(entry.meta, null, 2)}</pre>
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              )
-            })}
-          </tbody>
-        </table>
+                      </TableCell>
+                    </TableRow>
+                    {open && (
+                      <TableRow id={detailsId} className="bg-muted/40 hover:bg-muted/40">
+                        <TableCell colSpan={5} className="py-4">
+                          {reason && (
+                            <p className="mb-3 text-sm">
+                              <span className="font-medium">Begründung:</span> {reason}
+                            </p>
+                          )}
+                          {changes.length > 0 && (
+                            <dl className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+                              {changes.map((c) => (
+                                <div key={c.key} className="flex flex-wrap gap-x-2">
+                                  <dt className="text-muted-foreground">{FIELD_LABELS[c.key] ?? c.key}:</dt>
+                                  <dd>
+                                    {entry.before && entry.after ? (
+                                      <>
+                                        <span className="text-muted-foreground line-through">{formatValue(c.key, c.from)}</span>{' '}
+                                        → <strong>{formatValue(c.key, c.to)}</strong>
+                                      </>
+                                    ) : (
+                                      formatValue(c.key, c.to ?? c.from)
+                                    )}
+                                  </dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                          {entry.meta && !reason && (
+                            <dl className="mt-2 grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+                              {Object.entries(entry.meta).map(([key, value]) => (
+                                <div key={key} className="flex gap-2">
+                                  <dt className="text-muted-foreground">{FIELD_LABELS[key] ?? key}:</dt>
+                                  <dd>{formatValue(key, typeof value === 'object' ? JSON.stringify(value) : value)}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
       </div>
 
-      {pagination && pagination.totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
-          <span>{pagination.total} Einträge · Seite {pagination.page} von {pagination.totalPages}</span>
-          <div className="flex gap-2">
-            <button disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 disabled:opacity-40">Zurück</button>
-            <button disabled={page >= pagination.totalPages} onClick={() => setPage((p) => p + 1)} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 disabled:opacity-40">Weiter</button>
-          </div>
+      {pagination && pagination.total > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+          <span className="tabular">{pagination.total} {pagination.total === 1 ? 'Eintrag' : 'Einträge'}</span>
+          {pagination.totalPages > 1 && (
+            <div className="flex items-center gap-2">
+              <span className="tabular">
+                Seite {pagination.page} von {pagination.totalPages}
+              </span>
+              <Button variant="outline" size="icon-sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} aria-label="Vorherige Seite">
+                <ChevronLeft aria-hidden="true" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                disabled={page >= pagination.totalPages}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Nächste Seite"
+              >
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            </div>
+          )}
         </div>
       )}
-    </div>
+    </>
   )
 }

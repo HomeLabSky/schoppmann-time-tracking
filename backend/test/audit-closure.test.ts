@@ -327,3 +327,61 @@ test('Abschluss: Mitarbeiter-Auslöser steht im Protokoll, Abschluss nennt den A
   assert.equal(entry.targetUserId, user.id);
   assert.equal(entry.after.periodStart, '2024-06-01');
 });
+
+// ---------- Monatsübersicht aller Mitarbeiter ----------
+
+const overviewRow = (year: number, month: number, userId: number) =>
+  PeriodService.overview(year, month).find((r) => r.userId === userId);
+
+test('Übersicht: Status läuft / bereit / abgeschlossen je Mitarbeiter, mit Summen', async () => {
+  const user = await makeUser();
+  const prev = previousMonth();
+  await addEntry(user, prev.first); // 8 h à 10 €
+
+  const ready = overviewRow(prev.year, prev.month, user.id);
+  assert.equal(ready?.status, 'ready');
+  assert.equal(ready?.entryCount, 1);
+  assert.equal(ready?.totalHours, 8);
+  assert.equal(ready?.totalEarnings, 80);
+  assert.equal(ready?.periodStart, prev.first);
+  assert.equal(ready?.periodEnd, prev.last);
+  assert.equal(ready?.closedAt, null);
+
+  await PeriodService.closePeriod(user.id, prev.year, prev.month, adminActor);
+  const closed = overviewRow(prev.year, prev.month, user.id);
+  assert.equal(closed?.status, 'closed');
+  assert.ok(closed?.closedAt instanceof Date);
+
+  const [y, m] = todayString().split('-').map(Number);
+  const current = overviewRow(y, m, user.id);
+  assert.equal(current?.status, 'open', 'laufende Periode');
+  assert.equal(current?.entryCount, 0, 'Mitarbeiter ohne Einträge erscheinen trotzdem');
+});
+
+test('Übersicht: nur Mitarbeiter; deaktivierte Konten nur mit Einträgen; sortiert nach Name', async () => {
+  const inactiveEmpty = await makeUser({ isActive: false });
+  const inactiveWithEntry = await makeUser({ isActive: false });
+  await addEntry(inactiveWithEntry, '2024-05-06');
+
+  const rows = PeriodService.overview(2024, 5);
+  const ids = rows.map((r) => r.userId);
+  assert.ok(!ids.includes(admin.id), 'Admins erscheinen nicht');
+  assert.ok(!ids.includes(inactiveEmpty.id), 'deaktiviert ohne Einträge ausgeblendet');
+  assert.equal(rows.find((r) => r.userId === inactiveWithEntry.id)?.isActive, false);
+  const names = rows.map((r) => r.name);
+  assert.deepEqual(names, [...names].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+});
+
+test('Übersicht: eigene Abrechnungsperiode je Mitarbeiter und fehlende Minijob-Grenze', async () => {
+  const shifted = await makeUser({ abrechnungStart: 22, abrechnungEnde: 21 });
+  await addEntry(shifted, '2024-07-21');
+  const row = overviewRow(2024, 6, shifted.id);
+  assert.equal(row?.periodStart, '2024-06-22');
+  assert.equal(row?.periodEnd, '2024-07-21');
+  assert.equal(row?.entryCount, 1);
+
+  const noLimit = await makeUser();
+  await addEntry(noLimit, '2023-06-05'); // vor der ersten Grenze (2024)
+  assert.equal(overviewRow(2023, 6, noLimit.id)?.minijobLimitMissing, true);
+  assert.equal(overviewRow(2024, 6, shifted.id)?.minijobLimitMissing, false);
+});
