@@ -14,11 +14,12 @@ import { AuthService, type AuthContext } from '../services/authService';
 import { UserService } from '../services/userService';
 import type { SafeUser } from '../models/user';
 import type { IssuedSession } from '../services/sessionService';
-import { readAccessToken } from '../middleware/auth';
+import { actorOf, readAccessToken } from '../middleware/auth';
 import { SessionError } from '../services/sessionService';
 import { setAuthCookies, clearAuthCookies, readCookies } from '../utils/authCookies';
 import {
-  LoginBody, AppLoginBody, RegisterBody, RefreshTokenBody, ProfileUpdateBody, ChangePasswordBody, UserData, TokenPair
+  LoginBody, AppLoginBody, RegisterBody, RefreshTokenBody, ProfileUpdateBody, ChangePasswordBody, UserData, TokenPair,
+  SessionIdParam, SessionList, RevokedCount
 } from '../schemas/auth';
 
 const api = createApiRouter('/auth', { tags: ['Anmeldung'] });
@@ -188,6 +189,38 @@ api.put('/change-password', {
 }, async (req) => {
   const { currentPassword, newPassword } = req.valid.body;
   await UserService.changeUserPassword(req.user.userId, currentPassword, newPassword, undefined, req.user.sid);
+  return {};
+});
+
+// ---------------- Sitzungen (angemeldete Browser und Geräte) ----------------
+
+api.get('/sessions', {
+  summary: 'Eigene laufende Sitzungen (Browser und App-Geräte)',
+  description: 'Die Sitzung dieser Anfrage steht vorne (`current: true`). Beendete und abgelaufene erscheinen nicht.',
+  response: SessionList,
+  message: 'Sitzungen erfolgreich geladen'
+}, async (req) => {
+  return { data: { sessions: AuthService.listSessions(req.user.userId, req.user.sid) } };
+});
+
+api.post('/sessions/revoke-others', {
+  summary: 'Überall sonst abmelden: alle anderen eigenen Sitzungen beenden',
+  description: 'Die aktuelle Sitzung bleibt bestehen. Andere Geräte werden bei ihrer nächsten Anfrage abgemeldet ' +
+    '(Zugriffs-Tokens werden bei jeder Anfrage gegen die Sitzung geprüft).',
+  response: RevokedCount,
+  message: 'Andere Sitzungen beendet'
+}, async (req) => {
+  return { data: { revokedCount: AuthService.revokeOtherSessions(req.user.userId, req.user.sid, actorOf(req)) } };
+});
+
+api.delete('/sessions/:sid', {
+  summary: 'Eine eigene Sitzung beenden (z. B. verlorenes Gerät)',
+  description: 'Die aktuelle Sitzung wird über POST /auth/logout beendet (CANNOT_REVOKE_CURRENT_SESSION).',
+  params: SessionIdParam,
+  message: 'Sitzung beendet',
+  errors: ['SESSION_NOT_FOUND', 'CANNOT_REVOKE_CURRENT_SESSION']
+}, async (req) => {
+  AuthService.revokeSession(req.user.userId, req.valid.params.sid, req.user.sid, actorOf(req));
   return {};
 });
 

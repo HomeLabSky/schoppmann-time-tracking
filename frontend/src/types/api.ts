@@ -83,3 +83,20 @@ export interface NewMinijobSetting {
   validFrom: string
   validUntil: string | null
 }
+
+/** Laufende Sitzung (angemeldeter Browser oder App-Gerät) */
+export interface SessionInfo {
+  id: string
+  clientType: 'web' | 'app'
+  /** Gerätename (App) oder Browser/System, z. B. "Edge unter Windows" */
+  label: string
+  deviceName: string | null
+  userAgent: string | null
+  ip: string | null
+  createdAt: string
+  /** auf etwa 5 Minuten genau */
+  lastUsedAt: string
+  expiresAt: string
+  /** Die Sitzung dieses Browsers */
+  current: boolean
+}

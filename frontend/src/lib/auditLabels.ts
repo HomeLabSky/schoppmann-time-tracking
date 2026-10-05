@@ -11,6 +11,10 @@ export const ACTION_LABELS: Record<string, string> = {
   'auth.login_failed': 'Anmeldung fehlgeschlagen',
   'auth.logout': 'Abmeldung',
   'auth.session_reuse_detected': 'Sitzung beendet (Token wiederverwendet)',
+  'auth.account_locked': 'Anmeldung gesperrt (zu viele Fehlversuche)',
+  'auth.session_revoke': 'Gerät abgemeldet',
+  'auth.sessions_revoke_others': 'Auf allen anderen Geräten abgemeldet',
+  'auth.sessions_revoke_all': 'Überall abgemeldet (durch Admin)',
   'period.close': 'Periode abgeschlossen',
   'period.reopen': 'Periode wieder geöffnet',
   'user.create': 'Benutzer angelegt',
@@ -65,6 +69,9 @@ export const FIELD_LABELS: Record<string, string> = {
   carryOut: 'Übertrag',
   reason: 'Grund',
   ip: 'IP-Adresse',
+  revokedCount: 'Beendete Sitzungen',
+  client: 'Zugang',
+  device: 'Gerät',
 }
 
 const MONEY_FIELDS = new Set(['earnings', 'limit', 'carryIn', 'paid', 'carryOut', 'stundenlohn', 'monthlyLimit'])

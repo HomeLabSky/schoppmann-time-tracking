@@ -114,6 +114,32 @@ test('Mitarbeiter: Arbeitszeit mit Pause erfassen, Kennzahlen aktualisieren sich
   await logout(page)
 })
 
+test('Mitarbeiter: angemeldete Geräte sehen und auf allen anderen Geräten abmelden', async ({ page, browser }, testInfo) => {
+  // Zweiter Browser (eigene Cookies) = anderes Gerät
+  const otherContext = await browser.newContext({ baseURL: testInfo.project.use.baseURL, locale: 'de-DE' })
+  const otherPage = await otherContext.newPage()
+  await login(otherPage, EMPLOYEE)
+  await expect(otherPage).toHaveURL(/\/employee\/dashboard$/)
+
+  await login(page, EMPLOYEE)
+  await page.getByRole('link', { name: 'Einstellungen' }).click()
+  const devices = page.getByRole('list', { name: 'Angemeldete Geräte' })
+  await expect(devices.getByRole('listitem')).toHaveCount(2)
+  await expect(devices.getByText('Dieses Gerät')).toHaveCount(1)
+
+  await page.getByRole('button', { name: 'Auf allen anderen Geräten abmelden' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Andere abmelden' }).click()
+  await expect(page.getByText('1 anderes Gerät abgemeldet.')).toBeVisible()
+  await expect(devices.getByRole('listitem')).toHaveCount(1)
+
+  // Das andere Gerät ist sofort abgemeldet und landet bei der nächsten Anfrage auf der Anmeldeseite
+  await otherPage.reload()
+  await expect(otherPage).toHaveURL(/\/login/)
+  await otherContext.close()
+
+  await logout(page)
+})
+
 test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', async ({ page }) => {
   await login(page, ADMIN)
   await page.goto('/admin/timesheets')

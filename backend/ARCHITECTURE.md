@@ -164,9 +164,17 @@ Beide Cookies: `HttpOnly`, `SameSite=Strict`, in Produktion `Secure`.
   existiert); unbekannte Adressen kosten dieselbe Rechenzeit wie falsche Passwörter. Erfolgreiche Anmeldung und
   Passwort-Reset durch Admin oder CLI heben die Sperre auf.
 - **Sitzungen werden beendet** bei Abmeldung, Passwortwechsel (alle *anderen* Geräte), Passwort-Reset durch Admin/CLI,
-  Sperrung und Löschung des Kontos.
+  Sperrung und Löschung des Kontos – und auf Wunsch:
+- **Sitzungsübersicht** (Web und App gleich): `GET /auth/sessions` listet die eigenen laufenden Sitzungen (aktuelle
+  zuerst, `current: true`; Bezeichnung aus dem Gerätenamen der App bzw. Browser/System aus dem User-Agent,
+  `utils/userAgent.ts`; nie Token-Prüfwerte). `DELETE /auth/sessions/{sid}` beendet eine einzelne eigene Sitzung (die
+  aktuelle nur über `/auth/logout` → `CANNOT_REVOKE_CURRENT_SESSION`; fremde/beendete → `404 SESSION_NOT_FOUND`).
+  `POST /auth/sessions/revoke-others` = „auf allen anderen Geräten abmelden“. Admins: `POST /admin/users/{id}/sessions/revoke`
+  beendet alle Sitzungen eines Benutzers, das Konto bleibt aktiv. Wirkt sofort, weil jede Anfrage die Sitzung prüft.
+- **Zuletzt aktiv** (`lastUsedAt`): bei Anfragen höchstens alle 5 Minuten fortgeschrieben (kein Schreibzugriff je Anfrage).
 - **Protokoll**: `auth.login`, `auth.login_failed`, `auth.account_locked`, `auth.logout`,
-  `auth.session_reuse_detected` (mit IP und Weg `web`/`app`).
+  `auth.session_reuse_detected` (mit IP und Weg `web`/`app`), `auth.session_revoke`, `auth.sessions_revoke_others`,
+  `auth.sessions_revoke_all` (Admin; mit Anzahl beendeter Sitzungen).
 
 Entwicklung: Frontend und Backend müssen unter **demselben Hostnamen** laufen (`localhost:3000` und `localhost:5000`,
 nicht `127.0.0.1` und `localhost` mischen), sonst sendet der Browser die `SameSite=Strict`-Cookies nicht mit.

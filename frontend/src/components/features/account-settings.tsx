@@ -5,12 +5,23 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useAuth } from '@/lib/auth'
-import { useChangePassword, useMySettings, useUpdatePayslipEmail } from '@/lib/queries'
+import { LogOut, Monitor, Smartphone } from 'lucide-react'
+import {
+  useChangePassword,
+  useMySessions,
+  useMySettings,
+  useRevokeOtherSessions,
+  useRevokeSession,
+  useUpdatePayslipEmail,
+} from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, formatDateTime, formatRelativeTime, getErrorMessage } from '@/lib/utils'
+import type { SessionInfo } from '@/types/api'
 import { passwordChangeSchema, ROLE_LABELS, type PasswordChangeInput } from '@/schemas'
 import { Alert } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { FormField } from '@/components/ui/form-field'
 import { Input } from '@/components/ui/input'
@@ -37,7 +48,7 @@ export function AccountSettings({ showBilling }: { showBilling: boolean }) {
 
   return (
     <div className="max-w-3xl">
-      <PageHeader title="Einstellungen" description="Ihr Konto, Ihre Abrechnungsdaten und Ihr Passwort." />
+      <PageHeader title="Einstellungen" description="Ihr Konto, Ihre Abrechnungsdaten, Ihr Passwort und angemeldete Geräte." />
       <div className="space-y-6">
         <Card>
           <CardHeader>
@@ -56,6 +67,8 @@ export function AccountSettings({ showBilling }: { showBilling: boolean }) {
         {showBilling && <BillingCard loading={settings.isLoading} settings={settings.data} />}
 
         <PasswordCard />
+
+        <SessionsCard />
       </div>
     </div>
   )
@@ -177,6 +190,109 @@ function PasswordCard() {
           </Button>
         </CardFooter>
       </form>
+    </Card>
+  )
+}
+
+function SessionRow({ session, onRevoke, busy }: { session: SessionInfo; onRevoke: (s: SessionInfo) => void; busy: boolean }) {
+  const Icon = session.clientType === 'app' ? Smartphone : Monitor
+  return (
+    <li className="flex items-center gap-4 px-5 py-3">
+      <Icon className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-2 font-medium">
+          <span className="truncate">{session.label}</span>
+          <Badge variant="outline">{session.clientType === 'app' ? 'App' : 'Browser'}</Badge>
+          {session.current && <Badge variant="success">Dieses Gerät</Badge>}
+        </p>
+        <p className="tabular text-xs text-muted-foreground">
+          {session.current ? 'Jetzt aktiv' : `Zuletzt aktiv ${formatRelativeTime(session.lastUsedAt)}`}
+          {' · '}angemeldet {formatDateTime(session.createdAt)}
+          {session.ip && <> · IP {session.ip}</>}
+        </p>
+      </div>
+      {!session.current && (
+        <Button variant="outline" size="sm" onClick={() => onRevoke(session)} disabled={busy} aria-label={`${session.label} abmelden`}>
+          Abmelden
+        </Button>
+      )}
+    </li>
+  )
+}
+
+/** Angemeldete Browser und App-Geräte: einzeln oder überall abmelden (z. B. nach Verlust eines Geräts). */
+function SessionsCard() {
+  const { logout } = useAuth()
+  const sessions = useMySessions()
+  const revoke = useRevokeSession()
+  const revokeOthers = useRevokeOtherSessions()
+  const [confirm, confirmDialog] = useConfirm()
+  const list = sessions.data ?? []
+  const others = list.filter((s) => !s.current).length
+  const busy = revoke.isPending || revokeOthers.isPending
+
+  const askRevoke = async (s: SessionInfo) => {
+    const ok = await confirm({
+      title: `${s.label} abmelden?`,
+      message: 'Dort ist danach eine neue Anmeldung nötig.',
+      confirmLabel: 'Abmelden',
+      destructive: true,
+    })
+    if (ok) revoke.mutate(s.id)
+  }
+  const askRevokeOthers = async () => {
+    const ok = await confirm({
+      title: 'Auf allen anderen Geräten abmelden?',
+      message: `${others} ${others === 1 ? 'Sitzung wird' : 'Sitzungen werden'} sofort beendet. Dieses Gerät bleibt angemeldet.`,
+      confirmLabel: 'Andere abmelden',
+      destructive: true,
+    })
+    if (ok) revokeOthers.mutate()
+  }
+  const askRevokeAll = async () => {
+    const ok = await confirm({
+      title: 'Überall abmelden?',
+      message: 'Alle Sitzungen werden beendet – auch auf diesem Gerät. Danach ist überall eine neue Anmeldung nötig.',
+      confirmLabel: 'Überall abmelden',
+      destructive: true,
+    })
+    if (!ok) return
+    if (others > 0) await revokeOthers.mutateAsync().catch(() => undefined)
+    await logout()
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Angemeldete Geräte</CardTitle>
+        <CardDescription>
+          Browser und Apps, in denen Sie angemeldet sind. Unbekanntes Gerät oder Handy verloren? Dort abmelden und das Passwort ändern.
+        </CardDescription>
+      </CardHeader>
+      {sessions.isError ? (
+        <CardContent>
+          <Alert variant="danger" title={getErrorMessage(sessions.error, 'Geräte konnten nicht geladen werden')} />
+        </CardContent>
+      ) : sessions.isLoading ? (
+        <CardContent>
+          <Skeleton className="h-12 w-full" />
+        </CardContent>
+      ) : (
+        <ul className="divide-y border-t" aria-label="Angemeldete Geräte">
+          {list.map((s) => (
+            <SessionRow key={s.id} session={s} onRevoke={askRevoke} busy={busy} />
+          ))}
+        </ul>
+      )}
+      <CardFooter className="flex-wrap justify-end">
+        <Button variant="outline" onClick={askRevokeAll} disabled={busy}>
+          <LogOut aria-hidden="true" /> Überall abmelden
+        </Button>
+        <Button onClick={askRevokeOthers} disabled={busy || others === 0} loading={revokeOthers.isPending}>
+          Auf allen anderen Geräten abmelden
+        </Button>
+      </CardFooter>
+      {confirmDialog}
     </Card>
   )
 }

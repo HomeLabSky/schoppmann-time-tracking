@@ -938,6 +938,256 @@
         }
       }
     },
+    "/auth/sessions": {
+      "get": {
+        "operationId": "getAuthSessions",
+        "summary": "Eigene laufende Sitzungen (Browser und App-Geräte)",
+        "description": "Die Sitzung dieser Anfrage steht vorne (`current: true`). Beendete und abgelaufene erscheinen nicht.",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sitzungen erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sitzungen erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sessions": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/SessionInfo"
+                          }
+                        }
+                      },
+                      "required": [
+                        "sessions"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions/revoke-others": {
+      "post": {
+        "operationId": "postAuthSessionsRevokeOthers",
+        "summary": "Überall sonst abmelden: alle anderen eigenen Sitzungen beenden",
+        "description": "Die aktuelle Sitzung bleibt bestehen. Andere Geräte werden bei ihrer nächsten Anfrage abgemeldet (Zugriffs-Tokens werden bei jeder Anfrage gegen die Sitzung geprüft).",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Andere Sitzungen beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Andere Sitzungen beendet"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revokedCount": {
+                          "type": "integer",
+                          "description": "Anzahl beendeter Sitzungen"
+                        }
+                      },
+                      "required": [
+                        "revokedCount"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/sessions/{sid}": {
+      "delete": {
+        "operationId": "deleteAuthSessionsBySid",
+        "summary": "Eine eigene Sitzung beenden (z. B. verlorenes Gerät)",
+        "description": "Die aktuelle Sitzung wird über POST /auth/logout beendet (CANNOT_REVOKE_CURRENT_SESSION).",
+        "tags": [
+          "Anmeldung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sitzung beendet"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), CANNOT_REVOKE_CURRENT_SESSION",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SESSION_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/users": {
       "get": {
         "operationId": "getAdminUsers",
@@ -1790,6 +2040,113 @@
           },
           "400": {
             "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), CANNOT_DEACTIVATE_SELF",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{id}/sessions/revoke": {
+      "post": {
+        "operationId": "postAdminUsersByIdSessionsRevoke",
+        "summary": "Alle Sitzungen eines Benutzers beenden (z. B. Gerät verloren)",
+        "description": "Das Konto bleibt aktiv; der Benutzer muss sich auf allen Geräten neu anmelden.",
+        "tags": [
+          "Benutzerverwaltung"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sitzungen beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sitzungen beendet"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "revokedCount": {
+                          "type": "integer",
+                          "description": "Anzahl beendeter Sitzungen"
+                        }
+                      },
+                      "required": [
+                        "revokedCount"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -5837,6 +6194,8 @@
               "MISSING_REFRESH_TOKEN",
               "INVALID_REFRESH_TOKEN",
               "REFRESH_TOKEN_REUSED",
+              "SESSION_NOT_FOUND",
+              "CANNOT_REVOKE_CURRENT_SESSION",
               "REFRESH_IN_PROGRESS",
               "INVALID_CREDENTIALS",
               "ACCOUNT_LOCKED",
@@ -6264,6 +6623,73 @@
           "entryCount",
           "workDays"
         ]
+      },
+      "SessionInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Sitzungs-ID (für DELETE /auth/sessions/{sid})"
+          },
+          "clientType": {
+            "type": "string",
+            "enum": [
+              "web",
+              "app"
+            ]
+          },
+          "label": {
+            "type": "string",
+            "description": "Gerätename (App) oder Browser/System, z. B. \"Edge unter Windows\""
+          },
+          "deviceName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "userAgent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Anmeldung"
+          },
+          "lastUsedAt": {
+            "type": "string",
+            "description": "Zuletzt aktiv (auf etwa 5 Minuten genau)"
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "Endet spätestens, wenn sie bis dahin nicht genutzt wird"
+          },
+          "current": {
+            "type": "boolean",
+            "description": "Die Sitzung dieser Anfrage"
+          }
+        },
+        "required": [
+          "id",
+          "clientType",
+          "label",
+          "deviceName",
+          "userAgent",
+          "ip",
+          "createdAt",
+          "lastUsedAt",
+          "expiresAt",
+          "current"
+        ],
+        "description": "Laufende Sitzung (angemeldeter Browser oder App)"
       },
       "TimeEntry": {
         "type": "object",

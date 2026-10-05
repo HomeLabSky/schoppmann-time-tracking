@@ -592,3 +592,17 @@ Wichtigste fachliche Lücke: geteilte Schichten (z. B. 08–12 und 17–19 Uhr) 
 | Abrechnung | Summen liefen schon über alle Einträge einer Periode (Stunden, Verdienst je eingefrorenem Satz, Übertrag, Abschluss) – keine Änderung der Rechenlogik nötig, durch Tests mit mehreren Einträgen pro Tag belegt |
 | Oberfläche | Erfassungsdialog zeigt, was am gewählten Tag schon erfasst ist; Kennzahlen „5 Einträge an 3 Tagen“; Monatsübersicht mit Spalte „Tage“ (auch im CSV-Export) |
 | Prüfung | 103 Unit-/Integrationstests (neu: Überschneidung, Nachtschicht über Tagesgrenze, 12-h-Tagesgrenze, Standardpause, Bearbeiten, Wiederholung per `clientId`, Trigger bei direktem SQL, Übernahme alter Datenbanken), 131 Smoke-Checks, 4 Playwright-Tests (neu: zweiter Eintrag am selben Tag, Überschneidung wird angezeigt) |
+
+---
+
+## Sitzungsübersicht und „überall abmelden“
+
+Die Sitzungen standen schon in der Tabelle `Sessions` (Web und App); es fehlten API und Oberfläche.
+
+| Punkt | Stand |
+|---|---|
+| API (für Web und App gleich) | `GET /auth/sessions` (eigene laufende Sitzungen, aktuelle zuerst), `DELETE /auth/sessions/{sid}` (ein Gerät abmelden), `POST /auth/sessions/revoke-others` (alle anderen); Admin: `POST /admin/users/{id}/sessions/revoke` (alle Sitzungen eines Benutzers, Konto bleibt aktiv). Neue Codes `404 SESSION_NOT_FOUND`, `400 CANNOT_REVOKE_CURRENT_SESSION` |
+| Sicherheit | nur eigene Sitzungen (fremde Sitzungs-IDs → 404, nichts wird beendet); Antwort ohne Token-Prüfwerte; Wirkung sofort, da jede Anfrage die Sitzung prüft; jede Aktion im Änderungsprotokoll (mit Anzahl bzw. Gerät) |
+| Anzeige | Bezeichnung aus dem Gerätenamen der App oder Browser/System aus dem User-Agent („Edge unter Windows“), Web/App, „Dieses Gerät“, zuletzt aktiv, Anmeldezeit, IP. „Zuletzt aktiv“ wurde bisher nur bei der Token-Erneuerung gesetzt; jetzt bei Anfragen höchstens alle 5 Minuten |
+| Oberfläche | Einstellungen (Mitarbeiter und Admins): Karte „Angemeldete Geräte“ mit „Abmelden“ je Gerät, „Auf allen anderen Geräten abmelden“ und „Überall abmelden“ (inkl. diesem Gerät). Benutzerverwaltung: Aktion „Überall abmelden“ je Benutzer. Protokoll: lesbare Bezeichnungen (auch für die bisher fehlende Konto-Sperre) |
+| Prüfung | 108 Unit-/Integrationstests (neu: Übersicht, Gerätebezeichnung, „zuletzt aktiv“, Einzel-/Sammelabmeldung, Admin, Protokoll), 141 Smoke-Checks (neu: Rechte, Fehlercodes, sofortige Wirkung über HTTP), 5 Playwright-Tests (neu: zwei Browser – im einen „auf allen anderen Geräten abmelden“, der andere landet sofort auf der Anmeldeseite) |
