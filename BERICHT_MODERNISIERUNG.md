@@ -564,3 +564,16 @@ Der Frontend-Branch entstand vor Phase 2 und änderte noch die alten JavaScript-
 | E2E-Test-Backend | `backend/scripts/e2e-server.js` → `backend/test/e2e-server.ts` (`npm run e2e:server`), Playwright startet es über `tsx` |
 | **Gefundene Unverträglichkeit** | Die Benutzerliste lud mit `limit=1000`; die neue API lässt höchstens 200 je Seite zu (`400 VALIDATION_ERROR`) – die Seite „Benutzer“ blieb leer. Das Frontend lädt Benutzer und Minijob-Grenzen jetzt seitenweise vollständig nach; der API-Vertrag bleibt unverändert |
 | Prüfung | Backend: Typprüfung, 94 Unit-/Integrationstests, 127 Smoke-Checks; Frontend: `tsc`, ESLint 0 Warnungen, Produktions-Build; 4 Playwright-Tests gegen das TypeScript-Backend grün; alle vom Frontend genutzten Pfade gegen `openapi.json` abgeglichen |
+
+---
+
+## ESLint für das Backend
+
+| Punkt | Stand |
+|---|---|
+| Regeln | `@eslint/js` empfohlen + typescript-eslint `recommendedTypeChecked` (typgestützt), dazu `eqeqeq`, `no-console` (außer CLI/Tests), `consistent-type-imports`, ungenutzte Disable-Kommentare sind Fehler; 0 Warnungen erlaubt |
+| Besonderheit | typescript-eslint braucht die JavaScript-API von TypeScript ≤ 6.0; das Backend nutzt TypeScript 7 (nativer Compiler ohne diese API). npm lässt beide Versionen im selben Projekt nicht zu – ESLint liegt deshalb mit eigener `package.json` (TypeScript 6 nur zum Lesen der Typen) in `backend/tools/eslint`. Build und Typprüfung bleiben bei TypeScript 7; das Image enthält den Ordner nicht |
+| Bewusst abgeschaltet | `require-await` (Services sind absichtlich `async`, obwohl SQLite synchron arbeitet); in Tests die `no-unsafe-*`-Regeln (JSON-Antworten werden bewusst locker gelesen); `test()` aus `node:test` gilt als sicher (kein Fehlalarm „unbehandeltes Promise“) |
+| Erstlauf | 481 Funde, davon ~95 % Fehlalarme bzw. Tests (s. o.). Echt und behoben: **Sicherungs-Dauerlauf** – ließ sich der Sicherungsprozess nicht starten, stürzte der Dienst ab (fehlender `error`-Handler) bzw. plante nie neu; `async`-Rückruf in `setTimeout` ohne Fehlerbehandlung. Außerdem `await` auf synchrone Funktionen (2× Server, 31× Tests), `any` im Request-Log und beim Lesen von JSON, `String(unbekannt)` statt Typprüfung (u. a. `Retry-After` nur noch bei Zahl > 0), überflüssige Typ-Zusicherungen, ungenutzte Importe |
+| CI | eigener Schritt im Backend-Job vor den Tests |
+| Prüfung | `npm run lint` 0 Funde, Typprüfung, 94 Unit-/Integrationstests, 127 Smoke-Checks grün |

@@ -93,7 +93,9 @@ export class TimeEntryService {
       .get();
     if (!first) return [target];
 
-    let [currentYear = 0, currentMonth = 1, firstDay = 1] = first.date.split('-').map(Number);
+    const [firstYear = 0, firstMonth = 1, firstDay = 1] = first.date.split('-').map(Number);
+    let currentYear = firstYear;
+    let currentMonth = firstMonth;
 
     // Bei periodenübergreifenden Abrechnungen (z. B. 22.–21.) gehört ein Eintrag vor
     // dem Starttag noch zur Periode des Vormonats.
@@ -309,7 +311,7 @@ export class TimeEntryService {
         endTime: merged.endTime,
         breakMinutes: merged.breakMinutes,
         ...(updateData.description !== undefined && { description: updateData.description || null })
-      }).where(eq(timeEntries.id, entry.id)).returning().get() as TimeEntryRow;
+      }).where(eq(timeEntries.id, entry.id)).returning().get();
 
       AuditService.record({
         actor: resolveActor(actor, userId),

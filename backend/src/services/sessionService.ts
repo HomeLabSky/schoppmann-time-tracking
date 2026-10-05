@@ -59,7 +59,7 @@ const signAccessToken = (userId: number, sid: string): string =>
     audience: AUDIENCE
   });
 
-const clip = (value: unknown, max: number): string | null => (value ? String(value).slice(0, max) : null);
+const clip = (value: string | null | undefined, max: number): string | null => (value ? value.slice(0, max) : null);
 
 export interface SessionContext {
   ip?: string | undefined;

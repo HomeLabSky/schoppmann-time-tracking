@@ -52,7 +52,7 @@ export const jsonText = customType<{ data: unknown; driverData: string }>({
   toDriver: (value) => JSON.stringify(value),
   fromDriver: (value) => {
     try {
-      return JSON.parse(value);
+      return JSON.parse(value) as unknown;
     } catch {
       return value;
     }

@@ -22,7 +22,7 @@ const int = (fallback: number, { min = 0 }: { min?: number } = {}) =>
 
 const bool = (fallback: boolean) =>
   z.preprocess(
-    (value) => (value === undefined || value === '' ? undefined : ['true', '1', 'yes'].includes(String(value).toLowerCase())),
+    (value) => (value === undefined || value === '' ? undefined : typeof value === 'string' && ['true', '1', 'yes'].includes(value.toLowerCase())),
     z.boolean().default(fallback)
   );
 
@@ -85,7 +85,7 @@ const config = {
   port: env.PORT,
   nodeEnv: env.NODE_ENV,
   // Hinter einem Reverse-Proxy auf die Anzahl Proxys setzen, damit Rate-Limits die echte Client-IP verwenden
-  trustProxy: (env.TRUST_PROXY === undefined ? false : env.TRUST_PROXY) as number | false,
+  trustProxy: (env.TRUST_PROXY === undefined ? false : env.TRUST_PROXY),
 
   // JWT_SECRET signiert die Zugriffs-Tokens, JWT_REFRESH_SECRET sichert die in der Datenbank gespeicherten
   // Prüfwerte der Erneuerungs-Tokens (HMAC) – beide müssen gesetzt sein.

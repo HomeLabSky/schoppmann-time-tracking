@@ -54,8 +54,9 @@ export const errorHandler = (error: unknown, req: Request, res: Response, _next:
     return;
   }
 
-  if (appError.extra?.retryAfter) {
-    res.set('Retry-After', String(appError.extra.retryAfter));
+  const retryAfter = appError.extra?.retryAfter;
+  if (typeof retryAfter === 'number' && retryAfter > 0) {
+    res.set('Retry-After', String(retryAfter));
   }
 
   res.status(appError.status).json({

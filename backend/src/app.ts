@@ -9,6 +9,7 @@
  */
 import crypto from 'crypto';
 import express from 'express';
+import type { SerializedRequest, SerializedResponse } from 'pino';
 import pinoHttp from 'pino-http';
 import config from './config';
 import logger from './lib/logger';
@@ -40,8 +41,8 @@ app.use(pinoHttp({
     return id;
   },
   serializers: {
-    req: (req) => ({ id: req.id, method: req.method, path: req.url.split('?')[0] }),
-    res: (res) => ({ statusCode: res.statusCode })
+    req: (req: SerializedRequest) => ({ id: req.id, method: req.method, path: req.url.split('?')[0] }),
+    res: (res: SerializedResponse) => ({ statusCode: res.statusCode })
   },
   // Wer hat angefragt – nur als ID (gesetzt von middleware/auth.ts)
   customProps: (req) => (req.user ? { userId: req.user.userId } : {}),
@@ -73,7 +74,7 @@ app.get('/', (req, res) => {
 
 // Health Check (öffentlich, ohne Versions-, Pfad- oder Speicherangaben)
 app.get('/health', (req, res) => {
-  const dbConnected = req.app.locals.dbConnected;
+  const dbConnected = req.app.locals.dbConnected === true;
   res.status(dbConnected ? 200 : 503).json({
     status: dbConnected ? 'OK' : 'DEGRADED',
     database: dbConnected ? 'connected' : 'disconnected',

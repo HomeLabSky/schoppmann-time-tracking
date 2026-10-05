@@ -1,0 +1,12 @@
+{
+  "name": "backend-eslint",
+  "private": true,
+  "description": "ESLint für das Backend. Eigener Ordner, weil typescript-eslint die JavaScript-API von TypeScript 6 braucht; das Backend selbst baut und prüft mit TypeScript 7 (ohne diese API).",
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^16.4.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

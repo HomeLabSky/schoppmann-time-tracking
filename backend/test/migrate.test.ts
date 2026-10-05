@@ -41,7 +41,7 @@ type Row = Record<string, unknown>;
 const all = (sql: string): Row[] => getSqlite().prepare(sql).all() as Row[];
 const one = (sql: string): Row => getSqlite().prepare(sql).get() as Row;
 const tableSql = (table: string): string =>
-  String((getSqlite().prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as Row | undefined)?.sql ?? '');
+  (getSqlite().prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table) as { sql: string } | undefined)?.sql ?? '';
 
 /** Inhalte, die eine Übernahme unverändert lassen muss */
 const snapshot = () => ({

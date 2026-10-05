@@ -9,6 +9,7 @@ backups
 .env.*
 !.env.example
 test
+tools
 Dockerfile
 .dockerignore
 dist

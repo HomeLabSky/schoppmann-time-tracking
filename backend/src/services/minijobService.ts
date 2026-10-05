@@ -122,7 +122,7 @@ export class MinijobService {
         description: data.description,
         validFrom: data.validFrom,
         validUntil: data.validUntil
-      }).where(eq(minijobSettings.id, settingId)).returning().get() as MinijobSetting;
+      }).where(eq(minijobSettings.id, settingId)).returning().get();
       AuditService.record({
         actor,
         action: 'minijob_setting.update',
