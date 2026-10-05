@@ -46,7 +46,31 @@ const TokenPair = z.object({
   refreshExpiresAt: timestamp().describe('Ablauf des Erneuerungs-Tokens, wenn es bis dahin nicht genutzt wird')
 }).meta({ id: 'TokenPair', description: 'Token-Anmeldung für die App' });
 
+const SessionIdParam = z.object({
+  sid: z.uuid({ error: 'Ungültige Sitzungs-ID' })
+});
+
+const SessionInfo = z.object({
+  id: z.string().describe('Sitzungs-ID (für DELETE /auth/sessions/{sid})'),
+  clientType: z.enum(['web', 'app']),
+  label: z.string().describe('Gerätename (App) oder Browser/System, z. B. "Edge unter Windows"'),
+  deviceName: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  ip: z.string().nullable(),
+  createdAt: timestamp().describe('Anmeldung'),
+  lastUsedAt: timestamp().describe('Zuletzt aktiv (auf etwa 5 Minuten genau)'),
+  expiresAt: timestamp().describe('Endet spätestens, wenn sie bis dahin nicht genutzt wird'),
+  current: z.boolean().describe('Die Sitzung dieser Anfrage')
+}).meta({ id: 'SessionInfo', description: 'Laufende Sitzung (angemeldeter Browser oder App)' });
+
+const SessionList = z.object({ sessions: z.array(SessionInfo) });
+const RevokedCount = z.object({ revokedCount: z.number().int().describe('Anzahl beendeter Sitzungen') });
+
 export {
+  SessionIdParam,
+  SessionInfo,
+  SessionList,
+  RevokedCount,
   LoginBody,
   AppLoginBody,
   RegisterBody,

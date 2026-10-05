@@ -10,7 +10,8 @@ import { AppError } from '../lib/errors';
 import UserService from '../services/userService';
 import { actorOf } from '../middleware/auth';
 import { z, idParam, User } from '../schemas/common';
-import { UserData } from '../schemas/auth';
+import { RevokedCount, UserData } from '../schemas/auth';
+import { AuthService } from '../services/authService';
 import { UserListQuery, CreateUserBody, UpdateUserBody, UserSettingsBody, UserListData, UserStats } from '../schemas/user';
 
 const api = createApiRouter('/admin', { tags: ['Benutzerverwaltung'] });
@@ -95,6 +96,18 @@ api.patch('/users/:id/toggle-status', {
     message: `Benutzer erfolgreich ${user.isActive ? 'aktiviert' : 'deaktiviert'}`,
     data: { user }
   };
+});
+
+api.post('/users/:id/sessions/revoke', {
+  summary: 'Alle Sitzungen eines Benutzers beenden (z. B. Gerät verloren)',
+  description: 'Das Konto bleibt aktiv; der Benutzer muss sich auf allen Geräten neu anmelden.',
+  auth: 'admin',
+  params: UserIdParam,
+  response: RevokedCount,
+  message: 'Sitzungen beendet',
+  errors: ['USER_NOT_FOUND']
+}, async (req) => {
+  return { data: { revokedCount: AuthService.revokeAllSessionsByAdmin(req.valid.params.id, actorOf(req)) } };
 });
 
 api.delete('/users/:id', {

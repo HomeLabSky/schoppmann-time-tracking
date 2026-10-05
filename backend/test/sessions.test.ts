@@ -10,7 +10,10 @@ import config from '../src/config';
 import { closeDb, initDatabase } from '../src/db';
 import { db } from '../src/db/client';
 import { sessions, users, type SessionRow, type User } from '../src/db/schema';
+import { AuditService } from '../src/services/auditService';
+import { AuthService } from '../src/services/authService';
 import { SessionService } from '../src/services/sessionService';
+import { describeUserAgent } from '../src/utils/userAgent';
 import { makeUser as createUser } from './helpers';
 
 const makeUser = (patch: Partial<User> = {}) => createUser({ name: 'Session Test', ...patch }, 'sess');
@@ -218,4 +221,107 @@ test('Aufräumen: nur lange beendete oder abgelaufene Sitzungen werden gelöscht
   assert.equal(sessionRow(old.sid), undefined, 'vor 10 Tagen beendet → gelöscht');
   assert.ok(sessionRow(recent.sid), 'gestern beendet → bleibt (Nachvollziehbarkeit)');
   assert.ok(sessionRow(active.sid), 'aktive Sitzung bleibt');
+});
+
+// ---------- Sitzungsübersicht und „überall abmelden“ ----------
+
+const EDGE_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0';
+const SAFARI_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+
+test('Gerätebezeichnung aus dem User-Agent', () => {
+  assert.equal(describeUserAgent(EDGE_WINDOWS), 'Edge unter Windows');
+  assert.equal(describeUserAgent(SAFARI_IPHONE), 'Safari unter iOS');
+  assert.equal(describeUserAgent('Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0'), 'Firefox unter Linux');
+  assert.equal(describeUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'), 'Chrome unter macOS');
+  assert.equal(describeUserAgent('okhttp/4.12.0'), null);
+  assert.equal(describeUserAgent(null), null);
+});
+
+test('Übersicht: nur laufende eigene Sitzungen, aktuelle zuerst, ohne Token-Prüfwerte', async () => {
+  const user = await makeUser();
+  const other = await makeUser();
+  const web = await SessionService.createSession(user, { userAgent: EDGE_WINDOWS, ip: '10.0.0.7' });
+  const app = await SessionService.createSession(user, { clientType: 'app', deviceName: 'iPhone von Anna', userAgent: 'okhttp/4.12.0' });
+  const ended = await SessionService.createSession(user, { userAgent: SAFARI_IPHONE });
+  const expired = await SessionService.createSession(user, { userAgent: SAFARI_IPHONE });
+  await SessionService.createSession(other, { userAgent: EDGE_WINDOWS });
+  SessionService.revokeSync(ended.sid, 'logout');
+  updateSession(expired.sid, { expiresAt: new Date(Date.now() - 1000) });
+  updateSession(web.sid, { lastUsedAt: new Date(Date.now() - 60_000) });
+
+  const list = AuthService.listSessions(user.id, web.sid);
+  assert.deepEqual(list.map((s) => s.id), [web.sid, app.sid], 'aktuelle zuerst, beendete/abgelaufene/fremde fehlen');
+  assert.equal(list[0]?.current, true);
+  assert.equal(list[0]?.label, 'Edge unter Windows');
+  assert.equal(list[0]?.ip, '10.0.0.7');
+  assert.equal(list[1]?.label, 'iPhone von Anna', 'Gerätename der App hat Vorrang');
+  assert.equal(list[1]?.clientType, 'app');
+  assert.ok(!('refreshHash' in (list[0] ?? {})) && !('previousHash' in (list[0] ?? {})));
+});
+
+test('Zuletzt aktiv: wird bei Anfragen höchstens alle 5 Minuten fortgeschrieben', async () => {
+  const user = await makeUser();
+  const { sid, accessToken } = await SessionService.createSession(user);
+  const recent = new Date(Date.now() - 60_000);
+  updateSession(sid, { lastUsedAt: recent });
+  await SessionService.authenticate(accessToken);
+  assert.equal(sessionRow(sid)?.lastUsedAt.getTime(), recent.getTime(), 'innerhalb von 5 Minuten kein Schreibzugriff');
+
+  updateSession(sid, { lastUsedAt: new Date(Date.now() - 10 * 60_000) });
+  await SessionService.authenticate(accessToken);
+  assert.ok(Date.now() - (sessionRow(sid)?.lastUsedAt.getTime() ?? 0) < 5000, 'fortgeschrieben');
+});
+
+test('Einzelne Sitzung beenden: nur eigene laufende, nicht die aktuelle; wirkt sofort; protokolliert', async () => {
+  const user = await makeUser();
+  const other = await makeUser();
+  const current = await SessionService.createSession(user);
+  const phone = await SessionService.createSession(user, { clientType: 'app', deviceName: 'Handy' });
+  const foreign = await SessionService.createSession(other);
+  const actor = { id: user.id, email: user.email };
+
+  assert.throws(() => AuthService.revokeSession(user.id, current.sid, current.sid, actor), { code: 'CANNOT_REVOKE_CURRENT_SESSION' });
+  assert.throws(() => AuthService.revokeSession(user.id, foreign.sid, current.sid, actor), { code: 'SESSION_NOT_FOUND' });
+  assert.equal(sessionRow(foreign.sid)?.revokedAt, null, 'fremde Sitzung unberührt');
+
+  AuthService.revokeSession(user.id, phone.sid, current.sid, actor);
+  assert.equal(sessionRow(phone.sid)?.revokedReason, 'revoked_by_user');
+  await rejectCode(SessionService.authenticate(phone.accessToken), 'SESSION_ENDED');
+  await rejectCode(SessionService.rotate(phone.refreshToken, { clientType: 'app' }), 'INVALID_REFRESH_TOKEN');
+  assert.throws(() => AuthService.revokeSession(user.id, phone.sid, current.sid, actor), { code: 'SESSION_NOT_FOUND' }, 'schon beendet');
+  await SessionService.authenticate(current.accessToken); // aktuelle läuft weiter
+
+  const log = await AuditService.list({ userId: user.id, action: 'auth.session_revoke', limit: 10 });
+  assert.equal(log.entries.length, 1);
+  assert.deepEqual(log.entries[0]?.meta, { client: 'app', device: 'Handy' });
+});
+
+test('Überall abmelden: alle anderen eigenen Sitzungen enden, aktuelle und fremde bleiben; Admin beendet alle', async () => {
+  const user = await makeUser();
+  const other = await makeUser();
+  const admin = await makeUser({ role: 'admin' });
+  const current = await SessionService.createSession(user);
+  const laptop = await SessionService.createSession(user);
+  const phone = await SessionService.createSession(user, { clientType: 'app' });
+  const foreign = await SessionService.createSession(other);
+
+  assert.equal(AuthService.revokeOtherSessions(user.id, current.sid, { id: user.id, email: user.email }), 2);
+  await rejectCode(SessionService.authenticate(laptop.accessToken), 'SESSION_ENDED');
+  await rejectCode(SessionService.authenticate(phone.accessToken), 'SESSION_ENDED');
+  await SessionService.authenticate(current.accessToken);
+  await SessionService.authenticate(foreign.accessToken);
+  assert.equal(AuthService.revokeOtherSessions(user.id, current.sid, { id: user.id, email: user.email }), 0, 'nichts mehr zu beenden');
+
+  assert.equal(AuthService.revokeAllSessionsByAdmin(user.id, { id: admin.id, email: admin.email }), 1);
+  await rejectCode(SessionService.authenticate(current.accessToken), 'SESSION_ENDED');
+  assert.equal(sessionRow(current.sid)?.revokedReason, 'revoked_by_admin');
+  assert.equal(db().select().from(users).where(eq(users.id, user.id)).get()?.isActive, true, 'Konto bleibt aktiv');
+  assert.throws(() => AuthService.revokeAllSessionsByAdmin(999_999, { id: admin.id }), { code: 'USER_NOT_FOUND' });
+
+  const log = await AuditService.list({ userId: user.id, action: 'auth.sessions_revoke', limit: 10 });
+  assert.deepEqual(log.entries.map((e) => [e.action, (e.meta as { revokedCount: number }).revokedCount, e.actorId]), [
+    ['auth.sessions_revoke_all', 1, admin.id],
+    ['auth.sessions_revoke_others', 0, user.id],
+    ['auth.sessions_revoke_others', 2, user.id]
+  ]);
 });

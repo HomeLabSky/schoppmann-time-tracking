@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Ban, CheckCircle2, MoreHorizontal, Pencil, Trash2, UserPlus, Wallet } from 'lucide-react'
+import { Ban, CheckCircle2, LogOut, MoreHorizontal, Pencil, Trash2, UserPlus, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { useDeleteUser, useToggleUserStatus, useUsers } from '@/lib/queries'
+import { useDeleteUser, useRevokeUserSessions, useToggleUserStatus, useUsers } from '@/lib/queries'
 import { csvNumber } from '@/lib/csv'
 import { formatCurrency, formatDate, getErrorMessage, getInitials } from '@/lib/utils'
 import { ROLE_LABELS } from '@/schemas'
@@ -33,6 +33,7 @@ export default function UsersPage() {
   const users = useUsers()
   const toggle = useToggleUserStatus()
   const remove = useDeleteUser()
+  const revokeUserSessions = useRevokeUserSessions()
   const [confirm, confirmDialog] = useConfirm()
 
   const [createOpen, setCreateOpen] = useState(false)
@@ -53,6 +54,7 @@ export default function UsersPage() {
 
   const { mutate: toggleStatus } = toggle
   const { mutate: deleteUser } = remove
+  const { mutate: revokeSessions } = revokeUserSessions
 
   const columns = useMemo<ColumnDef<User, unknown>[]>(() => {
     const askToggle = async (u: User) => {
@@ -66,6 +68,16 @@ export default function UsersPage() {
         destructive: deactivate,
       })
       if (ok) toggleStatus(u.id)
+    }
+    const askRevokeSessions = async (u: User) => {
+      const ok = await confirm({
+        title: `${u.name} überall abmelden?`,
+        message:
+          'Alle Sitzungen in Browsern und Apps werden sofort beendet, z. B. nach Verlust eines Geräts. Das Konto bleibt aktiv; eine neue Anmeldung ist möglich.',
+        confirmLabel: 'Überall abmelden',
+        destructive: true,
+      })
+      if (ok) revokeSessions(u.id)
     }
     const askDelete = async (u: User) => {
       const ok = await confirm({
@@ -177,6 +189,11 @@ export default function UsersPage() {
                 {!isSelf && (
                   <>
                     <DropdownMenuSeparator />
+                    {u.isActive && (
+                      <DropdownMenuItem onSelect={() => askRevokeSessions(u)}>
+                        <LogOut aria-hidden="true" /> Überall abmelden
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onSelect={() => askToggle(u)} destructive={u.isActive}>
                       {u.isActive ? <Ban aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
                       {u.isActive ? 'Deaktivieren' : 'Aktivieren'}
@@ -192,7 +209,7 @@ export default function UsersPage() {
         },
       },
     ]
-  }, [me?.id, confirm, toggleStatus, deleteUser])
+  }, [me?.id, confirm, toggleStatus, deleteUser, revokeSessions])
 
   const counts = useMemo(() => {
     const list = users.data ?? []

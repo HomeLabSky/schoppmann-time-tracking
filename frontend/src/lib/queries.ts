@@ -26,6 +26,7 @@ export const queryKeys = {
   myMonth: (month: string) => ['me', 'month', month] as const,
   myMonthAll: ['me', 'month'] as const,
   mySettings: ['me', 'settings'] as const,
+  mySessions: ['me', 'sessions'] as const,
 }
 
 const notifyError = (fallback: string) => (error: unknown) => toast.error(getErrorMessage(error, fallback))
@@ -108,6 +109,19 @@ export function useToggleUserStatus() {
       toast.success(r.message || 'Status geändert.')
     },
     onError: notifyError('Status konnte nicht geändert werden'),
+  })
+}
+
+export function useRevokeUserSessions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => adminApi.revokeUserSessions(id),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['audit'] })
+      const n = r.data.revokedCount
+      toast.success(n === 0 ? 'Der Benutzer war nirgends angemeldet.' : `${n} ${n === 1 ? 'Sitzung' : 'Sitzungen'} beendet.`)
+    },
+    onError: notifyError('Sitzungen konnten nicht beendet werden'),
   })
 }
 
@@ -354,6 +368,38 @@ export function useChangePassword() {
     mutationFn: (data: { currentPassword: string; newPassword: string; confirmPassword: string }) =>
       employeeApi.changePassword(data),
     onSuccess: () => toast.success('Passwort geändert. Andere angemeldete Geräte wurden abgemeldet.'),
+  })
+}
+
+// ---------- Eigene Sitzungen (angemeldete Geräte) ----------
+
+export function useMySessions() {
+  return useQuery({
+    queryKey: queryKeys.mySessions,
+    queryFn: () => authApi.getSessions().then((r) => r.data.sessions),
+  })
+}
+
+export function useRevokeSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sid: string) => authApi.revokeSession(sid),
+    onSuccess: () => toast.success('Gerät abgemeldet.'),
+    onError: notifyError('Gerät konnte nicht abgemeldet werden'),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.mySessions }),
+  })
+}
+
+export function useRevokeOtherSessions() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => authApi.revokeOtherSessions(),
+    onSuccess: (r) => {
+      const n = r.data.revokedCount
+      toast.success(n === 0 ? 'Sie waren nirgends sonst angemeldet.' : `${n} ${n === 1 ? 'anderes Gerät' : 'andere Geräte'} abgemeldet.`)
+    },
+    onError: notifyError('Andere Geräte konnten nicht abgemeldet werden'),
+    onSettled: () => qc.invalidateQueries({ queryKey: queryKeys.mySessions }),
   })
 }
 

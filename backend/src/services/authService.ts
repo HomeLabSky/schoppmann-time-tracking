@@ -1,10 +1,12 @@
-import type { ClientType } from '../db/schema';
-import { isAppError } from '../lib/errors';
+import { eq } from 'drizzle-orm';
+import { db, transaction } from '../db/client';
+import { users, type ClientType } from '../db/schema';
+import { AppError, isAppError } from '../lib/errors';
 import logger from '../lib/logger';
 import type { SafeUser } from '../models/user';
-import { AuditService, type AuditEntryInput } from './auditService';
+import { AuditService, type Actor, type AuditEntryInput } from './auditService';
 import { LoginThrottleService } from './loginThrottle';
-import { SessionService, type IssuedSession } from './sessionService';
+import { SessionService, type IssuedSession, type SessionInfo } from './sessionService';
 import { UserService } from './userService';
 
 const clip = (value: string | null | undefined, max: number): string | undefined => (value ? value.slice(0, max) : undefined);
@@ -146,6 +148,72 @@ export class AuthService {
       logger.error({ err: error }, 'Abmelden fehlgeschlagen');
       return null;
     }
+  }
+
+  // ---------- Sitzungsübersicht ----------
+
+  /** Laufende Sitzungen des angemeldeten Benutzers (aktuelle zuerst). */
+  static listSessions(userId: number, currentSid: string): SessionInfo[] {
+    return SessionService.listActive(userId, currentSid);
+  }
+
+  /**
+   * Beendet eine einzelne eigene Sitzung (z. B. verlorenes Handy). Die aktuelle Sitzung wird über „Abmelden“
+   * beendet, damit auch die Cookies gelöscht werden.
+   * @throws AppError SESSION_NOT_FOUND (fremd, beendet oder abgelaufen), CANNOT_REVOKE_CURRENT_SESSION
+   */
+  static revokeSession(userId: number, sid: string, currentSid: string, actor: Actor): void {
+    if (sid === currentSid) {
+      throw new AppError('CANNOT_REVOKE_CURRENT_SESSION', 'Die aktuelle Sitzung bitte über „Abmelden“ beenden');
+    }
+    transaction(() => {
+      const session = SessionService.findActiveOwn(userId, sid);
+      if (!session) throw new AppError('SESSION_NOT_FOUND', 'Sitzung nicht gefunden oder bereits beendet');
+      SessionService.revokeSync(sid, 'revoked_by_user');
+      AuditService.record({
+        actor,
+        action: 'auth.session_revoke',
+        entityType: 'Session',
+        targetUserId: userId,
+        meta: { client: session.clientType, ...(session.deviceName ? { device: session.deviceName } : {}) }
+      });
+    });
+  }
+
+  /** „Überall abmelden“: beendet alle anderen Sitzungen des Benutzers, die aktuelle bleibt. */
+  static revokeOtherSessions(userId: number, currentSid: string, actor: Actor): number {
+    return transaction(() => {
+      const revokedCount = SessionService.revokeAllForUser(userId, { exceptSid: currentSid, reason: 'revoked_by_user' });
+      AuditService.record({
+        actor,
+        action: 'auth.sessions_revoke_others',
+        entityType: 'Session',
+        targetUserId: userId,
+        meta: { revokedCount }
+      });
+      return revokedCount;
+    });
+  }
+
+  /**
+   * Admin: alle Sitzungen eines Benutzers beenden (z. B. Gerät verloren). Das Konto bleibt aktiv; der Benutzer
+   * muss sich überall neu anmelden. Eigene Sitzungen beendet ein Admin über die Sitzungsübersicht.
+   * @throws AppError USER_NOT_FOUND
+   */
+  static revokeAllSessionsByAdmin(userId: number, actor: Actor): number {
+    return transaction(() => {
+      const user = db().select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
+      if (!user) throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
+      const revokedCount = SessionService.revokeAllForUser(userId, { reason: 'revoked_by_admin' });
+      AuditService.record({
+        actor,
+        action: 'auth.sessions_revoke_all',
+        entityType: 'Session',
+        targetUserId: userId,
+        meta: { revokedCount }
+      });
+      return revokedCount;
+    });
   }
 }
 

@@ -6,6 +6,7 @@ import type {
   NewMinijobSetting,
   NewUser,
   RegisterData,
+  SessionInfo,
   User,
   UserSettings,
 } from '@/types/api'
@@ -199,6 +200,12 @@ export const authApi = {
   getProfile: () => apiClient.get<Envelope<{ user: User }>>('/api/auth/profile'),
 
   logout: () => apiClient.post<Message>('/api/auth/logout', undefined, false),
+
+  getSessions: () => apiClient.get<Envelope<{ sessions: SessionInfo[] }>>('/api/auth/sessions'),
+
+  revokeSession: (sid: string) => apiClient.delete<Message>(`/api/auth/sessions/${encodeURIComponent(sid)}`),
+
+  revokeOtherSessions: () => apiClient.post<Envelope<{ revokedCount: number }>>('/api/auth/sessions/revoke-others'),
 }
 
 // ===== Administration =====
@@ -218,6 +225,9 @@ export const adminApi = {
   toggleUserStatus: (userId: number) => apiClient.patch<Envelope<{ user: User }>>(`/api/admin/users/${userId}/toggle-status`),
 
   deleteUser: (userId: number) => apiClient.delete<Message>(`/api/admin/users/${userId}`),
+
+  revokeUserSessions: (userId: number) =>
+    apiClient.post<Envelope<{ revokedCount: number }>>(`/api/admin/users/${userId}/sessions/revoke`),
 
   // Minijob-Grenzen
   getMinijobSettings: (params: { page?: number; limit?: number } = {}) =>

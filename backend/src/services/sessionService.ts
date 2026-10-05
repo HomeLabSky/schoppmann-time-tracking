@@ -1,15 +1,18 @@
 import crypto from 'node:crypto';
 import jwt, { type JwtPayload } from 'jsonwebtoken';
-import { and, eq, isNull, lt, ne, or } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, ne, or } from 'drizzle-orm';
 import config from '../config';
 import { db } from '../db/client';
 import { sessions, users, type ClientType } from '../db/schema';
 import { AppError, type ErrorCode } from '../lib/errors';
 import { toSafeUser, type SafeUser } from '../models/user';
+import { describeUserAgent } from '../utils/userAgent';
 
 const ISSUER = 'schoppmann-timetracking';
 const AUDIENCE = 'schoppmann-users';
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** „Zuletzt aktiv“ höchstens alle 5 Minuten schreiben (nicht bei jeder Anfrage) */
+const TOUCH_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Sitzungsfehler: immer 401 (auch USER_INACTIVE – die Sitzung ist damit beendet), außer
@@ -76,6 +79,22 @@ export interface IssuedSession {
 }
 
 const findSession = (sid: string) => db().select().from(sessions).where(eq(sessions.id, sid)).get();
+
+/** Eintrag der Sitzungsübersicht (ohne Token-Prüfwerte) */
+export interface SessionInfo {
+  id: string;
+  clientType: ClientType;
+  /** Gerätename (App) oder Browser/System aus dem User-Agent */
+  label: string;
+  deviceName: string | null;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: Date;
+  lastUsedAt: Date;
+  /** Spätestes Ende ohne weitere Nutzung (gleitend, höchstens absolute Laufzeit) */
+  expiresAt: Date;
+  current: boolean;
+}
 
 /**
  * Sitzungsverwaltung: Anmeldung, Token-Erneuerung mit Rotation und Wiederverwendungs-Erkennung,
@@ -213,6 +232,11 @@ export class SessionService {
     if (!user || !user.isActive) {
       throw new SessionError('USER_INACTIVE', 'Benutzer ist deaktiviert');
     }
+    // Für die Sitzungsübersicht: zuletzt aktiv (sonst nur bei der Erneuerung alle 15 Minuten aktualisiert)
+    const now = new Date();
+    if (now.getTime() - session.lastUsedAt.getTime() > TOUCH_INTERVAL_MS) {
+      db().update(sessions).set({ lastUsedAt: now }).where(eq(sessions.id, session.id)).run();
+    }
     return { user: toSafeUser(user), sid: session.id };
   }
 
@@ -252,6 +276,36 @@ export class SessionService {
     this.revokeSync(sid, 'logout');
     const user = db().select({ email: users.email }).from(users).where(eq(users.id, session.userId)).get();
     return { sid, userId: session.userId, email: user ? user.email : null };
+  }
+
+  /** Laufende Sitzungen eines Benutzers (nicht beendet, nicht abgelaufen): aktuelle zuerst, dann zuletzt aktive. */
+  static listActive(userId: number, currentSid: string | null, now: Date = new Date()): SessionInfo[] {
+    const rows = db().select().from(sessions)
+      .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), gt(sessions.expiresAt, now), gt(sessions.absoluteExpiresAt, now)))
+      .orderBy(desc(sessions.lastUsedAt))
+      .all();
+    return rows
+      .map((s) => ({
+        id: s.id,
+        clientType: s.clientType,
+        label: s.deviceName || describeUserAgent(s.userAgent) || (s.clientType === 'app' ? 'App' : 'Browser'),
+        deviceName: s.deviceName,
+        userAgent: s.userAgent,
+        ip: s.ip,
+        createdAt: s.createdAt,
+        lastUsedAt: s.lastUsedAt,
+        expiresAt: s.expiresAt < s.absoluteExpiresAt ? s.expiresAt : s.absoluteExpiresAt,
+        current: s.id === currentSid
+      }))
+      .sort((a, b) => Number(b.current) - Number(a.current));
+  }
+
+  /** Laufende Sitzung eines Benutzers oder null (fremde, beendete und abgelaufene zählen nicht). */
+  static findActiveOwn(userId: number, sid: string, now: Date = new Date()) {
+    const session = findSession(sid);
+    if (!session || session.userId !== userId || session.revokedAt) return null;
+    if (now > session.expiresAt || now > session.absoluteExpiresAt) return null;
+    return session;
   }
 
   /** Beendet eine Sitzung (idempotent, synchron – auch innerhalb von Transaktionen nutzbar). */

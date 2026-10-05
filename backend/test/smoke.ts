@@ -486,6 +486,52 @@ async function main(): Promise<void> {
     const otherAfterChange = await profileOf(sb);
     check('… andere Sitzung sofort beendet (SESSION_ENDED)', otherAfterChange.status === 401 && otherAfterChange.json?.code === 'SESSION_ENDED', otherAfterChange.json);
 
+    // Sitzungsübersicht und „überall abmelden“ (sa läuft, sb ist seit dem Passwortwechsel beendet)
+    const sd = newSession();
+    await loginAs(sd);
+    const sessionList = await api('GET', '/api/auth/sessions', { token: sa });
+    const listed: any[] = sessionList.json?.data?.sessions ?? [];
+    check(
+      'Sitzungsübersicht 200: aktuelle zuerst, zweite Sitzung sichtbar, beendete nicht',
+      sessionList.status === 200 && listed.length === 2 && listed[0]?.current === true && listed[1]?.current === false &&
+        listed.every((x) => !('refreshHash' in x) && typeof x.label === 'string'),
+      sessionList.json
+    );
+    const revokeCurrent = await api('DELETE', `/api/auth/sessions/${listed[0]?.id}`, { token: sa });
+    check('Aktuelle Sitzung per DELETE 400 CANNOT_REVOKE_CURRENT_SESSION', revokeCurrent.status === 400 && revokeCurrent.json?.code === 'CANNOT_REVOKE_CURRENT_SESSION', revokeCurrent.json);
+    const revokeOne = await api('DELETE', `/api/auth/sessions/${listed[1]?.id}`, { token: sa });
+    check('Einzelne Sitzung beendet 200, dort sofort 401', revokeOne.status === 200 && (await profileOf(sd)).status === 401, revokeOne.json);
+    const revokeAgain = await api('DELETE', `/api/auth/sessions/${listed[1]?.id}`, { token: sa });
+    check('Bereits beendete Sitzung 404 SESSION_NOT_FOUND', revokeAgain.status === 404 && revokeAgain.json?.code === 'SESSION_NOT_FOUND', revokeAgain.json);
+    const revokeForeign = await api('DELETE', `/api/auth/sessions/${listed[0]?.id}`, { token: empToken });
+    check('Fremde Sitzung 404 SESSION_NOT_FOUND (nicht beendet)', revokeForeign.status === 404 && (await profileOf(sa)).status === 200, revokeForeign.json);
+    const revokeBadId = await api('DELETE', '/api/auth/sessions/keine-uuid', { token: sa });
+    check('Ungültige Sitzungs-ID 400 VALIDATION_ERROR', revokeBadId.status === 400 && revokeBadId.json?.code === 'VALIDATION_ERROR', revokeBadId.json);
+    const listNoLogin = await api('GET', '/api/auth/sessions');
+    check('Sitzungsübersicht ohne Anmeldung 401', listNoLogin.status === 401, listNoLogin.status);
+
+    const se = newSession();
+    await loginAs(se);
+    const revokeOthers = await api('POST', '/api/auth/sessions/revoke-others', { token: sa });
+    check(
+      'Überall sonst abmelden 200: andere Sitzung sofort 401, aktuelle bleibt',
+      revokeOthers.status === 200 && revokeOthers.json?.data?.revokedCount === 1 &&
+        (await profileOf(se)).status === 401 && (await profileOf(sa)).status === 200,
+      revokeOthers.json
+    );
+
+    const sf = newSession();
+    await loginAs(sf);
+    const adminRevokeForbidden = await api('POST', `/api/admin/users/${authUserId}/sessions/revoke`, { token: empToken });
+    check('Sitzungen fremder Benutzer beenden: Mitarbeiter 403', adminRevokeForbidden.status === 403, adminRevokeForbidden.status);
+    const adminRevoke = await api('POST', `/api/admin/users/${authUserId}/sessions/revoke`, { token: adminToken });
+    check(
+      'Admin beendet alle Sitzungen eines Benutzers 200 (Konto bleibt aktiv, Neuanmeldung möglich)',
+      adminRevoke.status === 200 && adminRevoke.json?.data?.revokedCount === 2 &&
+        (await profileOf(sa)).status === 401 && (await profileOf(sf)).status === 401 && (await loginAs(newSession())).status === 200,
+      adminRevoke.json
+    );
+
     // Sperren wirkt sofort
     const sc = newSession();
     await loginAs(sc);
