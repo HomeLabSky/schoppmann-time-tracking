@@ -37,6 +37,8 @@ export interface TimeRecordSummary {
   /** Keine Minijob-Grenze hinterlegt: Auszahlung/Übertrag nur vorläufig, Abschluss gesperrt. */
   minijobLimitMissing?: boolean
   entryCount: number
+  /** Tage mit Einträgen (mehrere Einträge pro Tag möglich) */
+  workDays: number
 }
 
 export interface BillingPeriod {

@@ -19,6 +19,8 @@ export const DEFAULT_HOURLY_RATE_CENTS = 1200;
 export const RULES = {
   MIN_WORK_MINUTES: 15,
   MAX_SPAN_MINUTES: 12 * 60,
+  /** Summe der Arbeitszeit aller Einträge eines Tages (Tag = Datum des Beginns) */
+  MAX_DAY_WORK_MINUTES: 12 * 60,
   MAX_BREAK_MINUTES: 480,
   MAX_BACKDATE_MONTHS: 1
 } as const;
@@ -53,7 +55,8 @@ export const toEuros = (cents: number): number => Math.round(cents) / 100;
 
 /**
  * Pause bestimmen: nur wenn gar kein Wert übergeben wurde, gilt der Standard.
- * Ein ausdrückliches 0 bleibt 0 (früher: `0 || 30` → 30).
+ * Ein ausdrückliches 0 bleibt 0 (früher: `0 || 30` → 30). Für weitere Einträge am selben Tag übergibt der
+ * Aufrufer 0 als Standard (die Pause liegt zwischen den Einträgen).
  */
 export const resolveBreakMinutes = (value: number | string | null | undefined, defaultMinutes = 30): number =>
   value === undefined || value === null || value === '' ? defaultMinutes : parseInt(String(value), 10);
@@ -65,6 +68,12 @@ export const addMonths = (dateString: string, months: number): string => {
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   target.setUTCDate(Math.min(d, lastDay));
   return target.toISOString().slice(0, 10);
+};
+
+/** Datum (YYYY-MM-DD) um n Tage verschieben. */
+export const addDays = (dateString: string, days: number): string => {
+  const [y = 1970, m = 1, d = 1] = dateString.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 };
 
 export interface EntryTimes {
@@ -110,6 +119,62 @@ export const validateEntryRules = (
     }
   }
   return errors;
+};
+
+export interface DayEntry {
+  id?: number;
+  date: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number | null;
+}
+
+const MINUTES_PER_DAY = 24 * 60;
+
+/** Tag (YYYY-MM-DD) → fortlaufende Tagesnummer (UTC, ohne Sommerzeit-Effekte) */
+const dayNumber = (date: string): number => {
+  const [y = 1970, m = 1, d = 1] = date.split('-').map(Number);
+  return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
+};
+
+/**
+ * Zeitraum eines Eintrags in Minuten auf einer durchgehenden Zeitachse: [Beginn, Ende).
+ * Ende ≤ Beginn = Nachtschicht, das Ende liegt am Folgetag.
+ */
+export const entryInterval = (entry: DayEntry): [number, number] => {
+  const start = dayNumber(entry.date) * MINUTES_PER_DAY + timeToMinutes(entry.startTime);
+  return [start, start + spanMinutes(entry.startTime, entry.endTime)];
+};
+
+/**
+ * Erster Eintrag, mit dem sich `entry` zeitlich überschneidet (auch über Mitternacht, z. B. Nachtschicht am
+ * Vortag), sonst null. Direkt aneinander anschließende Einträge (Ende 13:00, Beginn 13:00) sind erlaubt.
+ * Ein Eintrag mit derselben `id` (der bearbeitete selbst) wird übersprungen.
+ */
+export const findOverlap = <T extends DayEntry>(entry: DayEntry, others: readonly T[]): T | null => {
+  const [start, end] = entryInterval(entry);
+  for (const other of others) {
+    if (entry.id !== undefined && other.id === entry.id) continue;
+    const [otherStart, otherEnd] = entryInterval(other);
+    if (start < otherEnd && otherStart < end) return other;
+  }
+  return null;
+};
+
+/**
+ * Regeln für den ganzen Tag: Die Arbeitszeit aller Einträge mit demselben Datum (inkl. `entry`) darf
+ * MAX_DAY_WORK_MINUTES nicht überschreiten.
+ * @returns Fehlermeldungen (leer = gültig)
+ */
+export const validateDayRules = (entry: DayEntry, sameDay: readonly DayEntry[]): string[] => {
+  const others = sameDay.filter((e) => e.date === entry.date && (entry.id === undefined || e.id !== entry.id));
+  const before = others.reduce((sum, e) => sum + workMinutes(e.startTime, e.endTime, e.breakMinutes), 0);
+  const total = before + workMinutes(entry.startTime, entry.endTime, entry.breakMinutes);
+  if (total > RULES.MAX_DAY_WORK_MINUTES) {
+    const hours = (minutes: number) => `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, '0')}`;
+    return [`Arbeitszeit pro Tag darf 12 Stunden nicht überschreiten (an diesem Tag bereits erfasst: ${hours(before)} Std.)`];
+  }
+  return [];
 };
 
 export interface LimitSetting {

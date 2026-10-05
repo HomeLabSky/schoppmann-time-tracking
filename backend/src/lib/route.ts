@@ -8,7 +8,7 @@
  *     body: CreateTimeEntryBody,          // geprüft → req.valid.body (typisiert, unbekannte Felder entfernt)
  *     response: EntryData,                // Form von `data` (OpenAPI; in Tests auch geprüft)
  *     status: 201,
- *     errors: ['ENTRY_EXISTS', 'PERIOD_CLOSED']
+ *     errors: ['ENTRY_OVERLAP', 'PERIOD_CLOSED']
  *   }, async (req) => ({ status, message, data }));
  *
  * Der Handler gibt `{ data, message, status }` zurück; daraus wird `{ success: true, message, data }`.

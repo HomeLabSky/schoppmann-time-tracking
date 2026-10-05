@@ -60,7 +60,9 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
 
   const result = runMigrations();
   assert.equal(result.adopted, true);
-  assert.deepEqual(result.applied, ['0001_audit_triggers_and_cleanup', '0002_check_constraints']);
+  assert.deepEqual(result.applied, [
+    '0001_audit_triggers_and_cleanup', '0002_check_constraints', '0003_multiple_entries_per_day', '0004_time_entry_overlap_triggers'
+  ]);
   assert.ok(result.backup && fs.existsSync(result.backup), 'Sicherung vor der Migration');
   assert.ok(result.backup?.startsWith(`${file}.pre-migration-`));
 
@@ -78,7 +80,7 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   assert.throws(() => getSqlite().exec('DELETE FROM AuditLogs'), /unveränderlich/);
   assert.equal(one('PRAGMA foreign_keys').foreign_keys, 1);
   assert.deepEqual(getSqlite().pragma('foreign_key_check'), []);
-  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 3);
+  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 5);
 
   // Die Anwendung liest die übernommenen Daten (Zeitpunkte im alten Textformat) korrekt
   const august = TimeEntryService.getMonthlyTimeRecordsSync(2, 2026, 8);
@@ -86,6 +88,17 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   assert.equal(august.period.status, 'closed');
   assert.equal(august.summary.totalEarnings, 1080, 'eingefrorene Zahlen des Abschlusses');
   assert.ok(august.closure?.closedAt instanceof Date && !Number.isNaN(august.closure.closedAt.getTime()));
+
+  // Mehrere Einträge pro Tag: alter eindeutiger Index entfernt, Überschneidungen weist die Datenbank ab
+  assert.equal(all("SELECT name FROM sqlite_master WHERE name = 'unique_user_date'").length, 0);
+  const first = one('SELECT userId, date, startTime, endTime FROM TimeEntries ORDER BY id LIMIT 1');
+  const insert = getSqlite().prepare(
+    'INSERT INTO TimeEntries (userId, date, startTime, endTime, breakMinutes, createdAt, updatedAt) ' +
+    "VALUES (?, ?, ?, ?, 0, '2026-01-01 00:00:00.000 +00:00', '2026-01-01 00:00:00.000 +00:00')"
+  );
+  assert.throws(() => insert.run(first.userId, first.date, first.startTime, first.endTime), /time_entries_overlap/);
+  insert.run(first.userId, first.date, first.endTime, '23:59:00'); // direkt anschließend: erlaubt
+  assert.equal(one(`SELECT COUNT(*) AS n FROM TimeEntries WHERE userId = ${Number(first.userId)} AND date = '${String(first.date)}'`).n, 2);
 });
 
 test('Übernahme: zweiter Start ändert nichts mehr', () => {
@@ -152,8 +165,11 @@ test('Neue Datenbank: alle Migrationen, Schema mit Prüfregeln', () => {
   useDatabase();
   const result = runMigrations();
   assert.equal(result.adopted, false);
-  assert.equal(result.applied.length, 3);
+  assert.equal(result.applied.length, 5);
   assert.equal(result.backup, null);
   assert.match(tableSql('TimeEntries'), /time_entries_break_check/);
-  assert.equal(all("SELECT name FROM sqlite_master WHERE type = 'trigger'").length, 2);
+  // Trigger gehen bei einem Neuaufbau der Tabelle verloren – dieser Test fällt dann auf
+  assert.deepEqual(all("SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name").map((r) => r.name), [
+    'auditlogs_no_delete', 'auditlogs_no_update', 'time_entries_no_overlap_insert', 'time_entries_no_overlap_update'
+  ]);
 });

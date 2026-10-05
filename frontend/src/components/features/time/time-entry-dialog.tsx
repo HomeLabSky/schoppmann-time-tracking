@@ -30,9 +30,11 @@ interface Props {
   onClose: () => void
   /** Vorschlag für neue Einträge (z. B. Zeiten des letzten Eintrags) */
   defaults?: Partial<TimeEntryInput>
+  /** Einträge der angezeigten Periode – zeigt, was am gewählten Tag schon erfasst ist */
+  records?: TimeRecord[]
 }
 
-export function TimeEntryDialog({ entry, onClose, defaults }: Props) {
+export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
   const save = useSaveTimeEntry()
   const editing = entry && entry !== 'new' ? entry : null
   const form = useForm<TimeEntryInput>({
@@ -40,7 +42,14 @@ export function TimeEntryDialog({ entry, onClose, defaults }: Props) {
     defaultValues: { date: toLocalDateString(), startTime: '09:00', endTime: '13:00', breakMinutes: 0, description: '' },
   })
   const { errors } = form.formState
-  const [startTime, endTime, breakMinutes] = useWatch({ control: form.control, name: ['startTime', 'endTime', 'breakMinutes'] })
+  const [date, startTime, endTime, breakMinutes] = useWatch({
+    control: form.control,
+    name: ['date', 'startTime', 'endTime', 'breakMinutes'],
+  })
+  // Mehrere Einträge pro Tag sind erlaubt, solange sie sich nicht überschneiden – zur Orientierung anzeigen
+  const sameDay = (records ?? [])
+    .filter((r) => r.date === date && r.id !== editing?.id)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
 
   useEffect(() => {
     if (entry === 'new') {
@@ -96,6 +105,13 @@ export function TimeEntryDialog({ entry, onClose, defaults }: Props) {
               />
             )}
           </FormField>
+          {sameDay.length > 0 && (
+            <p className="text-sm text-muted-foreground" data-testid="same-day-entries">
+              An diesem Tag bereits erfasst:{' '}
+              <span className="tabular text-foreground">{sameDay.map((r) => `${r.startTime}–${r.endTime}`).join(', ')}</span>
+              . Weitere Einträge dürfen sich damit nicht überschneiden.
+            </p>
+          )}
           <div className="grid grid-cols-3 gap-4">
             <FormField id="te-start" label="Beginn" error={errors.startTime?.message} required>
               {(c) => <Input {...c} type="time" {...form.register('startTime')} />}

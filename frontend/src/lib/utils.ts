@@ -20,6 +20,12 @@ export function formatHours(hours: number | null | undefined): string {
   return `${hoursFormat.format(hours ?? 0)} Std.`
 }
 
+/** "3 Einträge an 2 Tagen" – mehrere Einträge pro Tag sind möglich */
+export function formatEntryCount(entryCount: number, workDays: number): string {
+  const entries = `${entryCount} ${entryCount === 1 ? 'Eintrag' : 'Einträge'}`
+  return workDays > 0 && workDays !== entryCount ? `${entries} an ${workDays} ${workDays === 1 ? 'Tag' : 'Tagen'}` : entries
+}
+
 export function formatDate(dateString: string): string {
   if (!dateString) return 'Kein Datum'
   return new Date(dateString + 'T12:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })

@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Clock, Euro, Lock, MoreHorizontal, Pencil, P
 import { useAuth } from '@/lib/auth'
 import { useDeleteTimeEntry, useMyMonth, useMyPeriods } from '@/lib/queries'
 import type { TimeRecord } from '@/lib/timetracking'
-import { formatCurrency, formatDate, formatHours, getErrorMessage } from '@/lib/utils'
+import { formatCurrency, formatDate, formatEntryCount, formatHours, getErrorMessage } from '@/lib/utils'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useConfirm } from '@/components/ui/ConfirmDialog'
@@ -49,7 +49,10 @@ export default function EmployeeDashboard() {
   const usageTone = limitMissing ? 'warning' : usagePct >= 100 ? 'danger' : usagePct >= 80 ? 'warning' : 'success'
 
   // Vorschlag für neue Einträge: Zeiten des letzten Eintrags
-  const lastEntry = useMemo(() => [...(data?.records ?? [])].sort((a, b) => b.date.localeCompare(a.date))[0], [data?.records])
+  const lastEntry = useMemo(
+    () => [...(data?.records ?? [])].sort((a, b) => b.date.localeCompare(a.date) || b.startTime.localeCompare(a.startTime))[0],
+    [data?.records]
+  )
 
   const { mutate: deleteEntry } = remove
   const columns = useMemo<ColumnDef<TimeRecord, unknown>[]>(() => {
@@ -124,7 +127,7 @@ export default function EmployeeDashboard() {
           ) : (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={`Aktionen für den Eintrag vom ${formatDate(row.original.date)}`}>
+                <Button variant="ghost" size="icon-sm" aria-label={`Aktionen für den Eintrag vom ${formatDate(row.original.date)}, ${row.original.startTime} Uhr`}>
                   <MoreHorizontal aria-hidden="true" />
                 </Button>
               </DropdownMenuTrigger>
@@ -221,7 +224,7 @@ export default function EmployeeDashboard() {
           value={summary ? formatCurrency(summary.totalEarnings) : ''}
           icon={Euro}
           loading={loading}
-          hint={summary ? `${summary.entryCount} ${summary.entryCount === 1 ? 'Eintrag' : 'Einträge'}${summary.carryIn > 0 ? ` · + ${formatCurrency(summary.carryIn)} Übertrag` : ''}` : undefined}
+          hint={summary ? `${formatEntryCount(summary.entryCount, summary.workDays)}${summary.carryIn > 0 ? ` · + ${formatCurrency(summary.carryIn)} Übertrag` : ''}` : undefined}
         />
         <StatCard
           label="Auszahlung"
@@ -266,6 +269,7 @@ export default function EmployeeDashboard() {
       <TimeEntryDialog
         entry={dialog}
         onClose={() => setDialog(null)}
+        records={data?.records}
         defaults={lastEntry ? { startTime: lastEntry.startTime, endTime: lastEntry.endTime, breakMinutes: lastEntry.breakMinutes } : undefined}
       />
       {confirmDialog}

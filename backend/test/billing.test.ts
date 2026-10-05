@@ -118,3 +118,35 @@ test('foldCarry: Grenze ändert sich zwischen Perioden', () => {
   assert.equal(rows[1].paidCents, 6200);
   assert.equal(rows[1].carryOutCents, 0);
 });
+
+test('addDays: über Monats- und Jahresgrenzen, Schaltjahr', () => {
+  assert.equal(billing.addDays('2024-02-28', 1), '2024-02-29');
+  assert.equal(billing.addDays('2024-03-01', -1), '2024-02-29');
+  assert.equal(billing.addDays('2025-12-31', 1), '2026-01-01');
+  assert.equal(billing.addDays('2026-03-29', 1), '2026-03-30', 'Zeitumstellung ohne Einfluss');
+});
+
+test('findOverlap: Überschneidung auf durchgehender Zeitachse, anschließend erlaubt, eigener Eintrag ausgenommen', () => {
+  const day = (id: number, date: string, startTime: string, endTime: string) => ({ id, date, startTime, endTime, breakMinutes: 0 });
+  const existing = [day(1, '2024-06-03', '08:00', '12:00'), day(2, '2024-06-03', '22:00', '02:00')];
+  const check = (date: string, start: string, end: string, id?: number) =>
+    billing.findOverlap({ id, date, startTime: start, endTime: end, breakMinutes: 0 }, existing)?.id ?? null;
+
+  assert.equal(check('2024-06-03', '12:00', '13:00'), null, 'beginnt, wo der andere endet');
+  assert.equal(check('2024-06-03', '07:00', '08:00'), null, 'endet, wo der andere beginnt');
+  assert.equal(check('2024-06-03', '11:00', '13:00'), 1);
+  assert.equal(check('2024-06-03', '06:00', '14:00'), 1, 'umschließt');
+  assert.equal(check('2024-06-04', '01:00', '03:00'), 2, 'Nachtschicht vom Vortag');
+  assert.equal(check('2024-06-04', '02:00', '03:00'), null);
+  assert.equal(check('2024-06-02', '23:00', '08:30'), 1, 'Nachtschicht in den Folgetag');
+  assert.equal(check('2024-06-03', '08:00', '12:00', 1), null, 'bearbeiteter Eintrag zählt nicht gegen sich selbst');
+});
+
+test('validateDayRules: Summe der Arbeitszeit je Tag höchstens 12 Stunden', () => {
+  const e = (date: string, startTime: string, endTime: string, breakMinutes = 0, id?: number) => ({ id, date, startTime, endTime, breakMinutes });
+  const sameDay = [e('2024-06-03', '06:00', '14:00', 0, 1), e('2024-06-02', '06:00', '18:00', 0, 2)];
+  assert.deepEqual(billing.validateDayRules(e('2024-06-03', '15:00', '19:00'), sameDay), [], 'genau 12 h');
+  assert.match(billing.validateDayRules(e('2024-06-03', '15:00', '19:01'), sameDay)[0] ?? '', /12 Stunden.*8:00 Std/);
+  assert.deepEqual(billing.validateDayRules(e('2024-06-03', '15:00', '19:30', 30), sameDay), [], 'Pause zählt nicht');
+  assert.deepEqual(billing.validateDayRules(e('2024-06-03', '06:00', '18:00', 0, 1), sameDay), [], 'eigener Eintrag ersetzt');
+});

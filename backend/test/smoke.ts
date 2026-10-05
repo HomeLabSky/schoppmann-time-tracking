@@ -166,10 +166,33 @@ async function main(): Promise<void> {
       token: empToken,
       body: { date: today(), startTime: '10:00', endTime: '12:00', breakMinutes: 0 }
     });
-    check('Doppelter Zeiteintrag 409 ENTRY_EXISTS', dupEntry.status === 409 && dupEntry.json?.code === 'ENTRY_EXISTS', dupEntry.json);
+    check('Überschneidender Zeiteintrag 409 ENTRY_OVERLAP', dupEntry.status === 409 && dupEntry.json?.code === 'ENTRY_OVERLAP', dupEntry.json);
+
+    const secondEntry = await api('POST', '/api/timetracking', {
+      token: empToken,
+      body: { date: today(), startTime: '17:00', endTime: '18:00' }
+    });
+    check(
+      'Zweiter Eintrag am selben Tag 201, ohne Angabe keine Standardpause',
+      secondEntry.status === 201 && secondEntry.json?.data?.entry?.breakMinutes === 0,
+      secondEntry.json
+    );
 
     const list = await api('GET', `/api/timetracking?month=${month}`, { token: empToken });
     check('Monatsliste liefert records', Array.isArray(list.json?.data?.records), list.json);
+    check(
+      'Monatssumme über beide Einträge (8 h + 1 h, ein Arbeitstag)',
+      list.json?.data?.summary?.entryCount === 2 && list.json?.data?.summary?.workDays === 1 && list.json?.data?.summary?.totalHours === 9,
+      list.json?.data?.summary
+    );
+
+    const overlapUpdate = await api('PUT', `/api/timetracking/${entryId}`, {
+      token: empToken,
+      body: { startTime: '09:00', endTime: '17:30', breakMinutes: 45 }
+    });
+    check('Ändern mit Überschneidung 409 ENTRY_OVERLAP', overlapUpdate.status === 409 && overlapUpdate.json?.code === 'ENTRY_OVERLAP', overlapUpdate.json);
+    const secondDeleted = await api('DELETE', `/api/timetracking/${secondEntry.json?.data?.entry?.id}`, { token: empToken });
+    check('Zweiter Eintrag gelöscht 200', secondDeleted.status === 200, secondDeleted.status);
 
     const single = await api('GET', `/api/timetracking/${entryId}`, { token: empToken });
     check('Einzelner Eintrag 200', single.status === 200 && single.json?.data?.entry?.id === entryId, single.status);
@@ -517,7 +540,7 @@ async function main(): Promise<void> {
     const conflict = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { ...offlineEntry, date: otherDay });
     check('Gleiche clientId für anderen Tag 409 CLIENT_ID_CONFLICT', conflict.status === 409 && conflict.json?.code === 'CLIENT_ID_CONFLICT', conflict.json);
     const sameDayNoId = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { ...offlineEntry, clientId: undefined });
-    check('Zweiter Eintrag am selben Tag ohne clientId 409 ENTRY_EXISTS', sameDayNoId.status === 409 && sameDayNoId.json?.code === 'ENTRY_EXISTS', sameDayNoId.json);
+    check('Gleiche Zeiten ohne clientId 409 ENTRY_OVERLAP', sameDayNoId.status === 409 && sameDayNoId.json?.code === 'ENTRY_OVERLAP', sameDayNoId.json);
 
     const invalid = await appApi('POST', '/api/v1/timetracking', pair?.accessToken, { date: '2026-13-01', startTime: '7 Uhr', endTime: '09:00' });
     check(

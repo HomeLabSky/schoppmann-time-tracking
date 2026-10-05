@@ -54,7 +54,7 @@ export const ERROR_STATUS = {
 
   // Zeiterfassung
   ENTRY_NOT_FOUND: 404,
-  ENTRY_EXISTS: 409,
+  ENTRY_OVERLAP: 409,
   CLIENT_ID_CONFLICT: 409,
 
   // Monatsabschluss
