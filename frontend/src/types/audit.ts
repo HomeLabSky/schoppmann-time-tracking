@@ -21,6 +21,27 @@ export interface TimesheetPeriod {
 
 export type Timesheet = MonthlyTimeRecords
 
+/** Eine Zeile der Monatsübersicht aller Mitarbeiter (GET /api/admin/timesheets/overview). */
+export interface TimesheetOverviewRow {
+  userId: number
+  name: string
+  email: string
+  isActive: boolean
+  periodStart: string
+  periodEnd: string
+  entryCount: number
+  totalHours: number
+  totalEarnings: number
+  paidThisMonth: number
+  carryOut: number
+  minijobLimit: number
+  minijobLimitMissing: boolean
+  exceedsLimit: boolean
+  /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
+  status: 'open' | 'ready' | 'closed'
+  closedAt: string | null
+}
+
 export interface AuditEntry {
   id: number
   createdAt: string

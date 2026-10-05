@@ -1,8 +1,8 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { Modal } from './Modal'
-import { cn } from '@/lib/utils'
+import { Modal, ModalBody, ModalFooter } from './Modal'
+import { Button } from './button'
 
 interface ConfirmOptions {
   title: string
@@ -40,26 +40,16 @@ export function useConfirm(): [(options: ConfirmOptions) => Promise<boolean>, Re
 
   const dialog = (
     <Modal open={options !== null} onClose={() => settle(false)} title={options?.title ?? ''} size="max-w-sm">
-      {options?.message && <div className="px-6 pt-4 text-sm text-gray-600">{options.message}</div>}
-      <div className="flex justify-end gap-3 px-6 py-4">
-        <button
-          type="button"
-          onClick={() => settle(false)}
-          className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
+      {options?.message && <ModalBody className="text-sm text-muted-foreground">{options.message}</ModalBody>}
+      <ModalFooter>
+        {/* Fokus auf „Abbrechen“: Enter löst nie versehentlich eine Löschung aus */}
+        <Button variant="outline" onClick={() => settle(false)} data-autofocus>
           Abbrechen
-        </button>
-        <button
-          type="button"
-          onClick={() => settle(true)}
-          className={cn(
-            'rounded-md px-4 py-2 text-sm font-medium text-white',
-            options?.destructive ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'
-          )}
-        >
+        </Button>
+        <Button variant={options?.destructive ? 'destructive' : 'default'} onClick={() => settle(true)}>
           {options?.confirmLabel ?? 'Bestätigen'}
-        </button>
-      </div>
+        </Button>
+      </ModalFooter>
     </Modal>
   )
 

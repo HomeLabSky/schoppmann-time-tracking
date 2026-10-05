@@ -4739,6 +4739,111 @@
         }
       }
     },
+    "/admin/timesheets/overview": {
+      "get": {
+        "operationId": "getAdminTimesheetsOverview",
+        "summary": "Monatsübersicht aller Mitarbeiter",
+        "description": "Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.",
+        "tags": [
+          "Zeitnachweise"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Übersicht erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Übersicht erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "month": {
+                          "type": "string",
+                          "description": "Referenzmonat (YYYY-MM)"
+                        },
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/TimesheetOverviewRow"
+                          }
+                        }
+                      },
+                      "required": [
+                        "month",
+                        "rows"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/timesheets/{userId}/periods": {
       "get": {
         "operationId": "getAdminTimesheetsByUserIdPeriods",
@@ -6249,6 +6354,98 @@
           "updatedAt"
         ],
         "description": "Zeiteintrag; Beträge aus dem eingefrorenen Stundensatz"
+      },
+      "TimesheetOverviewRow": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "periodStart": {
+            "type": "string",
+            "description": "Beginn der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)"
+          },
+          "periodEnd": {
+            "type": "string",
+            "description": "Ende der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)"
+          },
+          "entryCount": {
+            "type": "integer"
+          },
+          "totalHours": {
+            "type": "number"
+          },
+          "totalEarnings": {
+            "type": "number",
+            "description": "Verdienst der Periode in Euro"
+          },
+          "paidThisMonth": {
+            "type": "number",
+            "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+          },
+          "carryOut": {
+            "type": "number",
+            "description": "Übertrag in die nächste Periode"
+          },
+          "minijobLimit": {
+            "type": "number"
+          },
+          "minijobLimitMissing": {
+            "type": "boolean",
+            "description": "Offene Periode ohne gültige Minijob-Grenze (Abschluss gesperrt)"
+          },
+          "exceedsLimit": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "ready",
+              "closed"
+            ],
+            "description": "open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen"
+          },
+          "closedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Zeitpunkt (ISO 8601)"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "userId",
+          "name",
+          "email",
+          "isActive",
+          "periodStart",
+          "periodEnd",
+          "entryCount",
+          "totalHours",
+          "totalEarnings",
+          "paidThisMonth",
+          "carryOut",
+          "minijobLimit",
+          "minijobLimitMissing",
+          "exceedsLimit",
+          "status",
+          "closedAt"
+        ],
+        "description": "Kennzahlen eines Mitarbeiters in seiner Abrechnungsperiode"
       },
       "TokenPair": {
         "type": "object",

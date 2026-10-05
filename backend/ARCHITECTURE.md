@@ -218,6 +218,11 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 - Wiedereröffnen nur durch Admins, **mit Begründung** (mind. 5 Zeichen) und nur für die **jüngste** abgeschlossene
   Periode. Der Vorgang inkl. Begründung steht im Protokoll.
 - Konten mit Zeiteinträgen oder Abschlüssen können nicht gelöscht, nur deaktiviert werden (Nachweise bleiben erhalten).
+- Ohne gültige Minijob-Grenze (für die Periode oder eine frühere offene Periode im Übertrag) meldet die API
+  `summary.minijobLimitMissing`; der Abschluss wird mit `MINIJOB_LIMIT_MISSING` (409) abgelehnt.
+- Monatsübersicht aller Mitarbeiter: `GET /api/v1/admin/timesheets/overview?month=YYYY-MM` – je Mitarbeiter Stunden,
+  Beträge und Status (`open` läuft, `ready` abschließbar, `closed`) in dessen eigener Abrechnungsperiode
+  (`PeriodService.overview`). Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.
 
 ## Tests
 
@@ -230,10 +235,12 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
   eingefrorener Stundensatz, Grenze je Periode, Monatsende, Periode 22.–21., Fachregeln).
 - `test/sessions.test.ts`: Sitzungen – Rotation, Wiederverwendungs-Erkennung, Ablauf, Widerruf, Besitznachweis beim Abmelden.
 - `test/audit-closure.test.ts`: Protokollierung, Unveränderlichkeit, keine Passwörter, Abschluss/Sperre,
-  eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung.
+  eingefrorene Zahlen, Reihenfolge, Wiedereröffnen mit Begründung, Monatsübersicht (Status, eigene Periode, Filter).
 - `test/phase2-api.test.ts`: Konto-Sperre (Eskalation, Verfall), App-Sitzungen (Laufzeit, Weg-Bindung), idempotente
   Anlage, Fehlerformat, CSRF-Ausnahmen, Konfigurationsprüfung, OpenAPI-Dokument aktuell.
 - `test/migrate.test.ts`: Übernahme einer Sequelize-Datenbank ohne Datenverlust (auch sehr alte Stände), Prüfregeln
   aktiv, zweiter Start ohne Änderung, atomarer Abbruch bei Altdaten, die eine Prüfregel verletzen.
 - Smoke-Test: prüft jede Erfolgsantwort gegen ihr Schema und listet Endpunkte ohne Erfolgsfall auf.
+- `test/e2e-server.ts` (`npm run e2e:server`): startet die API mit Wegwerf-DB und festen Testdaten für die
+  Playwright-Tests des Frontends (`frontend/e2e`, `npm run e2e` im Ordner `frontend`). Nie gegen echte Daten verwenden.
 - Nach strukturellen Änderungen oder Änderungen an der Abrechnung immer ausführen.

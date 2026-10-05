@@ -1,25 +1,26 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
-import { FlatCompat } from "@eslint/eslintrc";
+import { defineConfig, globalIgnores } from 'eslint/config'
+import nextVitals from 'eslint-config-next/core-web-vitals'
+import nextTs from 'eslint-config-next/typescript'
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
-
-const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+// Next.js 16: ESLint direkt (Flat Config) statt `next lint`. Aufruf: npm run lint (0 Warnungen erlaubt).
+const eslintConfig = defineConfig([
+  ...nextVitals,
+  ...nextTs,
   {
-    // Übergangsweise Warnungen statt Fehler: ~70 Altlasten in lib/ und types/.
-    // Werden mit dem Frontend-Umbau (Phase 3 im Modernisierungsbericht) behoben,
-    // danach wieder auf "error" stellen.
     rules: {
-      "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-empty-object-type": "warn",
+      '@typescript-eslint/no-explicit-any': 'error',
+      '@typescript-eslint/no-empty-object-type': 'error',
     },
   },
-];
+  globalIgnores([
+    '.next/**',
+    'out/**',
+    'build/**',
+    'next-env.d.ts',
+    'playwright-report/**',
+    'test-results/**',
+    'blob-report/**',
+  ]),
+])
 
-export default eslintConfig;
+export default eslintConfig

@@ -7,7 +7,7 @@
  * Dient als Regressionsnetz für das Backend-Refactoring: prüft, dass der
  * öffentliche API-Vertrag ({ success, data, message }) erhalten bleibt.
  *
- * Aufruf:  npm run smoke   (oder: node scripts/smoke-test.js)
+ * Aufruf:  npm run smoke   (oder: npx tsx test/smoke.ts)
  * Exit-Code 0 = alle Checks grün, 1 = mindestens ein Check rot.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON-Antworten werden bewusst locker gelesen */
@@ -313,6 +313,16 @@ async function main(): Promise<void> {
     const sheet = await api('GET', `/api/admin/timesheets/${empId}?month=${prevMonth}`, { token: adminToken });
     check('Zeitnachweis: Admin sieht Mitarbeiter-Periode', sheet.status === 200 && sheet.json?.data?.records?.length === 1 && sheet.json.data.period.status === 'open', sheet.json);
 
+    const overviewForbidden = await api('GET', `/api/admin/timesheets/overview?month=${prevMonth}`, { token: empToken });
+    check('Übersicht: Mitarbeiter abgewiesen 403', overviewForbidden.status === 403, overviewForbidden.status);
+    const overview = await api('GET', `/api/admin/timesheets/overview?month=${prevMonth}`, { token: adminToken });
+    const ownRow = overview.json?.data?.rows?.find((r) => r.userId === empId);
+    check(
+      'Übersicht: Admin sieht Mitarbeiter mit Status "ready" und Stunden',
+      overview.status === 200 && ownRow?.status === 'ready' && ownRow?.entryCount === 1 && ownRow?.totalHours === 8,
+      overview.json
+    );
+
     const closeRunning = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: currentMonthParam } });
     check('Abschluss laufender Periode 409 PERIOD_NOT_ENDED', closeRunning.status === 409 && closeRunning.json?.code === 'PERIOD_NOT_ENDED', closeRunning.json);
 
@@ -330,6 +340,12 @@ async function main(): Promise<void> {
 
     const closed = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: prevMonth } });
     check('Periode abgeschlossen 201', closed.status === 201 && closed.json?.data?.closure?.earningsCents === 9600, closed.json);
+    const overviewClosed = await api('GET', `/api/admin/timesheets/overview?month=${prevMonth}`, { token: adminToken });
+    check(
+      'Übersicht: abgeschlossene Periode mit Status "closed"',
+      overviewClosed.json?.data?.rows?.find((r) => r.userId === empId)?.status === 'closed',
+      overviewClosed.json
+    );
 
     const editClosed = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten in geschlossener Periode 409 PERIOD_CLOSED', editClosed.status === 409 && editClosed.json?.code === 'PERIOD_CLOSED', editClosed.json);

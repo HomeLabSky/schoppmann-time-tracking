@@ -34,6 +34,30 @@ const PeriodClosure = z.object({
 const ClosureData = z.object({ closure: PeriodClosure });
 const ReopenData = z.object({ periodStart: z.string(), periodEnd: z.string() });
 
+const TimesheetOverviewRow = z.object({
+  userId: z.number().int(),
+  name: z.string(),
+  email: z.string(),
+  isActive: z.boolean(),
+  periodStart: z.string().describe('Beginn der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)'),
+  periodEnd: z.string().describe('Ende der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)'),
+  entryCount: z.number().int(),
+  totalHours: z.number(),
+  totalEarnings: z.number().describe('Verdienst der Periode in Euro'),
+  paidThisMonth: z.number().describe('Auszahlung dieser Periode (höchstens die Grenze)'),
+  carryOut: z.number().describe('Übertrag in die nächste Periode'),
+  minijobLimit: z.number(),
+  minijobLimitMissing: z.boolean().describe('Offene Periode ohne gültige Minijob-Grenze (Abschluss gesperrt)'),
+  exceedsLimit: z.boolean(),
+  status: z.enum(['open', 'ready', 'closed']).describe('open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen'),
+  closedAt: timestamp().nullable()
+}).meta({ id: 'TimesheetOverviewRow', description: 'Kennzahlen eines Mitarbeiters in seiner Abrechnungsperiode' });
+
+const TimesheetOverviewData = z.object({
+  month: z.string().describe('Referenzmonat (YYYY-MM)'),
+  rows: z.array(TimesheetOverviewRow)
+});
+
 const AuditQuery = z.object({
   page: integer('Seite', { min: 1 }).optional(),
   limit: integer('Anzahl', { min: 1, max: 200 }).optional(),
@@ -81,6 +105,8 @@ export {
   PeriodClosure,
   ClosureData,
   ReopenData,
+  TimesheetOverviewRow,
+  TimesheetOverviewData,
   AuditQuery,
   AuditEntry,
   AuditListData,
