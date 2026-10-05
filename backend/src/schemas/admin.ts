@@ -42,6 +42,7 @@ const TimesheetOverviewRow = z.object({
   periodStart: z.string().describe('Beginn der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)'),
   periodEnd: z.string().describe('Ende der Abrechnungsperiode des Mitarbeiters (YYYY-MM-DD)'),
   entryCount: z.number().int(),
+  workDays: z.number().int().describe('Anzahl Tage mit Einträgen'),
   totalHours: z.number(),
   totalEarnings: z.number().describe('Verdienst der Periode in Euro'),
   paidThisMonth: z.number().describe('Auszahlung dieser Periode (höchstens die Grenze)'),

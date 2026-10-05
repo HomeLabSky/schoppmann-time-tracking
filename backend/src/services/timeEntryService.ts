@@ -65,6 +65,29 @@ const assertValid = (errors: string[]): void => {
   if (errors.length > 0) throw new AppError('VALIDATION_ERROR', errors.join(', '));
 };
 
+/** Einträge eines Mitarbeiters vom Vortag bis zum Folgetag (Nachtschichten können in den Tag hineinreichen) */
+const entriesAround = (userId: number, date: string): TimeEntryRow[] =>
+  db().select().from(timeEntries)
+    .where(and(eq(timeEntries.userId, userId), between(timeEntries.date, billing.addDays(date, -1), billing.addDays(date, 1))))
+    .all();
+
+const hhmm = (time: string): string => String(time).substring(0, 5);
+
+/**
+ * Regeln über mehrere Einträge: keine zeitliche Überschneidung (auch über Mitternacht) und höchstens
+ * 12 Stunden Arbeitszeit je Tag. `entry.id` = bearbeiteter Eintrag (zählt nicht gegen sich selbst).
+ */
+const assertFitsDay = (entry: billing.DayEntry & { userId: number }, around: TimeEntryRow[]): void => {
+  const overlap = billing.findOverlap(entry, around);
+  if (overlap) {
+    throw new AppError('ENTRY_OVERLAP',
+      `Überschneidet sich mit dem Eintrag am ${DateService.formatDateForDisplay(overlap.date)}, ` +
+      `${hhmm(overlap.startTime)}–${hhmm(overlap.endTime)} Uhr`
+    );
+  }
+  assertValid(billing.validateDayRules(entry, around));
+};
+
 const findOwnEntry = (entryId: number, userId: number): TimeEntryRow => {
   const entry = db().select().from(timeEntries)
     .where(and(eq(timeEntries.id, entryId), eq(timeEntries.userId, userId))) // nur eigene Einträge
@@ -150,7 +173,7 @@ export class TimeEntryService {
     const closures = db().select().from(periodClosures).where(eq(periodClosures.userId, userId)).all();
     const entries = db().select().from(timeEntries)
       .where(and(eq(timeEntries.userId, userId), between(timeEntries.date, firstPeriod.startDate, target.endDate)))
-      .orderBy(asc(timeEntries.date))
+      .orderBy(asc(timeEntries.date), asc(timeEntries.startTime))
       .all();
 
     const closureFor = (period: BillingPeriod): PeriodClosure | null =>
@@ -197,7 +220,8 @@ export class TimeEntryService {
         // true: Für diese oder eine frühere offene Periode im Übertrag ist keine Minijob-Grenze
         // hinterlegt – Auszahlung/Übertrag sind vorläufig (Ersatzwert), Abschluss ist gesperrt.
         minijobLimitMissing: limitMissing,
-        entryCount: current.entries.length
+        entryCount: current.entries.length,
+        workDays: new Set(current.entries.map((e) => e.date)).size
       },
       period: {
         year: periodInfo.year,
@@ -249,18 +273,17 @@ export class TimeEntryService {
       // Nur gewünschte Felder übernehmen (kein Mass-Assignment, z. B. von hourlyRateCents)
       const startTime = normalizeTime(entryData.startTime);
       const endTime = normalizeTime(entryData.endTime);
-      const breakMinutes = billing.resolveBreakMinutes(entryData.breakMinutes);
+      const around = entriesAround(entryData.userId, entryData.date);
+      // Standardpause nur für den ersten Eintrag des Tages; weitere Einträge: Pause liegt dazwischen
+      const firstOfDay = !around.some((e) => e.date === entryData.date);
+      const breakMinutes = billing.resolveBreakMinutes(entryData.breakMinutes, firstOfDay ? 30 : 0);
       assertValid(billing.validateEntryRules(
         { date: entryData.date, startTime, endTime, breakMinutes },
         { today: todayString(), checkDateWindow: true }
       ));
 
       assertDateOpen(entryData.userId, entryData.date);
-
-      const existing = db().select({ id: timeEntries.id }).from(timeEntries)
-        .where(and(eq(timeEntries.userId, entryData.userId), eq(timeEntries.date, entryData.date)))
-        .get();
-      if (existing) throw new AppError('ENTRY_EXISTS', 'Für dieses Datum existiert bereits ein Zeiteintrag');
+      assertFitsDay({ userId: entryData.userId, date: entryData.date, startTime, endTime, breakMinutes }, around);
 
       const user = db().select().from(users).where(eq(users.id, entryData.userId)).get();
       if (!user) throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
@@ -305,6 +328,7 @@ export class TimeEntryService {
       };
       assertValid(validateTimeEntryFormat(merged));
       assertValid(billing.validateEntryRules(merged, { today: todayString() }));
+      assertFitsDay({ ...merged, id: entry.id }, entriesAround(userId, entry.date));
 
       const updated = db().update(timeEntries).set({
         startTime: merged.startTime,

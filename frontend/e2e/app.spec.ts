@@ -90,6 +90,23 @@ test('Mitarbeiter: Arbeitszeit mit Pause erfassen, Kennzahlen aktualisieren sich
   // 4 Std. × 13,50 € = 54,00 €
   await expect(page.getByRole('cell', { name: '54,00 €' })).toBeVisible()
 
+  // Zweiter Eintrag am selben Tag: Überschneidung wird abgelehnt, anschließender Eintrag angenommen
+  await page.getByRole('button', { name: 'Arbeitszeit erfassen' }).first().click()
+  await expect(dialog.getByTestId('same-day-entries')).toContainText('08:00–12:30')
+  await dialog.getByLabel('Beginn').fill('12:00')
+  await dialog.getByLabel('Ende').fill('14:00')
+  await dialog.getByLabel('Pause (Min.)').fill('0')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Überschneidet sich')
+  await dialog.getByLabel('Beginn').fill('12:30')
+  await dialog.getByLabel('Tätigkeit').fill('E2E Nachmittag')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByRole('cell', { name: 'E2E Nachmittag' })).toBeVisible()
+  // 4 Std. + 1,5 Std. = 5,5 Std. → 74,25 €; zwei Einträge an einem Tag
+  await expect(page.getByText('2 Einträge an 1 Tag')).toBeVisible()
+  await expect(page.getByText('74,25 €').first()).toBeVisible()
+
   await page.getByRole('link', { name: 'Einstellungen' }).click()
   await expect(page.getByRole('heading', { name: 'Einstellungen', level: 1 })).toBeVisible()
   await expect(page.getByText('13,50 €')).toBeVisible()

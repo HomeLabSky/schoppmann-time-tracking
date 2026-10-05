@@ -61,12 +61,14 @@ api.get('/:id', {
 api.post('/', {
   summary: 'Zeiteintrag anlegen',
   description: 'Regeln: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h, Ende < Start = über Mitternacht. ' +
-    'Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück.',
+    'Mehrere Einträge pro Tag sind erlaubt, solange sie sich nicht überschneiden (auch nicht mit einer Nachtschicht ' +
+    'vom Vortag; direkt anschließend ist erlaubt → sonst 409 ENTRY_OVERLAP) und die Arbeitszeit des Tages 12 h nicht ' +
+    'übersteigt. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück.',
   body: CreateTimeEntryBody,
   response: EntryData,
   status: 201,
   message: 'Zeiteintrag erfolgreich erstellt',
-  errors: ['VALIDATION_ERROR', 'ENTRY_EXISTS', 'PERIOD_CLOSED', 'CLIENT_ID_CONFLICT']
+  errors: ['VALIDATION_ERROR', 'ENTRY_OVERLAP', 'PERIOD_CLOSED', 'CLIENT_ID_CONFLICT']
 }, async (req) => {
   const { entry, replayed } = await TimeEntryService.createTimeEntryIdempotent(
     { ...req.valid.body, userId: req.user.userId },
@@ -79,11 +81,12 @@ api.post('/', {
 
 api.put('/:id', {
   summary: 'Zeiteintrag ändern (Datum ist nicht änderbar)',
+  description: 'Gleiche Regeln wie beim Anlegen, auch Überschneidung (ENTRY_OVERLAP) und 12 h je Tag.',
   params: EntryIdParam,
   body: UpdateTimeEntryBody,
   response: EntryData,
   message: 'Zeiteintrag erfolgreich aktualisiert',
-  errors: ['ENTRY_NOT_FOUND', 'PERIOD_CLOSED']
+  errors: ['VALIDATION_ERROR', 'ENTRY_NOT_FOUND', 'ENTRY_OVERLAP', 'PERIOD_CLOSED']
 }, async (req) => {
   const entry = await TimeEntryService.updateTimeEntry(req.valid.params.id, req.valid.body, req.user.userId, actorOf(req));
   return { data: { entry } };

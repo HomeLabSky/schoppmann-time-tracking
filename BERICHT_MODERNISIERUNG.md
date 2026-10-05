@@ -577,3 +577,18 @@ Der Frontend-Branch entstand vor Phase 2 und änderte noch die alten JavaScript-
 | Erstlauf | 481 Funde, davon ~95 % Fehlalarme bzw. Tests (s. o.). Echt und behoben: **Sicherungs-Dauerlauf** – ließ sich der Sicherungsprozess nicht starten, stürzte der Dienst ab (fehlender `error`-Handler) bzw. plante nie neu; `async`-Rückruf in `setTimeout` ohne Fehlerbehandlung. Außerdem `await` auf synchrone Funktionen (2× Server, 31× Tests), `any` im Request-Log und beim Lesen von JSON, `String(unbekannt)` statt Typprüfung (u. a. `Retry-After` nur noch bei Zahl > 0), überflüssige Typ-Zusicherungen, ungenutzte Importe |
 | CI | eigener Schritt im Backend-Job vor den Tests |
 | Prüfung | `npm run lint` 0 Funde, Typprüfung, 94 Unit-/Integrationstests, 127 Smoke-Checks grün |
+
+---
+
+## Mehrere Einträge pro Tag
+
+Wichtigste fachliche Lücke: geteilte Schichten (z. B. 08–12 und 17–19 Uhr) ließen sich nicht erfassen.
+
+| Punkt | Stand |
+|---|---|
+| Datenbank | Migration `0003`: eindeutiger Index `unique_user_date` → normaler Index `time_entries_user_date`. Migration `0004`: Trigger weisen **überschneidende Einträge** eines Mitarbeiters ab (auch bei direktem SQL, auch über Mitternacht) – die „Prüfregel“ für diesen Fall, denn CHECK kann nicht zeilenübergreifend prüfen. Bestehende Daten bleiben unverändert |
+| Regeln | keine Überschneidung (direkt anschließend erlaubt; Nachtschicht vom Vortag zählt mit), **höchstens 12 h Arbeitszeit je Tag** (bisher nur je Eintrag – sonst ließe sich die Grenze durch Aufteilen umgehen), Standardpause 30 min nur für den ersten Eintrag des Tages |
+| API | neuer Fehlercode `409 ENTRY_OVERLAP` mit Angabe des überschneidenden Eintrags; `ENTRY_EXISTS` entfällt (konnte nur beim zweiten Eintrag eines Tages auftreten, der jetzt erlaubt ist). Neu (nur ergänzt): `summary.workDays` und `workDays` in der Monatsübersicht. Einträge sortiert nach Datum **und Beginn**. Bearbeiten prüft dieselben Regeln (`VALIDATION_ERROR`/`ENTRY_OVERLAP` jetzt im Vertrag dokumentiert) |
+| Abrechnung | Summen liefen schon über alle Einträge einer Periode (Stunden, Verdienst je eingefrorenem Satz, Übertrag, Abschluss) – keine Änderung der Rechenlogik nötig, durch Tests mit mehreren Einträgen pro Tag belegt |
+| Oberfläche | Erfassungsdialog zeigt, was am gewählten Tag schon erfasst ist; Kennzahlen „5 Einträge an 3 Tagen“; Monatsübersicht mit Spalte „Tage“ (auch im CSV-Export) |
+| Prüfung | 103 Unit-/Integrationstests (neu: Überschneidung, Nachtschicht über Tagesgrenze, 12-h-Tagesgrenze, Standardpause, Bearbeiten, Wiederholung per `clientId`, Trigger bei direktem SQL, Übernahme alter Datenbanken), 131 Smoke-Checks, 4 Playwright-Tests (neu: zweiter Eintrag am selben Tag, Überschneidung wird angezeigt) |

@@ -3,7 +3,8 @@ import { z, integer, isoDate, month, clockTime, timestamp } from './common';
 const breakMinutes = integer('Pausendauer', { min: 0, max: 480 })
   .optional()
   .nullable()
-  .describe('Pause in Minuten. Ohne Angabe gilt der Standard (30); 0 heißt ausdrücklich keine Pause.');
+  .describe('Pause in Minuten. Ohne Angabe gilt der Standard: 30 für den ersten Eintrag des Tages, 0 für weitere ' +
+    '(die Pause liegt dann zwischen den Einträgen). 0 heißt ausdrücklich keine Pause.');
 
 const description = z.string().trim().max(500, 'Beschreibung darf maximal 500 Zeichen haben').optional().nullable();
 
@@ -79,7 +80,8 @@ const Summary = z.object({
   hourlyRate: z.number(),
   exceedsLimit: z.boolean(),
   minijobLimitMissing: z.boolean().describe('Keine Minijob-Grenze hinterlegt: Werte vorläufig, Abschluss gesperrt'),
-  entryCount: z.number().int()
+  entryCount: z.number().int(),
+  workDays: z.number().int().describe('Anzahl Tage mit Einträgen (mehrere Einträge pro Tag möglich)')
 }).meta({ id: 'PeriodSummary' });
 
 const MonthlyRecords = z.object({

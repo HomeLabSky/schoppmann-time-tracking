@@ -35,6 +35,10 @@ export const errorHandler = (error: unknown, req: Request, res: Response, _next:
       // in der Eingabeprüfung hin, daher zusätzlich als Warnung im Log
       log.warn({ err: error }, 'Prüfregel der Datenbank verletzt');
       appError = new AppError('VALIDATION_ERROR', 'Ungültige Daten');
+    } else if (raw.code === 'SQLITE_CONSTRAINT_TRIGGER' && raw.message?.includes('time_entries_overlap')) {
+      // Überschneidungs-Trigger (drizzle/0004): der Service prüft vorher – hier nur, falls das umgangen wurde
+      log.warn({ err: error }, 'Überschneidungsregel der Datenbank verletzt');
+      appError = new AppError('ENTRY_OVERLAP', 'Der Eintrag überschneidet sich mit einem anderen Eintrag');
     } else {
       log.error({ err: error }, 'Unerwarteter Fehler');
     }

@@ -65,6 +65,7 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
         ),
       },
       { id: 'entries', accessorFn: (r) => r.entryCount, header: 'Einträge', meta: { className: 'text-right tabular' } },
+      { id: 'days', accessorFn: (r) => r.workDays, header: 'Tage', meta: { className: 'text-right tabular' } },
       {
         id: 'hours',
         accessorFn: (r) => r.totalHours,
@@ -149,6 +150,7 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
             { header: 'Periode von', value: (r) => formatDate(r.periodStart) },
             { header: 'Periode bis', value: (r) => formatDate(r.periodEnd) },
             { header: 'Einträge', value: (r) => r.entryCount },
+            { header: 'Tage', value: (r) => r.workDays },
             { header: 'Stunden', value: (r) => csvNumber(r.totalHours) },
             { header: 'Verdienst (€)', value: (r) => csvNumber(r.totalEarnings) },
             { header: 'Auszahlung (€)', value: (r) => csvNumber(r.paidThisMonth) },

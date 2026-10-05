@@ -30,6 +30,7 @@ export interface TimesheetOverviewRow {
   periodStart: string
   periodEnd: string
   entryCount: number
+  workDays: number
   totalHours: number
   totalEarnings: number
   paidThisMonth: number

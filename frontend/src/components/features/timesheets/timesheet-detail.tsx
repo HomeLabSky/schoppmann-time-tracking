@@ -10,7 +10,7 @@ import { ArrowLeft, Lock, LockOpen } from 'lucide-react'
 import { useClosePeriod, useReopenPeriod, useTimesheet, useUsers } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
 import { csvNumber } from '@/lib/csv'
-import { formatCurrency, formatDate, formatDateTime, formatHours, getErrorMessage, toLocalDateString } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime, formatEntryCount, formatHours, getErrorMessage, toLocalDateString } from '@/lib/utils'
 import type { TimeRecord } from '@/lib/timetracking'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -142,7 +142,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Arbeitszeit" value={summary ? formatHours(summary.totalHours) : ''} loading={sheet.isLoading} hint={summary ? `${summary.entryCount} ${summary.entryCount === 1 ? 'Eintrag' : 'Einträge'}` : undefined} />
+        <StatCard label="Arbeitszeit" value={summary ? formatHours(summary.totalHours) : ''} loading={sheet.isLoading} hint={summary ? formatEntryCount(summary.entryCount, summary.workDays) : undefined} />
         <StatCard label="Verdienst" value={summary ? formatCurrency(summary.totalEarnings) : ''} loading={sheet.isLoading} hint={summary && summary.carryIn > 0 ? `+ ${formatCurrency(summary.carryIn)} Übertrag` : undefined} />
         <StatCard
           label="Auszahlung"
@@ -196,7 +196,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
             name={employee?.name ?? ''}
             details={[
               `${formatDate(data.period.startDate)} – ${formatDate(data.period.endDate)}`,
-              `${summary.entryCount} Einträge, ${formatHours(summary.totalHours)}`,
+              `${formatEntryCount(summary.entryCount, summary.workDays)}, ${formatHours(summary.totalHours)}`,
               `Verdienst ${formatCurrency(summary.totalEarnings)} · Auszahlung ${formatCurrency(summary.paidThisMonth)} · Übertrag ${formatCurrency(summary.carryOut)}`,
             ]}
           />

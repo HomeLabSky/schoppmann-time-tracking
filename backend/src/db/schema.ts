@@ -79,7 +79,8 @@ export const timeEntries = sqliteTable('TimeEntries', {
   createdAt: createdAt(),
   updatedAt: updatedAt()
 }, (t) => [
-  uniqueIndex('unique_user_date').on(t.userId, t.date),
+  // Mehrere Einträge pro Tag erlaubt; Überschneidungen verhindern die Trigger aus drizzle/0004
+  index('time_entries_user_date').on(t.userId, t.date),
   uniqueIndex('unique_user_client_id').on(t.userId, t.clientId),
   index('time_entries_date').on(t.date),
   check('time_entries_break_check', sql`${t.breakMinutes} BETWEEN 0 AND 480`),

@@ -9,9 +9,9 @@ import test from 'node:test';
 import { eq } from 'drizzle-orm';
 import { closeDb, initDatabase } from '../src/db';
 import { db } from '../src/db/client';
-import { users, type User } from '../src/db/schema';
+import { timeEntries, users, type User } from '../src/db/schema';
 import { TimeEntryService } from '../src/services/timeEntryService';
-import { addMonths } from '../src/utils/billing';
+import { addDays, addMonths } from '../src/utils/billing';
 import { todayString } from '../src/utils/clock';
 import { addEntry, addLimit, makeUser as createUser, reject } from './helpers';
 
@@ -189,11 +189,99 @@ test('Regeln: Zukunft, älter als ein Monat, > 12 h, < 15 min werden abgelehnt',
   await reject(TimeEntryService.createTimeEntry({ ...base, date: today, startTime: '09:00', endTime: '09:10' }), /15 Minuten/);
 });
 
-test('Regeln: doppelter Eintrag am selben Tag wird mit ENTRY_EXISTS abgelehnt', async () => {
+// ---------- Mehrere Einträge pro Tag ----------
+
+test('Mehrere Einträge pro Tag: nicht überschneidend erlaubt, direkt anschließend erlaubt, Überschneidung abgelehnt', async () => {
   const user = await makeUser();
-  const entry = { userId: user.id, date: todayString(), startTime: '09:00', endTime: '10:00', breakMinutes: 0 };
-  await TimeEntryService.createTimeEntry(entry);
-  await reject(TimeEntryService.createTimeEntry(entry), /ENTRY_EXISTS/);
+  const today = todayString();
+  const add = (startTime: string, endTime: string) =>
+    TimeEntryService.createTimeEntry({ userId: user.id, date: today, startTime, endTime, breakMinutes: 0 });
+
+  await add('08:00', '12:00');
+  await add('12:00', '13:00'); // beginnt genau, wo der erste endet
+  await add('17:00', '19:30');
+  await reject(add('08:00', '12:00'), /ENTRY_OVERLAP/); // identisch
+  await reject(add('11:59', '12:30'), /ENTRY_OVERLAP.*08:00–12:00/);
+  await reject(add('16:00', '20:00'), /ENTRY_OVERLAP/); // umschließt
+  await reject(add('18:00', '18:30'), /ENTRY_OVERLAP/); // liegt innerhalb
+
+  const [y, m] = today.split('-').map(Number);
+  const month = await monthOf(user, y, m);
+  assert.deepEqual(month.records.map((r) => r.startTime), ['08:00', '12:00', '17:00'], 'sortiert nach Datum und Beginn');
+  assert.equal(month.summary.entryCount, 3);
+  assert.equal(month.summary.workDays, 1);
+  assert.equal(month.summary.totalHours, 7.5);
+  assert.equal(month.summary.totalEarnings, 75);
+});
+
+test('Mehrere Einträge pro Tag: Nachtschicht vom Vortag zählt bei der Überschneidung mit', async () => {
+  const user = await makeUser();
+  const today = todayString();
+  const yesterday = addDays(today, -1);
+  await TimeEntryService.createTimeEntry({ userId: user.id, date: yesterday, startTime: '22:00', endTime: '02:00', breakMinutes: 0 });
+
+  await reject(TimeEntryService.createTimeEntry({ userId: user.id, date: today, startTime: '01:00', endTime: '03:00', breakMinutes: 0 }), /ENTRY_OVERLAP/);
+  await TimeEntryService.createTimeEntry({ userId: user.id, date: today, startTime: '02:00', endTime: '04:00', breakMinutes: 0 });
+  // umgekehrt: späte Nachtschicht darf nicht in einen Eintrag des Folgetags reichen
+  await reject(TimeEntryService.createTimeEntry({ userId: user.id, date: yesterday, startTime: '23:30', endTime: '02:30', breakMinutes: 0 }), /ENTRY_OVERLAP/);
+});
+
+test('Mehrere Einträge pro Tag: höchstens 12 Stunden Arbeitszeit je Tag', async () => {
+  const user = await makeUser();
+  const date = todayString();
+  await TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '06:00', endTime: '14:00', breakMinutes: 0 });
+  await reject(
+    TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '15:00', endTime: '19:30', breakMinutes: 0 }),
+    /12 Stunden.*8:00 Std/
+  );
+  await TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '15:00', endTime: '19:30', breakMinutes: 30 }); // genau 12 h
+});
+
+test('Mehrere Einträge pro Tag: Standardpause nur für den ersten Eintrag des Tages', async () => {
+  const user = await makeUser();
+  const date = todayString();
+  const first = await TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '08:00', endTime: '12:00' });
+  const second = await TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '14:00', endTime: '16:00' });
+  const third = await TimeEntryService.createTimeEntry({ userId: user.id, date, startTime: '17:00', endTime: '18:00', breakMinutes: 15 });
+  assert.equal(first.breakMinutes, 30);
+  assert.equal(second.breakMinutes, 0, 'Pause liegt zwischen den Einträgen');
+  assert.equal(third.breakMinutes, 15, 'ausdrückliche Angabe gilt immer');
+});
+
+test('Mehrere Einträge pro Tag: Bearbeiten prüft Überschneidung und Tagesgrenze, der Eintrag selbst zählt nicht', async () => {
+  const user = await makeUser();
+  const morning = addEntry(user, '2024-06-03', { start: '08:00', end: '12:00' });
+  addEntry(user, '2024-06-03', { start: '13:00', end: '17:00' });
+
+  const moved = await TimeEntryService.updateTimeEntry(morning.id, { startTime: '07:00', endTime: '13:00', breakMinutes: 0 }, user.id);
+  assert.equal(moved.endTime, '13:00', 'eigene alte Zeiten blockieren nicht');
+  await reject(TimeEntryService.updateTimeEntry(morning.id, { endTime: '13:30' }, user.id), /ENTRY_OVERLAP.*13:00–17:00/);
+  await reject(TimeEntryService.updateTimeEntry(morning.id, { startTime: '09:00', endTime: '14:00', breakMinutes: 0 }, user.id), /ENTRY_OVERLAP/);
+  await reject(TimeEntryService.updateTimeEntry(morning.id, { startTime: '00:00', endTime: '09:00', breakMinutes: 0 }, user.id), /12 Stunden/);
+});
+
+test('Mehrere Einträge pro Tag: Wiederholung mit clientId legt nichts doppelt an', async () => {
+  const user = await makeUser();
+  const entry = { userId: user.id, date: todayString(), startTime: '09:00', endTime: '10:00', breakMinutes: 0, clientId: 'unit-replay-0001' };
+  const first = await TimeEntryService.createTimeEntryIdempotent(entry);
+  const again = await TimeEntryService.createTimeEntryIdempotent(entry);
+  assert.equal(again.replayed, true);
+  assert.equal(again.entry.id, first.entry.id);
+  await TimeEntryService.createTimeEntryIdempotent({ ...entry, startTime: '10:00', endTime: '11:00', clientId: 'unit-replay-0002' });
+});
+
+test('Mehrere Einträge pro Tag: die Datenbank weist Überschneidungen auch bei direktem SQL ab (Trigger)', async () => {
+  const user = await makeUser();
+  const entry = addEntry(user, '2024-06-03', { start: '22:00', end: '02:00' });
+  assert.throws(() => addEntry(user, '2024-06-04', { start: '01:00', end: '03:00' }), /time_entries_overlap/);
+  assert.throws(() => addEntry(user, '2024-06-03', { start: '23:00', end: '23:30' }), /time_entries_overlap/);
+  addEntry(user, '2024-06-04', { start: '02:00', end: '03:00' }); // direkt anschließend
+  addEntry(user, '2024-06-03', { start: '20:00', end: '22:00' });
+  assert.throws(
+    () => db().update(timeEntries).set({ startTime: '21:00:00' }).where(eq(timeEntries.id, entry.id)).run(),
+    /time_entries_overlap/
+  );
+  db().update(timeEntries).set({ breakMinutes: 15 }).where(eq(timeEntries.id, entry.id)).run(); // andere Spalten frei
 });
 
 test('Regeln: alte Einträge bleiben bearbeitbar (Datumsfenster gilt nur beim Anlegen)', async () => {

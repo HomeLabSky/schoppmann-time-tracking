@@ -6,7 +6,7 @@ import { ArrowRight, CalendarCheck, Clock, Euro, HardDrive, ScrollText, Users } 
 import { useAuth } from '@/lib/auth'
 import { useAuditLog, useBackupStatus, useCurrentMinijobSetting, useTimesheetOverview } from '@/lib/queries'
 import { ACTION_LABELS } from '@/lib/auditLabels'
-import { formatCurrency, formatDateTime, formatHours, formatRelativeTime } from '@/lib/utils'
+import { formatCurrency, formatDateTime, formatEntryCount, formatHours, formatRelativeTime } from '@/lib/utils'
 import type { TimesheetOverviewRow } from '@/types/audit'
 import { Alert } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -125,7 +125,7 @@ export default function AdminOverviewPage() {
                     <div className="min-w-0">
                       <p className="truncate font-medium">{r.name}</p>
                       <p className="tabular text-xs text-muted-foreground">
-                        {r.entryCount} Einträge · {formatHours(r.totalHours)} · {formatCurrency(r.totalEarnings)}
+                        {formatEntryCount(r.entryCount, r.workDays)} · {formatHours(r.totalHours)} · {formatCurrency(r.totalEarnings)}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">

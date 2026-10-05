@@ -109,6 +109,10 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 - **Schema** in `src/db/schema.ts` (Tabellen, Indizes, Fremdschlüssel, **Prüfregeln/CHECK**: Rollen, Anmeldeweg,
   Pausen 0–480, Uhrzeiten `HH:MM:SS`, Datum `YYYY-MM-DD`, Grenzen ≥ 0, Zeiträume Ende nach Beginn …). Was die
   zod-Schemas an der API prüfen, sichert die Datenbank ein zweites Mal ab – auch gegen Fehler im Code und direktes SQL.
+- **Trigger** (eigene Migrationen): Änderungsprotokoll unveränderlich (`0001`), keine überschneidenden Zeiteinträge eines
+  Mitarbeiters (`0004`, auch über Mitternacht). **Ein Neuaufbau einer Tabelle** (drizzle-kit macht das z. B. für neue
+  CHECK-Regeln) **löscht ihre Trigger** – danach in derselben Migration neu anlegen. `test/migrate.test.ts` prüft, dass
+  alle Trigger vorhanden sind.
 - **Speicherformate** wie zur Sequelize-Zeit (bestehende Datenbanken laufen ohne Umwandlung weiter): Zeitpunkte als
   Text `YYYY-MM-DD HH:MM:SS.SSS +00:00` (UTC), Wahrheitswerte 0/1 – siehe `src/db/columns.ts`.
 - **Schema ändern:** `src/db/schema.ts` anpassen → `npm run db:generate` → neue Datei in `drizzle/` prüfen und
@@ -172,7 +176,8 @@ nicht `127.0.0.1` und `localhost` mischen), sonst sendet der Browser die `SameSi
 `POST /timetracking` akzeptiert eine vom Client erzeugte `clientId` (z. B. UUID, eindeutig je Mitarbeiter). Wird
 dieselbe Anfrage wiederholt (Antwort ging verloren), entsteht kein zweiter Eintrag: Die API liefert den bestehenden
 mit `200` statt `201`. Dieselbe `clientId` für einen anderen Tag ist ein Client-Fehler (`409 CLIENT_ID_CONFLICT`).
-Weitere eindeutige Konflikte: `ENTRY_EXISTS` (Tag schon erfasst), `PERIOD_CLOSED` (Periode abgeschlossen).
+Weitere eindeutige Konflikte: `ENTRY_OVERLAP` (überschneidet sich mit einem anderen Eintrag), `PERIOD_CLOSED`
+(Periode abgeschlossen).
 
 ## Rechenlogik (Abrechnung)
 
@@ -187,9 +192,14 @@ Wichtige Regeln:
 - Jeder Zeiteintrag friert beim Anlegen den Stundensatz ein (`TimeEntry.hourlyRateCents`);
   spätere Lohnänderungen wirken nur auf neue Einträge.
 - Für jede Periode gilt die Minijob-Grenze, die an ihrem Enddatum gültig war.
-- Pause: nur wenn *keine* Angabe vorliegt, gilt der Standard (30 min); ein ausdrückliches `0`
-  bleibt `0`.
+- Pause: nur wenn *keine* Angabe vorliegt, gilt der Standard – 30 min für den ersten Eintrag eines Tages, 0 für
+  weitere (die Pause liegt zwischen den Einträgen); ein ausdrückliches `0` bleibt `0`.
 - Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
+- **Mehrere Einträge pro Tag** (geteilte Schichten): erlaubt, solange sie sich nicht überschneiden
+  (`findOverlap`, Zeiträume auf einer durchgehenden Zeitachse, also auch mit einer Nachtschicht vom Vortag; direkt
+  anschließend ist erlaubt) und die Arbeitszeit aller Einträge mit demselben Datum 12 h nicht übersteigt
+  (`validateDayRules`; ein Eintrag zählt zum Tag seines Beginns). Gilt beim Anlegen und Bearbeiten.
+- Summen einer Periode laufen über alle Einträge; `summary.workDays` zählt die Tage mit Einträgen.
 
 Schema-Änderungen: siehe *Datenbank und Migrationen*.
 
