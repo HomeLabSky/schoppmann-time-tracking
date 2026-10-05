@@ -39,7 +39,7 @@ export const statusPath = (dir: string): string => path.join(dir, STATUS_FILE);
 
 export const readStatus = (dir: string): BackupStatusFile | null => {
   try {
-    return JSON.parse(fs.readFileSync(statusPath(dir), 'utf8'));
+    return JSON.parse(fs.readFileSync(statusPath(dir), 'utf8')) as BackupStatusFile;
   } catch {
     return null;
   }

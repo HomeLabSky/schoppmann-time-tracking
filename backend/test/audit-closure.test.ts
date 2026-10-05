@@ -153,7 +153,7 @@ test('Audit: Minijob-Einstellungen werden protokolliert', async () => {
 
 test('Audit: Konten mit Zeiteinträgen können nicht gelöscht werden (Nachweise bleiben erhalten)', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03');
+  addEntry(user, '2024-06-03');
   await reject(UserService.deleteUser(user.id, adminActor), /USER_HAS_DEPENDENCIES/);
   assert.ok(db().select().from(users).where(eq(users.id, user.id)).get());
 });
@@ -191,7 +191,7 @@ test('Abschluss: laufende Periode kann nicht abgeschlossen werden', async () => 
 test('Abschluss: sperrt Anlegen, Ändern und Löschen in der Periode, andere Perioden bleiben frei', async () => {
   const user = await makeUser();
   const prev = previousMonth();
-  const entry = await addEntry(user, prev.first);
+  const entry = addEntry(user, prev.first);
 
   const closure = await PeriodService.closePeriod(user.id, prev.year, prev.month, adminActor);
   assert.equal(closure.periodStart, prev.first);
@@ -218,15 +218,15 @@ test('Abschluss: sperrt Anlegen, Ändern und Löschen in der Periode, andere Per
 test('Abschluss: Doppelt abschließen wird abgelehnt', async () => {
   const user = await makeUser();
   const prev = previousMonth();
-  await addEntry(user, prev.first);
+  addEntry(user, prev.first);
   await PeriodService.closePeriod(user.id, prev.year, prev.month, adminActor);
   await reject(PeriodService.closePeriod(user.id, prev.year, prev.month, adminActor), /PERIOD_ALREADY_CLOSED/);
 });
 
 test('Abschluss: eingefrorene Zahlen ändern sich nicht, auch wenn die Minijob-Grenze später geändert wird', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03');
-  await addEntry(user, '2024-06-04'); // 160 € bei Grenze 100 € → 60 € Übertrag
+  addEntry(user, '2024-06-03');
+  addEntry(user, '2024-06-04'); // 160 € bei Grenze 100 € → 60 € Übertrag
   await PeriodService.closePeriod(user.id, 2024, 6, adminActor);
 
   const setLimit2024 = (monthlyLimit: number) =>
@@ -248,8 +248,8 @@ test('Abschluss: eingefrorene Zahlen ändern sich nicht, auch wenn die Minijob-G
 
 test('Abschluss: frühere Perioden mit Einträgen müssen zuerst abgeschlossen werden', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03');
-  await addEntry(user, '2024-07-03');
+  addEntry(user, '2024-06-03');
+  addEntry(user, '2024-07-03');
   await reject(PeriodService.closePeriod(user.id, 2024, 7, adminActor), /PERIOD_PREVIOUS_OPEN/);
 
   await PeriodService.closePeriod(user.id, 2024, 6, adminActor);
@@ -259,7 +259,7 @@ test('Abschluss: frühere Perioden mit Einträgen müssen zuerst abgeschlossen w
 
 test('Abschluss: ohne hinterlegte Minijob-Grenze vorläufig markiert und gesperrt', async () => {
   const user = await makeUser();
-  await addEntry(user, '2023-06-05'); // vor der ersten Einstellung (2024) → nur Ersatzwert
+  addEntry(user, '2023-06-05'); // vor der ersten Einstellung (2024) → nur Ersatzwert
 
   const june = await TimeEntryService.getMonthlyTimeRecords(user.id, 2023, 6);
   assert.equal(june.summary.minijobLimitMissing, true);
@@ -270,21 +270,21 @@ test('Abschluss: ohne hinterlegte Minijob-Grenze vorläufig markiert und gesperr
   assert.equal(later.summary.minijobLimitMissing, true, 'offene Periode ohne Grenze geht in den Übertrag ein');
 
   const other = await makeUser();
-  await addEntry(other, '2025-03-03');
+  addEntry(other, '2025-03-03');
   const covered = await TimeEntryService.getMonthlyTimeRecords(other.id, 2025, 3);
   assert.equal(covered.summary.minijobLimitMissing, false, 'mit hinterlegter Grenze nicht vorläufig');
 });
 
 test('Abschluss: leere frühere Perioden blockieren nichts', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-07-03');
+  addEntry(user, '2024-07-03');
   const closure = await PeriodService.closePeriod(user.id, 2024, 7, adminActor);
   assert.equal(closure.periodStart, '2024-07-01');
 });
 
 test('Wiedereröffnen: nur mit Begründung, Änderungen danach wieder möglich, Vorgang protokolliert', async () => {
   const user = await makeUser();
-  const entry = await addEntry(user, '2024-06-03');
+  const entry = addEntry(user, '2024-06-03');
   await PeriodService.closePeriod(user.id, 2024, 6, adminActor);
 
   await reject(PeriodService.reopenPeriod(user.id, 2024, 6, '', adminActor), /REASON_REQUIRED/);
@@ -307,8 +307,8 @@ test('Wiedereröffnen: nur mit Begründung, Änderungen danach wieder möglich, 
 
 test('Wiedereröffnen: nur die jüngste abgeschlossene Periode; nicht abgeschlossene Perioden lassen sich nicht öffnen', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03');
-  await addEntry(user, '2024-07-03');
+  addEntry(user, '2024-06-03');
+  addEntry(user, '2024-07-03');
   await PeriodService.closePeriod(user.id, 2024, 6, adminActor);
   await PeriodService.closePeriod(user.id, 2024, 7, adminActor);
 
@@ -320,7 +320,7 @@ test('Wiedereröffnen: nur die jüngste abgeschlossene Periode; nicht abgeschlos
 
 test('Abschluss: Mitarbeiter-Auslöser steht im Protokoll, Abschluss nennt den Admin', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03');
+  addEntry(user, '2024-06-03');
   await PeriodService.closePeriod(user.id, 2024, 6, adminActor);
   const [entry] = await logFor(user.id, 'period.close');
   assert.equal(entry.actorId, admin.id);
@@ -336,7 +336,7 @@ const overviewRow = (year: number, month: number, userId: number) =>
 test('Übersicht: Status läuft / bereit / abgeschlossen je Mitarbeiter, mit Summen', async () => {
   const user = await makeUser();
   const prev = previousMonth();
-  await addEntry(user, prev.first); // 8 h à 10 €
+  addEntry(user, prev.first); // 8 h à 10 €
 
   const ready = overviewRow(prev.year, prev.month, user.id);
   assert.equal(ready?.status, 'ready');
@@ -361,7 +361,7 @@ test('Übersicht: Status läuft / bereit / abgeschlossen je Mitarbeiter, mit Sum
 test('Übersicht: nur Mitarbeiter; deaktivierte Konten nur mit Einträgen; sortiert nach Name', async () => {
   const inactiveEmpty = await makeUser({ isActive: false });
   const inactiveWithEntry = await makeUser({ isActive: false });
-  await addEntry(inactiveWithEntry, '2024-05-06');
+  addEntry(inactiveWithEntry, '2024-05-06');
 
   const rows = PeriodService.overview(2024, 5);
   const ids = rows.map((r) => r.userId);
@@ -374,14 +374,14 @@ test('Übersicht: nur Mitarbeiter; deaktivierte Konten nur mit Einträgen; sorti
 
 test('Übersicht: eigene Abrechnungsperiode je Mitarbeiter und fehlende Minijob-Grenze', async () => {
   const shifted = await makeUser({ abrechnungStart: 22, abrechnungEnde: 21 });
-  await addEntry(shifted, '2024-07-21');
+  addEntry(shifted, '2024-07-21');
   const row = overviewRow(2024, 6, shifted.id);
   assert.equal(row?.periodStart, '2024-06-22');
   assert.equal(row?.periodEnd, '2024-07-21');
   assert.equal(row?.entryCount, 1);
 
   const noLimit = await makeUser();
-  await addEntry(noLimit, '2023-06-05'); // vor der ersten Grenze (2024)
+  addEntry(noLimit, '2023-06-05'); // vor der ersten Grenze (2024)
   assert.equal(overviewRow(2023, 6, noLimit.id)?.minijobLimitMissing, true);
   assert.equal(overviewRow(2024, 6, shifted.id)?.minijobLimitMissing, false);
 });

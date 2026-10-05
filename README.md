@@ -89,6 +89,7 @@ npm run db:restore -- backups/timetracking-JJJJMMTT-HHMMSS.db   # Backend vorher
 ```bash
 cd backend  && npm test                   # Unit-/Integrationstests (node:test) + End-to-End-Smoke-Test der API
 cd backend  && npm run test:unit          # nur die Unit-/Integrationstests (Rechenlogik, Zeiterfassung)
+cd backend  && npm run lint               # ESLint (einmalig: npm run lint:install), 0 Warnungen erlaubt
 cd frontend && npx tsc --noEmit && npm run lint && npm run build
 cd frontend && npm run e2e                # Ende-zu-Ende im Browser (Playwright; einmalig: npx playwright install chromium)
 ```

@@ -98,6 +98,12 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 - **Transaktionen** sind synchron (better-sqlite3): `transaction(() => { … })` aus `db/client.ts`, darin **kein `await`**
   (Passwort-Hashing u. Ä. vorher erledigen). Änderung und Protokolleintrag gehören in dieselbe Transaktion.
 
+- **ESLint** (`npm run lint`, einmalig `npm run lint:install`; `npm run lint:fix` behebt Formales): typgestützte Regeln
+  von typescript-eslint, u. a. keine unbehandelten Promises, kein `await` auf Nicht-Promises, keine `any`-Werte im
+  Server-Code, `console` nur in CLI-Skripten und Tests. Konfiguration und Abhängigkeiten liegen in `tools/eslint/`, weil
+  typescript-eslint die JavaScript-API von TypeScript 6 braucht – das Backend selbst baut und prüft mit TypeScript 7
+  (nativer Compiler ohne diese API). Läuft in der CI vor den Tests; 0 Warnungen erlaubt.
+
 ## Datenbank und Migrationen
 
 - **Schema** in `src/db/schema.ts` (Tabellen, Indizes, Fremdschlüssel, **Prüfregeln/CHECK**: Rollen, Anmeldeweg,

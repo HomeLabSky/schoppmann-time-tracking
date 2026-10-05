@@ -13,8 +13,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- JSON-Antworten werden bewusst locker gelesen */
 import fs from 'node:fs';
 import type { AddressInfo } from 'node:net';
-import os from 'node:os';
-import path from 'node:path';
 // Muss als Erstes geladen werden: setzt die Test-Umgebung, bevor die Konfiguration gelesen wird
 import { dbFile } from './env/smoke-env';
 import app from '../src/app';

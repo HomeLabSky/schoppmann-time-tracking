@@ -7,7 +7,7 @@ import { LoginThrottleService } from './loginThrottle';
 import { SessionService, type IssuedSession } from './sessionService';
 import { UserService } from './userService';
 
-const clip = (value: unknown, max: number): string | undefined => (value ? String(value).slice(0, max) : undefined);
+const clip = (value: string | null | undefined, max: number): string | undefined => (value ? value.slice(0, max) : undefined);
 
 /** Protokolleintrag für Anmelde-Ereignisse; ein Fehler beim Protokollieren darf die Anmeldung nicht verhindern. */
 const audit = (entry: AuditEntryInput): void => {

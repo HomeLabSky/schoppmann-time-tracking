@@ -33,15 +33,18 @@ const runOnce = (): Promise<void> =>
       if (code !== 0) console.error(`⚠️ Sicherung endete mit Fehlercode ${code}`);
       resolve();
     });
+    // Prozess ließ sich nicht starten: ohne diesen Handler würde der Dienst abstürzen bzw. nie neu planen
+    child.on('error', (error) => {
+      child = null;
+      console.error(`⚠️ Sicherung konnte nicht gestartet werden: ${error.message}`);
+      resolve();
+    });
   });
 
 const scheduleNext = (): void => {
   const wait = msUntilNext(new Date(), time);
   console.log(`🕑 Nächste Sicherung um ${time} (in ${Math.round(wait / 60000)} Minuten)`);
-  timer = setTimeout(async () => {
-    await runOnce();
-    scheduleNext();
-  }, wait);
+  timer = setTimeout(() => void runOnce().then(scheduleNext), wait);
 };
 
 const stop = (): void => {

@@ -64,7 +64,7 @@ const assertEmailFree = (email: string | undefined, current?: User): void => {
 
 /** Ändert einen Benutzer und liefert den neuen Stand (innerhalb einer Transaktion aufrufen) */
 const updateUser = (userId: number, data: Partial<Omit<User, 'id' | 'createdAt'>>): User =>
-  db().update(users).set(data).where(eq(users.id, userId)).returning().get() as User;
+  db().update(users).set(data).where(eq(users.id, userId)).returning().get();
 
 export interface CreateUserInput {
   email: string;
@@ -330,7 +330,7 @@ export class UserService {
     if (role) update.role = role;
     if (typeof isActive === 'boolean') update.isActive = isActive;
     const passwordChanged = !!(password && password.trim() !== '');
-    if (passwordChanged) update.password = await hashPassword(password as string);
+    if (passwordChanged) update.password = await hashPassword(password);
 
     const result = transaction(() => {
       const updated = Object.keys(update).length > 0 ? updateUser(user.id, update) : user;

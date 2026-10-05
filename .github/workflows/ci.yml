@@ -17,8 +17,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            backend/tools/eslint/package-lock.json
       - run: npm ci
+      - name: ESLint (eigene Abhängigkeiten in tools/eslint, 0 Warnungen erlaubt)
+        run: npm run lint:install && npm run lint
       - name: Typprüfung, Unit-, Integrations- und Smoke-Tests (temporäre SQLite-DB)
         run: npm test
       - name: Produktions-Build (TypeScript → dist/)

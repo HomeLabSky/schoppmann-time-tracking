@@ -119,7 +119,7 @@ api.get('/minijob/current', {
   message: 'Aktuelle Minijob-Einstellung erfolgreich geladen',
   errors: ['NO_CURRENT_SETTING']
 }, async () => {
-  const current = await MinijobService.currentSettingSync();
+  const current = MinijobService.currentSettingSync();
   if (!current) {
     throw new AppError('NO_CURRENT_SETTING', 'Keine aktuelle Minijob-Einstellung gefunden', {
       extra: { data: { message: 'Bitte wenden Sie sich an einen Administrator' } }
@@ -134,7 +134,7 @@ api.get('/dashboard', {
   message: 'Dashboard-Daten erfolgreich geladen'
 }, async (req) => {
   const user = await loadSelf(req);
-  const current = await MinijobService.currentSettingSync();
+  const current = MinijobService.currentSettingSync();
   return {
     data: {
       user,

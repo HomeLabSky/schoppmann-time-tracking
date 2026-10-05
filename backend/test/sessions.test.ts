@@ -171,14 +171,14 @@ test('Widerruf: alle Sitzungen eines Benutzers, optional mit Ausnahme der aktuel
   const c = await SessionService.createSession(user);
   const foreign = await SessionService.createSession(other);
 
-  const count = await SessionService.revokeAllForUser(user.id, { exceptSid: b.sid, reason: 'password_changed' });
+  const count = SessionService.revokeAllForUser(user.id, { exceptSid: b.sid, reason: 'password_changed' });
   assert.equal(count, 2);
   await rejectCode(SessionService.authenticate(a.accessToken), 'SESSION_ENDED');
   await rejectCode(SessionService.authenticate(c.accessToken), 'SESSION_ENDED');
   assert.equal((await SessionService.authenticate(b.accessToken)).sid, b.sid);
   assert.equal((await SessionService.authenticate(foreign.accessToken)).user.id, other.id, 'andere Benutzer unberührt');
 
-  assert.equal(await SessionService.revokeAllForUser(user.id, { reason: 'x' }), 1, 'bereits beendete werden nicht erneut gezählt');
+  assert.equal(SessionService.revokeAllForUser(user.id, { reason: 'x' }), 1, 'bereits beendete werden nicht erneut gezählt');
   assert.equal(await SessionService.revoke(b.sid), false, 'idempotent');
 });
 
@@ -214,7 +214,7 @@ test('Aufräumen: nur lange beendete oder abgelaufene Sitzungen werden gelöscht
   updateSession(old.sid, { revokedAt: new Date(Date.now() - 10 * day) });
   updateSession(recent.sid, { revokedAt: new Date(Date.now() - 1 * day) });
 
-  await SessionService.purgeOld();
+  SessionService.purgeOld();
   assert.equal(sessionRow(old.sid), undefined, 'vor 10 Tagen beendet → gelöscht');
   assert.ok(sessionRow(recent.sid), 'gestern beendet → bleibt (Nachvollziehbarkeit)');
   assert.ok(sessionRow(active.sid), 'aktive Sitzung bleibt');

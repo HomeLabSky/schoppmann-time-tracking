@@ -6,7 +6,7 @@
  * Web-Oberfläche und App können daraus typisierte Clients erzeugen.
  */
 import { z } from 'zod';
-import { ERROR_STATUS, type ErrorCode } from './errors';
+import { ERROR_STATUS } from './errors';
 import type { AuthLevel, RegisteredSpec } from './route';
 
 type Json = Record<string, unknown>;
@@ -134,7 +134,7 @@ export const buildOpenApiDocument = ({ version }: { version: string }): Json => 
       responses['403'] = errorResponse('Keine Berechtigung');
     }
     for (const code of spec.errors || []) {
-      const errorStatus = String(ERROR_STATUS[code as ErrorCode] || 500);
+      const errorStatus = String(ERROR_STATUS[code] || 500);
       const existing = responses[errorStatus] as { description?: string } | undefined;
       const description = existing && existing.description !== 'Erfolg'
         ? `${existing.description}, ${code}`

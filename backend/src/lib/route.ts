@@ -105,7 +105,7 @@ export const validationError = (issues: z.core.$ZodIssue[]): AppError => {
 const validateRequest = (spec: RegisteredSpec): RequestHandler => (req, _res, next) => {
   const valid: Record<string, unknown> = { params: {}, query: {}, body: {} };
   const issues: z.core.$ZodIssue[] = [];
-  const sources = { params: req.params, query: req.query, body: req.body } as const;
+  const sources = { params: req.params, query: req.query, body: req.body as unknown } as const;
   for (const key of ['params', 'query', 'body'] as const) {
     const schema = spec[key];
     if (!schema) continue;

@@ -74,9 +74,9 @@ test('F2: Lohnänderung wirkt nicht rückwirkend auf bestehende Einträge', asyn
 
 test('F2: neuer Satz gilt nur für neue Einträge; Summe mischt beide Sätze korrekt', async () => {
   const user = await makeUser({ stundenlohn: 10 });
-  await addEntry(user, '2024-06-03', { rateCents: 1000 }); // 8 h × 10 € = 80 €
+  addEntry(user, '2024-06-03', { rateCents: 1000 }); // 8 h × 10 € = 80 €
   setRate(user, 20);
-  await addEntry(user, '2024-06-04', { rateCents: 2000 }); // 8 h × 20 € = 160 €
+  addEntry(user, '2024-06-04', { rateCents: 2000 }); // 8 h × 20 € = 160 €
   const month = await monthOf(user, 2024, 6);
   assert.equal(month.summary.totalEarnings, 240);
 });
@@ -93,7 +93,7 @@ test('F2: ein Client kann den Stundensatz nicht selbst setzen (kein Mass-Assignm
 
 test('F3: für alte Monate gilt die damals gültige Grenze (2024: 100 €)', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03'); // 80 €
+  addEntry(user, '2024-06-03'); // 80 €
   const month = await monthOf(user, 2024, 6);
   assert.equal(month.summary.minijobLimit, 100);
   assert.equal(month.summary.exceedsLimit, false);
@@ -105,8 +105,8 @@ test('F3: für alte Monate gilt die damals gültige Grenze (2024: 100 €)', asy
 
 test('F3: Übertrag nutzt je Periode die damalige Grenze', async () => {
   const user = await makeUser();
-  await addEntry(user, '2024-06-03'); // 80 €
-  await addEntry(user, '2024-06-04'); // 80 € → 160 € bei Grenze 100 € → 60 € Übertrag
+  addEntry(user, '2024-06-03'); // 80 €
+  addEntry(user, '2024-06-04'); // 80 € → 160 € bei Grenze 100 € → 60 € Übertrag
   const june = await monthOf(user, 2024, 6);
   assert.equal(june.summary.totalEarnings, 160);
   assert.equal(june.summary.paidThisMonth, 100);
@@ -122,7 +122,7 @@ test('F3: Übertrag nutzt je Periode die damalige Grenze', async () => {
 test('Übertrag bleibt über mehr als 50 Monate korrekt (früher Abbruch nach 50 Iterationen)', async () => {
   const user = await makeUser();
   // Januar 2019: 10 h × 900 €/h = 9.000 €; in allen Monaten bis Mai 2024 gilt eine Grenze von 100 €
-  await addEntry(user, '2019-01-10', { start: '08:00', end: '18:00', rateCents: 90000 });
+  addEntry(user, '2019-01-10', { start: '08:00', end: '18:00', rateCents: 90000 });
   addLimit(user.id, 100, '2019-01-01', '2023-12-31', 'Limit 2019-2023');
   // 2019-01 … 2024-05 = 65 Perioden à 100 € ausgezahlt → Rest 9000 − 6500 = 2500 €
   const june2024 = await monthOf(user, 2024, 6);
@@ -134,7 +134,7 @@ test('Übertrag bleibt über mehr als 50 Monate korrekt (früher Abbruch nach 50
 test('Einträge am Monatsletzten werden erfasst (Regression: Zeitzonenfehler im Kalendermonat)', async () => {
   const user = await makeUser();
   for (const date of ['2024-06-01', '2024-06-30', '2024-02-29', '2024-07-31']) {
-    await addEntry(user, date);
+    addEntry(user, date);
   }
   const june = await monthOf(user, 2024, 6);
   assert.deepEqual(june.records.map((r) => r.date), ['2024-06-01', '2024-06-30']);
@@ -151,7 +151,7 @@ test('Einträge am Monatsletzten werden erfasst (Regression: Zeitzonenfehler im 
 test('periodenübergreifende Abrechnung 22.–21.: Zuordnung zum richtigen Referenzmonat', async () => {
   const user = await makeUser({ abrechnungStart: 22, abrechnungEnde: 21 });
   for (const date of ['2024-06-21', '2024-06-22', '2024-07-21', '2024-07-22']) {
-    await addEntry(user, date);
+    addEntry(user, date);
   }
   const june = await monthOf(user, 2024, 6); // 22.06.–21.07.
   assert.equal(june.period.startDate, '2024-06-22');
@@ -198,7 +198,7 @@ test('Regeln: doppelter Eintrag am selben Tag wird mit ENTRY_EXISTS abgelehnt', 
 
 test('Regeln: alte Einträge bleiben bearbeitbar (Datumsfenster gilt nur beim Anlegen)', async () => {
   const user = await makeUser();
-  const old = await addEntry(user, '2024-06-03');
+  const old = addEntry(user, '2024-06-03');
   const updated = await TimeEntryService.updateTimeEntry(old.id, { startTime: '08:00', endTime: '12:00', breakMinutes: 0 }, user.id);
   assert.equal(updated.workTime, '04:00');
   assert.equal(updated.hourlyRate, 10, 'eingefrorener Satz bleibt beim Bearbeiten erhalten');
@@ -207,7 +207,7 @@ test('Regeln: alte Einträge bleiben bearbeitbar (Datumsfenster gilt nur beim An
 test('Nutzer können fremde Einträge nicht bearbeiten oder löschen', async () => {
   const owner = await makeUser();
   const other = await makeUser();
-  const entry = await addEntry(owner, '2024-06-03');
+  const entry = addEntry(owner, '2024-06-03');
   await reject(TimeEntryService.updateTimeEntry(entry.id, { startTime: '08:00', endTime: '12:00' }, other.id), /ENTRY_NOT_FOUND/);
   await reject(TimeEntryService.deleteTimeEntry(entry.id, other.id), /ENTRY_NOT_FOUND/);
 });
