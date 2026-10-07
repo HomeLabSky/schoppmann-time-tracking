@@ -5,6 +5,12 @@
 #             /certs/fullchain.pem /certs/privkey.pem    → eigenes Zertifikat (Dateien in deploy/certs)
 #             admin@firma.de                             → Let's Encrypt (nur mit öffentlich erreichbarem Server)
 
+{
+	# Greift man per IP-Adresse zu, sendet der Browser keinen Servernamen (SNI), und im Container ist die lokale
+	# Adresse nicht die Server-IP. Ohne Standardname bricht Caddy dann mit "internal error" ab.
+	default_sni {$DOMAIN}
+}
+
 {$DOMAIN} {
 	tls {$TLS_MODE:internal}
 

@@ -75,7 +75,8 @@ Technische Details: [`backend/ARCHITECTURE.md`](backend/ARCHITECTURE.md).
 
 Für den Produktivbetrieb liegt ein Docker-Setup mit automatischem HTTPS (Caddy), täglicher Datenbank-Sicherung und
 Wiederherstellung bereit. Schritt-für-Schritt-Anleitung, Sicherheits-Checkliste und Hinweise zu Datenschutz:
-[`deploy/README.md`](deploy/README.md).
+[`deploy/README.md`](deploy/README.md). Konkrete Schritt-für-Schritt-Installation auf einem Docker-Server (mit Portainer-Variante und
+Unraid-Freigabe für die Sicherung): [`deploy/INSTALLATION_DOCKER.md`](deploy/INSTALLATION_DOCKER.md).
 
 Sicherung und Wiederherstellung funktionieren auch ohne Docker (im Ordner `backend`):
 
