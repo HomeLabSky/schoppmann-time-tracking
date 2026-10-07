@@ -18,6 +18,7 @@ export const corsOptions: cors.CorsOptions = {
   ],
   exposedHeaders: [
     'X-Request-ID',
+    'Content-Disposition',
     'X-Total-Count',
     'X-Page-Count', 
     'RateLimit-Limit',

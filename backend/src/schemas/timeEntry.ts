@@ -97,6 +97,7 @@ const MonthlyRecords = z.object({
     status: z.enum(['open', 'closed'])
   }),
   closure: z.object({
+    id: z.number().int().describe('Kennung des Abschlusses (Lohnzettel: GET /employee/payslips/{id}/pdf)'),
     closedAt: z.union([z.string(), z.date()]),
     closedBy: z.number().int().nullable(),
     periodStart: z.string(),

@@ -2,11 +2,14 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useTimesheetOverview } from '@/lib/queries'
+import { FileDown } from 'lucide-react'
+import { adminApi } from '@/lib/api'
+import { useDownload, useTimesheetOverview } from '@/lib/queries'
 import { csvNumber } from '@/lib/csv'
 import { formatCurrency, formatDate, formatHours, getErrorMessage } from '@/lib/utils'
 import type { TimesheetOverviewRow } from '@/types/audit'
 import { Alert } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { DataTable } from '@/components/ui/data-table'
 import { Select } from '@/components/ui/input'
 import { StatCard } from '@/components/ui/stat-card'
@@ -20,6 +23,7 @@ const statusLabel = (r: TimesheetOverviewRow) =>
 export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (userId: number) => void }) {
   const overview = useTimesheetOverview(month)
   const [filter, setFilter] = useState<StatusFilter>('all')
+  const download = useDownload()
   const rows = useMemo(() => overview.data ?? [], [overview.data])
 
   const data = useMemo(
@@ -134,13 +138,29 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
         searchText={(r) => `${r.name} ${r.email}`}
         empty={{ title: 'Keine Mitarbeiter', description: 'Für diesen Monat gibt es keine Mitarbeiter mit Abrechnung.' }}
         toolbar={
-          <Select aria-label="Nach Status filtern" value={filter} onChange={(e) => setFilter(e.target.value as StatusFilter)} className="w-auto">
-            <option value="all">Alle Status</option>
-            <option value="ready">Bereit zum Abschluss</option>
-            <option value="open">Läuft noch</option>
-            <option value="closed">Abgeschlossen</option>
-            <option value="attention">Grenze fehlt / überschritten</option>
-          </Select>
+          <>
+            <Select aria-label="Nach Status filtern" value={filter} onChange={(e) => setFilter(e.target.value as StatusFilter)} className="w-auto">
+              <option value="all">Alle Status</option>
+              <option value="ready">Bereit zum Abschluss</option>
+              <option value="open">Läuft noch</option>
+              <option value="closed">Abgeschlossen</option>
+              <option value="attention">Grenze fehlt / überschritten</option>
+            </Select>
+            {/* Monatsabschluss: alle abgeschlossenen Lohnzettel in einer Datei, einer je Seite */}
+            <Button
+              variant="outline"
+              disabled={totals.closed === 0}
+              loading={download.isPending}
+              title={
+                totals.closed === 0
+                  ? 'Noch keine Periode abgeschlossen'
+                  : `${totals.closed} Lohnzettel in einer PDF, einer je Seite${totals.closed < rows.length ? ' (nur abgeschlossene Perioden)' : ''}`
+              }
+              onClick={() => download.mutate({ key: month, run: () => adminApi.downloadAllPayslips(month) })}
+            >
+              <FileDown aria-hidden="true" /> Alle Lohnzettel (PDF)
+            </Button>
+          </>
         }
         csv={{
           filename: `zeitnachweise-${month}`,

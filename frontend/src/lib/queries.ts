@@ -27,6 +27,7 @@ export const queryKeys = {
   myMonthAll: ['me', 'month'] as const,
   mySettings: ['me', 'settings'] as const,
   mySessions: ['me', 'sessions'] as const,
+  myPayslips: ['me', 'payslips'] as const,
 }
 
 const notifyError = (fallback: string) => (error: unknown) => toast.error(getErrorMessage(error, fallback))
@@ -248,6 +249,17 @@ function useInvalidateTimesheets() {
   }
 }
 
+/**
+ * Datei-Download (z. B. Lohnzettel-PDF) mit Ladezustand und Fehler-Toast. `isPending` je Aufruf über `variables`:
+ * `download.mutate({ key: 'x', run: () => api.download… })` → `download.isPending && download.variables?.key === 'x'`.
+ */
+export function useDownload() {
+  return useMutation({
+    mutationFn: ({ run }: { key: string; run: () => Promise<void> }) => run(),
+    onError: notifyError('Download fehlgeschlagen'),
+  })
+}
+
 export function useClosePeriod() {
   const invalidate = useInvalidateTimesheets()
   return useMutation({
@@ -290,6 +302,10 @@ export function useBackupStatus() {
 }
 
 // ---------- Eigene Zeiterfassung (Mitarbeiter) ----------
+
+export function useMyPayslips() {
+  return useQuery({ queryKey: queryKeys.myPayslips, queryFn: () => employeeApi.getPayslips().then((r) => r.data.payslips) })
+}
 
 export function useMyPeriods() {
   return useQuery({ queryKey: queryKeys.myPeriods, queryFn: timeApi.getPeriods })

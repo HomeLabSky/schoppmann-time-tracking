@@ -64,6 +64,9 @@ const EnvSchema = z.object({
   RATE_LIMIT_MAX_REQUESTS: int(100, { min: 1 }),
   RATE_LIMIT_LOGIN_MAX: int(5, { min: 1 }),
 
+  // Lohnzettel: Firmenanschrift im Kopf (kommagetrennte Zeilen, leer = nur Logo)
+  PAYSLIP_COMPANY_ADDRESS: list(),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional()
 });
 
@@ -134,6 +137,10 @@ const config = {
   allowRegistration: env.ALLOW_REGISTRATION,
   // Optional: nur diese E-Mail-Domains zulassen (leer = keine Einschränkung)
   allowedEmailDomains: env.ALLOWED_EMAIL_DOMAINS,
+
+  payslip: {
+    companyAddress: env.PAYSLIP_COMPANY_ADDRESS
+  },
 
   rateLimit: {
     windowMs: env.RATE_LIMIT_WINDOW_MS,

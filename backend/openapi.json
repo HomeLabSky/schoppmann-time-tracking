@@ -30,6 +30,9 @@
       "name": "Zeitnachweise"
     },
     {
+      "name": "Lohnzettel"
+    },
+    {
       "name": "Änderungsprotokoll"
     },
     {
@@ -3202,6 +3205,173 @@
         }
       }
     },
+    "/employee/payslips": {
+      "get": {
+        "operationId": "getEmployeePayslips",
+        "summary": "Eigene Lohnzettel (alle abgeschlossenen Perioden, neueste zuerst)",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lohnzettel erfolgreich geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Lohnzettel erfolgreich geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "payslips": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/PayslipListItem"
+                          }
+                        }
+                      },
+                      "required": [
+                        "payslips"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/employee/payslips/{id}/pdf": {
+      "get": {
+        "operationId": "getEmployeePayslipsByIdPdf",
+        "summary": "Eigenen Lohnzettel als PDF herunterladen",
+        "description": "Nur für abgeschlossene Perioden; zeigt die beim Abschluss festgeschriebenen Beträge.",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lohnzettel als PDF",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename=\"…\"",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PAYSLIP_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/employee/logout": {
       "post": {
         "operationId": "postEmployeeLogout",
@@ -5207,6 +5377,197 @@
         }
       }
     },
+    "/admin/timesheets/payslips": {
+      "get": {
+        "operationId": "getAdminTimesheetsPayslips",
+        "summary": "Monatsabschluss: alle Lohnzettel als eine PDF-Datei",
+        "description": "Je Mitarbeiter mit abgeschlossener Periode zum Referenzmonat ein Lohnzettel, jeder ab einer neuen Seite (nach Namen sortiert). Mitarbeiter mit noch offener Periode fehlen. Keine abgeschlossene Periode → 404 PAYSLIP_NOT_FOUND.",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lohnzettel aller Mitarbeiter als PDF",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename=\"…\"",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PAYSLIP_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}/payslip": {
+      "get": {
+        "operationId": "getAdminTimesheetsByUserIdPayslip",
+        "summary": "Lohnzettel eines Mitarbeiters als PDF",
+        "description": "Nur für eine abgeschlossene Periode (sonst 404 PAYSLIP_NOT_FOUND).",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lohnzettel als PDF",
+            "headers": {
+              "Content-Disposition": {
+                "description": "attachment; filename=\"…\"",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND, PAYSLIP_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/timesheets/{userId}/periods": {
       "get": {
         "operationId": "getAdminTimesheetsByUserIdPeriods",
@@ -6225,7 +6586,8 @@
               "PERIOD_LATER_CLOSED",
               "PERIOD_OVERLAP",
               "MINIJOB_LIMIT_MISSING",
-              "REASON_REQUIRED"
+              "REASON_REQUIRED",
+              "PAYSLIP_NOT_FOUND"
             ],
             "description": "Maschinenlesbarer Fehlercode (stabil)"
           },
@@ -6416,6 +6778,10 @@
               {
                 "type": "object",
                 "properties": {
+                  "id": {
+                    "type": "integer",
+                    "description": "Kennung des Abschlusses (Lohnzettel: GET /employee/payslips/{id}/pdf)"
+                  },
                   "closedAt": {
                     "anyOf": [
                       {
@@ -6442,6 +6808,7 @@
                   }
                 },
                 "required": [
+                  "id",
                   "closedAt",
                   "closedBy",
                   "periodStart",
@@ -6484,6 +6851,56 @@
           "total",
           "totalPages"
         ]
+      },
+      "PayslipListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Kennung des Abschlusses – für GET /employee/payslips/{id}/pdf"
+          },
+          "label": {
+            "type": "string",
+            "description": "Benennung der Periode, z. B. \"August 2026\""
+          },
+          "periodStart": {
+            "type": "string"
+          },
+          "periodEnd": {
+            "type": "string"
+          },
+          "closedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "totalHours": {
+            "type": "number"
+          },
+          "earnings": {
+            "type": "number",
+            "description": "Verdienst der Periode in Euro"
+          },
+          "paid": {
+            "type": "number",
+            "description": "Auszahlung in Euro"
+          },
+          "carryOut": {
+            "type": "number",
+            "description": "Übertrag in die nächste Periode in Euro"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "periodStart",
+          "periodEnd",
+          "closedAt",
+          "totalHours",
+          "earnings",
+          "paid",
+          "carryOut"
+        ],
+        "description": "Lohnzettel einer abgeschlossenen Periode (Beträge festgeschrieben)"
       },
       "PeriodClosure": {
         "type": "object",

@@ -65,6 +65,12 @@ Im Admin-Bereich:
 - **Zeitnachweise** (`/admin/timesheets`): Zeiten eines Mitarbeiters je Abrechnungsperiode prüfen,
   die Periode **abschließen** (erst nach Periodenende) oder mit Begründung **wieder öffnen**. In einer abgeschlossenen
   Periode kann der Mitarbeiter nichts mehr anlegen, ändern oder löschen; die Beträge sind festgeschrieben.
+- **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen
+  (Arbeitszeitnachweis, Verdienst, Übertrag, Auszahlung). Admins laden ihn im Zeitnachweis eines Mitarbeiters herunter;
+  in der Übersicht erzeugt **Alle Lohnzettel (PDF)** zum Monatsabschluss eine Datei mit allen abgeschlossenen
+  Lohnzetteln des Monats (jeder ab einer neuen Seite). Mitarbeiter finden ihre Lohnzettel unter *Lohnzettel* (auch
+  rückwirkend) und direkt in der Zeiterfassung einer abgeschlossenen Periode. Wird eine Periode wieder geöffnet,
+  verschwindet ihr Lohnzettel bis zum erneuten Abschluss. Firmenanschrift im Kopf: `PAYSLIP_COMPANY_ADDRESS`.
 - **Protokoll** (*Protokoll*): zeigt, wer wann was geändert hat (Zeiteinträge, Abschlüsse, Benutzer, Minijob-Grenzen) –
   unveränderlich und ohne Passwörter.
 

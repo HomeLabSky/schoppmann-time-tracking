@@ -375,10 +375,36 @@ async function main(): Promise<void> {
     const empMonthClosed = await api('GET', `/api/timetracking?month=${prevMonth}`, { token: empToken });
     check('Mitarbeiter sieht Status "closed"', empMonthClosed.json?.data?.period?.status === 'closed', empMonthClosed.json?.data?.period);
 
+    // Lohnzettel (PDF) – nur für abgeschlossene Perioden
+    const isPdf = (r: ApiResult) =>
+      r.status === 200 &&
+      r.headers.get('content-type') === 'application/pdf' &&
+      /^attachment; filename="Lohnzettel_\d{4}-\d{2}_[\w-]+\.pdf"/.test(r.headers.get('content-disposition') ?? '') &&
+      r.headers.get('cache-control') === 'no-store';
+    const payslipList = await api('GET', '/api/employee/payslips', { token: empToken });
+    const payslipId = payslipList.json?.data?.payslips?.[0]?.id;
+    check(
+      'Mitarbeiter: Lohnzettel-Liste enthält die abgeschlossene Periode',
+      payslipList.status === 200 && payslipList.json.data.payslips.length === 1 && payslipId === empMonthClosed.json?.data?.closure?.id,
+      payslipList.json
+    );
+    check('Mitarbeiter: eigener Lohnzettel als PDF', isPdf(await api('GET', `/api/employee/payslips/${payslipId}/pdf`, { token: empToken })));
+    const foreignPayslip = await api('GET', `/api/employee/payslips/${payslipId}/pdf`, { token: adminToken });
+    check('Fremder Lohnzettel 404 PAYSLIP_NOT_FOUND', foreignPayslip.status === 404 && foreignPayslip.json?.code === 'PAYSLIP_NOT_FOUND', foreignPayslip.json);
+    check('Admin: Lohnzettel eines Mitarbeiters als PDF', isPdf(await api('GET', `/api/admin/timesheets/${empId}/payslip?month=${prevMonth}`, { token: adminToken })));
+    const allPayslips = await api('GET', `/api/v1/admin/timesheets/payslips?month=${prevMonth}`, { token: adminToken });
+    check('Admin: alle Lohnzettel des Monats als eine PDF', isPdf(allPayslips) && /_alle\.pdf"/.test(allPayslips.headers.get('content-disposition') ?? ''));
+    const openPayslip = await api('GET', `/api/admin/timesheets/${empId}/payslip?month=${currentMonthParam}`, { token: adminToken });
+    check('Admin: Lohnzettel offener Periode 404 PAYSLIP_NOT_FOUND', openPayslip.status === 404 && openPayslip.json?.code === 'PAYSLIP_NOT_FOUND', openPayslip.json);
+    const empAllPayslips = await api('GET', `/api/admin/timesheets/payslips?month=${prevMonth}`, { token: empToken });
+    check('Mitarbeiter: Sammel-PDF verboten 403', empAllPayslips.status === 403, empAllPayslips.json);
+
     const noReason = await api('POST', `/api/admin/timesheets/${empId}/reopen`, { token: adminToken, body: { month: prevMonth } });
     check('Wiedereröffnen ohne Begründung 400', noReason.status === 400, noReason.json);
     const reopened = await api('POST', `/api/admin/timesheets/${empId}/reopen`, { token: adminToken, body: { month: prevMonth, reason: 'Smoke-Test: Korrektur' } });
     check('Wiedereröffnen mit Begründung 200', reopened.status === 200, reopened.json);
+    const reopenedList = await api('GET', '/api/employee/payslips', { token: empToken });
+    check('Nach Wiedereröffnung kein Lohnzettel mehr', reopenedList.json?.data?.payslips?.length === 0, reopenedList.json);
     const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
 

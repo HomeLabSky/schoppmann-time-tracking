@@ -66,7 +66,8 @@ export interface MonthlyTimeRecords {
     description: string
     status?: 'open' | 'closed'
   }
-  closure?: { closedAt: string; closedBy?: number | null; periodStart: string; periodEnd: string } | null
+  /** `id`: Kennung des Abschlusses (Lohnzettel-Download) */
+  closure?: { id: number; closedAt: string; closedBy?: number | null; periodStart: string; periodEnd: string } | null
 }
 
 export interface TimeEntryPayload {

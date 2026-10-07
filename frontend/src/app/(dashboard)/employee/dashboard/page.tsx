@@ -2,9 +2,10 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ChevronLeft, ChevronRight, Clock, Euro, Lock, MoreHorizontal, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clock, Euro, FileDown, Lock, MoreHorizontal, Pencil, Plus, Trash2, Wallet } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
-import { useDeleteTimeEntry, useMyMonth, useMyPeriods } from '@/lib/queries'
+import { employeeApi } from '@/lib/api'
+import { useDeleteTimeEntry, useDownload, useMyMonth, useMyPeriods } from '@/lib/queries'
 import type { TimeRecord } from '@/lib/timetracking'
 import { formatCurrency, formatDate, formatEntryCount, formatHours, getErrorMessage } from '@/lib/utils'
 import { Alert } from '@/components/ui/alert'
@@ -23,6 +24,7 @@ export default function EmployeeDashboard() {
   const [selectedMonth, setMonth] = useState('')
   const [dialog, setDialog] = useState<TimeRecord | 'new' | null>(null)
   const remove = useDeleteTimeEntry()
+  const download = useDownload()
   const [confirm, confirmDialog] = useConfirm()
 
   // Ohne eigene Auswahl: aktuelle Periode
@@ -32,6 +34,7 @@ export default function EmployeeDashboard() {
   const data = sheet.data
   const summary = data?.summary
   const closed = data?.period.status === 'closed'
+  const closureId = data?.closure?.id
   const limitMissing = !closed && !!summary?.minijobLimitMissing
 
   // Perioden chronologisch (älteste zuerst) für Vor/Zurück; künftige Perioden ausblenden
@@ -200,7 +203,22 @@ export default function EmployeeDashboard() {
           </Alert>
         )}
         {closed && (
-          <Alert variant="info" title="Diese Periode ist abgeschlossen">
+          <Alert
+            variant="info"
+            title="Diese Periode ist abgeschlossen"
+            action={
+              closureId !== undefined && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={download.isPending}
+                  onClick={() => download.mutate({ key: String(closureId), run: () => employeeApi.downloadPayslip(closureId) })}
+                >
+                  <FileDown aria-hidden="true" /> Lohnzettel (PDF)
+                </Button>
+              )
+            }
+          >
             Einträge können nicht mehr angelegt, geändert oder gelöscht werden. Für Korrekturen wenden Sie sich bitte an Ihren Administrator.
           </Alert>
         )}

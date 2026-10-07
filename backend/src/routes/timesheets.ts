@@ -8,6 +8,9 @@
 import { createApiRouter } from '../lib/route';
 import TimeEntryService from '../services/timeEntryService';
 import PeriodService from '../services/periodService';
+import PayslipService from '../services/payslipService';
+import config from '../config';
+import { payslipFilename, renderPayslipsPdf } from '../utils/payslipPdf';
 import { actorOf } from '../middleware/auth';
 import { MonthQuery, MonthlyRecords, PeriodsData } from '../schemas/timeEntry';
 import { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData, TimesheetOverviewData } from '../schemas/admin';
@@ -19,7 +22,7 @@ const parseMonth = (month: string): [number, number] => {
   return [year, monthNumber];
 };
 
-// Vor '/:userId' registrieren, sonst wird "overview" als Benutzer-ID gelesen
+// Vor '/:userId' registrieren, sonst werden "overview" und "payslips" als Benutzer-ID gelesen
 api.get('/overview', {
   summary: 'Monatsübersicht aller Mitarbeiter',
   description: 'Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. ' +
@@ -31,6 +34,40 @@ api.get('/overview', {
 }, async (req) => {
   const [year, month] = parseMonth(req.valid.query.month);
   return { data: { month: req.valid.query.month, rows: PeriodService.overview(year, month) } };
+});
+
+api.get('/payslips', {
+  summary: 'Monatsabschluss: alle Lohnzettel als eine PDF-Datei',
+  description: 'Je Mitarbeiter mit abgeschlossener Periode zum Referenzmonat ein Lohnzettel, jeder ab einer neuen Seite ' +
+    '(nach Namen sortiert). Mitarbeiter mit noch offener Periode fehlen. Keine abgeschlossene Periode → 404 PAYSLIP_NOT_FOUND.',
+  auth: 'admin',
+  tags: ['Lohnzettel'],
+  query: MonthQuery,
+  produces: 'application/pdf',
+  message: 'Lohnzettel aller Mitarbeiter als PDF',
+  errors: ['PAYSLIP_NOT_FOUND']
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.query.month);
+  const payslips = PayslipService.allForMonth(year, month);
+  const body = await renderPayslipsPdf(payslips, { companyAddress: config.payslip.companyAddress });
+  return { file: { body, filename: payslipFilename(req.valid.query.month), contentType: 'application/pdf' } };
+});
+
+api.get('/:userId/payslip', {
+  summary: 'Lohnzettel eines Mitarbeiters als PDF',
+  description: 'Nur für eine abgeschlossene Periode (sonst 404 PAYSLIP_NOT_FOUND).',
+  auth: 'admin',
+  tags: ['Lohnzettel'],
+  params: UserIdParam,
+  query: MonthQuery,
+  produces: 'application/pdf',
+  message: 'Lohnzettel als PDF',
+  errors: ['USER_NOT_FOUND', 'PAYSLIP_NOT_FOUND']
+}, async (req) => {
+  const [year, month] = parseMonth(req.valid.query.month);
+  const payslip = PayslipService.forMonth(req.valid.params.userId, year, month);
+  const body = await renderPayslipsPdf([payslip], { companyAddress: config.payslip.companyAddress });
+  return { file: { body, filename: payslipFilename(payslip.period.endDate, payslip.employee.name), contentType: 'application/pdf' } };
 });
 
 api.get('/:userId/periods', {

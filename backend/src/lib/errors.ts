@@ -68,7 +68,10 @@ export const ERROR_STATUS = {
   PERIOD_LATER_CLOSED: 409,
   PERIOD_OVERLAP: 409,
   MINIJOB_LIMIT_MISSING: 409,
-  REASON_REQUIRED: 400
+  REASON_REQUIRED: 400,
+
+  // Lohnzettel
+  PAYSLIP_NOT_FOUND: 404
 } as const satisfies Record<string, number>;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

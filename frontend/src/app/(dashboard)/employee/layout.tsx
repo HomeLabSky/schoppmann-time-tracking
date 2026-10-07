@@ -1,6 +1,6 @@
 'use client'
 
-import { Clock, UserCog } from 'lucide-react'
+import { Clock, FileText, UserCog } from 'lucide-react'
 import { AppShell, type NavSection } from '@/components/layout/app-shell'
 import { RequireRole } from '@/components/layout/require-role'
 
@@ -8,6 +8,7 @@ const sections: NavSection[] = [
   {
     items: [
       { href: '/employee/dashboard', label: 'Zeiterfassung', icon: Clock },
+      { href: '/employee/payslips', label: 'Lohnzettel', icon: FileText },
       { href: '/employee/settings', label: 'Einstellungen', icon: UserCog },
     ],
   },

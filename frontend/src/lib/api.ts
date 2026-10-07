@@ -5,6 +5,7 @@ import type {
   MinijobSetting,
   NewMinijobSetting,
   NewUser,
+  Payslip,
   RegisterData,
   SessionInfo,
   User,
@@ -13,6 +14,7 @@ import type {
 import type { AuditEntry, AuditQuery, BackupStatus, Pagination, Timesheet, TimesheetOverviewRow, TimesheetPeriod } from '@/types/audit'
 
 import { API_BASE_URL } from './config'
+import { saveBlob } from './download'
 
 /**
  * Anmeldung über httpOnly-Cookies: Der Browser schickt die Cookies automatisch mit (`credentials: 'include'`),
@@ -108,10 +110,8 @@ const toQuery = (params: object) => {
 class ApiClient {
   constructor(private readonly baseURL: string) {}
 
-  async request<T>(
-    endpoint: string,
-    { method = 'GET', body, requireAuth = true }: { method?: HttpMethod; body?: unknown; requireAuth?: boolean } = {}
-  ): Promise<T> {
+  /** Anfrage mit Cookies und CSRF-Header; bei abgelaufenem Zugriffs-Token einmal still erneuern und wiederholen. */
+  private async send(endpoint: string, method: HttpMethod, body: unknown, requireAuth: boolean): Promise<Response> {
     const send = () =>
       fetch(`${this.baseURL}${endpoint}`, {
         method,
@@ -120,9 +120,8 @@ class ApiClient {
         ...(body !== undefined && { body: JSON.stringify(body) }),
       })
 
-    let response: Response
     try {
-      response = await send()
+      let response = await send()
       // Zugriffs-Token abgelaufen → still erneuern und einmal wiederholen
       if (response.status === 401 && requireAuth) {
         if (await refreshSession()) response = await send()
@@ -131,24 +130,42 @@ class ApiClient {
           throw { error: 'Sitzung abgelaufen – bitte erneut anmelden', code: 'SESSION_EXPIRED', status: 401 } as ApiError
         }
       }
+      return response
     } catch (error) {
       if (error instanceof TypeError) {
         throw { error: 'Verbindungsfehler – Server nicht erreichbar', status: 0 } as ApiError
       }
       throw error
     }
+  }
 
-    const data = (await response.json().catch(() => ({}))) as T & ErrorBody
-    if (!response.ok) {
-      throw {
-        error: data.error || `Anfrage fehlgeschlagen (${response.status})`,
-        details: data.details,
-        fields: data.fields,
-        code: data.code,
-        status: response.status,
-      } as ApiError
-    }
-    return data
+  private async toApiError(response: Response): Promise<ApiError> {
+    const data = (await response.json().catch(() => ({}))) as ErrorBody
+    return {
+      error: data.error || `Anfrage fehlgeschlagen (${response.status})`,
+      details: data.details,
+      fields: data.fields,
+      code: data.code,
+      status: response.status,
+    } as ApiError
+  }
+
+  async request<T>(
+    endpoint: string,
+    { method = 'GET', body, requireAuth = true }: { method?: HttpMethod; body?: unknown; requireAuth?: boolean } = {}
+  ): Promise<T> {
+    const response = await this.send(endpoint, method, body, requireAuth)
+    if (!response.ok) throw await this.toApiError(response)
+    return (await response.json().catch(() => ({}))) as T
+  }
+
+  /** Datei (z. B. PDF) laden und im Browser speichern; Dateiname aus Content-Disposition, sonst `fallbackName`. */
+  async download(endpoint: string, fallbackName: string): Promise<void> {
+    const response = await this.send(endpoint, 'GET', undefined, true)
+    if (!response.ok) throw await this.toApiError(response)
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const name = /filename="([^"]+)"/.exec(disposition)?.[1] ?? fallbackName
+    saveBlob(await response.blob(), name)
   }
 
   get<T>(endpoint: string, requireAuth = true) {
@@ -262,6 +279,14 @@ export const adminApi = {
   reopenPeriod: (userId: number, month: string, reason: string) =>
     apiClient.post<Message>(`/api/admin/timesheets/${userId}/reopen`, { month, reason }),
 
+  // Lohnzettel (nur abgeschlossene Perioden)
+  downloadPayslip: (userId: number, month: string) =>
+    apiClient.download(`/api/admin/timesheets/${userId}/payslip?month=${month}`, `Lohnzettel_${month}.pdf`),
+
+  /** Monatsabschluss: alle abgeschlossenen Lohnzettel des Monats in einer PDF (einer je Seite) */
+  downloadAllPayslips: (month: string) =>
+    apiClient.download(`/api/admin/timesheets/payslips?month=${month}`, `Lohnzettel_${month}_alle.pdf`),
+
   // System
   getBackupStatus: () => apiClient.get<Envelope<BackupStatus>>('/api/admin/system/backup'),
 
@@ -280,4 +305,8 @@ export const employeeApi = {
   /** Selbstbedienung: nur die Lohnzettel-E-Mail (Lohn/Zeitraum ändert ein Admin). */
   updateSettings: (settings: Pick<UserSettings, 'lohnzettelEmail'>) =>
     apiClient.put<Envelope<{ settings: UserSettings }>>('/api/employee/settings', settings),
+
+  getPayslips: () => apiClient.get<Envelope<{ payslips: Payslip[] }>>('/api/employee/payslips'),
+
+  downloadPayslip: (id: number) => apiClient.download(`/api/employee/payslips/${id}/pdf`, 'Lohnzettel.pdf'),
 }
