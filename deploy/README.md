@@ -15,6 +15,8 @@ Arbeitsplatz ──HTTPS──► Docker-Server
 > sind mit Tests abgedeckt. Ein Lauf auf eurem Server und eurem NAS steht noch aus. Führt die Schritte unter
 > *Abnahme* beim ersten Mal in Ruhe durch.
 
+> Kurzfassung mit konkreten Befehlen, Portainer-Variante und Unraid-Freigabe: [`INSTALLATION_DOCKER.md`](INSTALLATION_DOCKER.md).
+
 ## 1. Voraussetzungen
 
 - Linux-Server mit **Docker** und dem **Compose-Plugin**, im Firmennetz erreichbar (Ports **80** und **443**).
