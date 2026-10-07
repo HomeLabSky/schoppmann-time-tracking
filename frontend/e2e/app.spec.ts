@@ -154,6 +154,16 @@ test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', as
   await expect(closeDialog).toBeHidden()
   await expect(page.getByText(/^Abgeschlossen am/)).toBeVisible()
 
+  // Lohnzettel: einzeln und als Sammel-PDF zum Monatsabschluss
+  const single = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Lohnzettel (PDF)' }).click()
+  expect((await single).suggestedFilename()).toMatch(/^Lohnzettel_\d{4}-\d{2}_Emil-Mitarbeiter\.pdf$/)
+  await page.getByRole('button', { name: 'Übersicht' }).click()
+  const all = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Alle Lohnzettel (PDF)' }).click()
+  expect((await all).suggestedFilename()).toMatch(/^Lohnzettel_\d{4}-\d{2}_alle\.pdf$/)
+  await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
+
   await page.getByRole('button', { name: 'Wieder öffnen…' }).click()
   const reopenDialog = page.getByRole('dialog', { name: 'Periode wieder öffnen' })
   await reopenDialog.getByRole('button', { name: 'Wieder öffnen' }).click()

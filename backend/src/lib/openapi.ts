@@ -119,14 +119,22 @@ export const buildOpenApiDocument = ({ version }: { version: string }): Json => 
     const auth = spec.auth || 'user';
     const status = String(spec.status || 200);
     const responses: Record<string, Json> = {
-      [status]: {
-        description: spec.message || 'Erfolg',
-        content: {
-          'application/json': {
-            schema: envelope(spec.response ? toSchema(spec.response, 'output', components) : null, spec.message)
+      [status]: spec.produces
+        ? {
+          description: spec.message || 'Datei',
+          headers: {
+            'Content-Disposition': { description: 'attachment; filename="…"', schema: { type: 'string' } }
+          },
+          content: { [spec.produces]: { schema: { type: 'string', format: 'binary' } } }
+        }
+        : {
+          description: spec.message || 'Erfolg',
+          content: {
+            'application/json': {
+              schema: envelope(spec.response ? toSchema(spec.response, 'output', components) : null, spec.message)
+            }
           }
         }
-      }
     };
     if (spec.params || spec.query || spec.body) responses['400'] = errorResponse('Eingabefehler (VALIDATION_ERROR, mit `fields`)');
     if (auth !== 'public') {
@@ -210,6 +218,7 @@ export const buildOpenApiDocument = ({ version }: { version: string }): Json => 
       { name: 'Benutzerverwaltung' },
       { name: 'Minijob-Grenzen' },
       { name: 'Zeitnachweise' },
+      { name: 'Lohnzettel' },
       { name: 'Änderungsprotokoll' },
       { name: 'System' }
     ],

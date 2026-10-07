@@ -62,6 +62,7 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 | Benutzerverwaltung | `routes/admin.ts` (`/admin`) | `userService.ts` | `Users` |
 | Minijob-Grenzen | `routes/minijob.ts` (`/admin/minijob`) | `minijobService.ts` | `MinijobSettings` |
 | Zeitnachweise & Monatsabschluss | `routes/timesheets.ts` (`/admin/timesheets`) | `periodService.ts`, `periodGuard.ts` | `PeriodClosures` |
+| Lohnzettel (PDF) | `routes/employee.ts` (`/employee/payslips`), `routes/timesheets.ts` (`/admin/timesheets/…/payslip(s)`) | `payslipService.ts`, `utils/payslipPdf.ts` | `PeriodClosures`, `TimeEntries` |
 | Änderungsprotokoll (nur lesend) | `routes/audit.ts` (`/admin/audit`) | `auditService.ts` | `AuditLogs` |
 | Systemstatus | `routes/system.ts` (`/admin/system`) | `utils/backupStatus.ts` | – |
 | Wartung (nur lokal, kein HTTP) | `scripts/create-admin.ts`, `scripts/reset-password.ts` | Drizzle direkt | `Users` |
@@ -90,6 +91,10 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 - **Fehler**: `throw new AppError('CODE', 'Meldung')` – neue Codes in `lib/errors.ts` mit Status eintragen (der Typ
   `ErrorCode` lässt nur eingetragene Codes zu). Kein try/catch in Routen: Express 5 reicht Fehler an
   `middleware/errorHandler.ts` weiter.
+- **Datei-Antworten** (PDF): Route mit `produces: 'application/pdf'`, der Handler gibt `{ file: { body, filename,
+  contentType } }` zurück → Download mit `Content-Disposition: attachment` und `Cache-Control: no-store`; im
+  OpenAPI-Dokument als Binärantwort. Lohnzettel rendert `utils/payslipPdf.ts` (pdfkit, Standardschriften, keine
+  Schriftdateien) ausschließlich aus abgeschlossenen Perioden mit den eingefrorenen Zahlen.
 - **Antwort-Schemas** werden im Smoke-Test (`VALIDATE_RESPONSES=1`) gegen jede echte Antwort geprüft; er listet
   Endpunkte ohne geprüfte Erfolgsantwort auf.
 - **Logging** nur über `lib/logger.ts` bzw. `req.log`; keine E-Mail-Adressen, Namen oder Tokens, Personen als ID.

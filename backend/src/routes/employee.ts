@@ -8,6 +8,9 @@ import type { Request } from 'express';
 import type { MinijobSetting } from '../db/schema';
 import type { SafeUser } from '../models/user';
 import { MinijobService } from '../services/minijobService';
+import { PayslipService } from '../services/payslipService';
+import config from '../config';
+import { payslipFilename, renderPayslipsPdf } from '../utils/payslipPdf';
 import { createApiRouter } from '../lib/route';
 import { AppError } from '../lib/errors';
 import { UserService } from '../services/userService';
@@ -18,7 +21,8 @@ import { ProfileUpdateBody, UserData } from '../schemas/auth';
 import {
   UserSettingsBody, Settings, EmployeeChangePasswordBody, EmployeeSettingsData, MinijobLimitInfo, DashboardData, AccountStatusData
 } from '../schemas/user';
-import { z } from '../schemas/common';
+import { PayslipListData } from '../schemas/payslip';
+import { idParam, z } from '../schemas/common';
 
 const api = createApiRouter('/employee', { tags: ['Mitarbeiter'] });
 
@@ -166,6 +170,27 @@ api.get('/account-status', {
       }
     }
   };
+});
+
+api.get('/payslips', {
+  summary: 'Eigene Lohnzettel (alle abgeschlossenen Perioden, neueste zuerst)',
+  tags: ['Lohnzettel'],
+  response: PayslipListData,
+  message: 'Lohnzettel erfolgreich geladen'
+}, async (req) => ({ data: { payslips: PayslipService.listForUser(req.user.userId) } }));
+
+api.get('/payslips/:id/pdf', {
+  summary: 'Eigenen Lohnzettel als PDF herunterladen',
+  description: 'Nur für abgeschlossene Perioden; zeigt die beim Abschluss festgeschriebenen Beträge.',
+  tags: ['Lohnzettel'],
+  params: idParam('id', 'Lohnzettel-ID'),
+  produces: 'application/pdf',
+  message: 'Lohnzettel als PDF',
+  errors: ['PAYSLIP_NOT_FOUND']
+}, async (req) => {
+  const payslip = PayslipService.forClosure(req.user.userId, req.valid.params.id);
+  const body = await renderPayslipsPdf([payslip], { companyAddress: config.payslip.companyAddress });
+  return { file: { body, filename: payslipFilename(payslip.period.endDate, payslip.employee.name), contentType: 'application/pdf' } };
 });
 
 api.post('/logout', {

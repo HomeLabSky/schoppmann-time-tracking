@@ -233,7 +233,7 @@ export class TimeEntryService {
         status: closure ? ('closed' as const) : ('open' as const)
       },
       closure: closure
-        ? { closedAt: closure.closedAt, closedBy: closure.closedBy, periodStart: closure.periodStart, periodEnd: closure.periodEnd }
+        ? { id: closure.id, closedAt: closure.closedAt, closedBy: closure.closedBy, periodStart: closure.periodStart, periodEnd: closure.periodEnd }
         : null
     };
   }

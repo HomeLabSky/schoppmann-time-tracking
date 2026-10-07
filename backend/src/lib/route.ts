@@ -12,6 +12,7 @@
  *   }, async (req) => ({ status, message, data }));
  *
  * Der Handler gibt `{ data, message, status }` zurück; daraus wird `{ success: true, message, data }`.
+ * Datei-Downloads (z. B. PDF) geben stattdessen `{ file }` zurück und tragen `produces` im Vertrag.
  * Fehler wirft er als AppError – Express 5 reicht sie an den zentralen Error-Handler weiter.
  * Aus denselben Angaben entsteht das OpenAPI-Dokument (lib/openapi.ts).
  */
@@ -54,6 +55,8 @@ export interface RouteSpec<
   message?: string;
   /** Fachliche Fehlercodes dieser Route (für die Doku) */
   errors?: ErrorCode[];
+  /** Datei statt JSON (Handler gibt `{ file }` zurück), z. B. 'application/pdf' */
+  produces?: string;
   tags?: string[];
   operationId?: string;
 }
@@ -73,10 +76,18 @@ export type ApiRequest<A extends AuthLevel, P, Q, B> = Request & {
   user: A extends 'public' ? AuthUser | undefined : AuthUser;
 };
 
+/** Datei-Antwort: wird als Download (Content-Disposition: attachment) ausgeliefert, nie zwischengespeichert */
+export interface FileResult {
+  body: Buffer;
+  filename: string;
+  contentType: string;
+}
+
 export interface HandlerResult {
   data?: unknown;
   message?: string;
   status?: number;
+  file?: FileResult;
 }
 
 type Handler<A extends AuthLevel, P, Q, B> = (
@@ -123,9 +134,18 @@ const respond = (spec: RegisteredSpec, handler: Handler<AuthLevel, unknown, unkn
     const result = (await handler(req as ApiRequest<AuthLevel, unknown, unknown, unknown>, res)) || {};
     if (res.headersSent) return;
 
-    const { data, message = spec.message, status = spec.status || 200 } = result;
+    const { data, message = spec.message, status = spec.status || 200, file } = result;
 
     if (VALIDATE_RESPONSES) respondedRoutes.add(spec.routeKey);
+    if (file) {
+      // Lohnzettel u. Ä. enthalten personenbezogene Daten: nicht in Browser- oder Proxy-Caches ablegen
+      res.status(status)
+        .set('Cache-Control', 'no-store')
+        .attachment(file.filename)
+        .type(file.contentType)
+        .send(file.body);
+      return;
+    }
     if (VALIDATE_RESPONSES && spec.response) {
       const plain: unknown = JSON.parse(JSON.stringify(data ?? null));
       const check = spec.response.safeParse(plain);

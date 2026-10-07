@@ -6,8 +6,9 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ArrowLeft, Lock, LockOpen } from 'lucide-react'
-import { useClosePeriod, useReopenPeriod, useTimesheet, useUsers } from '@/lib/queries'
+import { ArrowLeft, FileDown, Lock, LockOpen } from 'lucide-react'
+import { adminApi } from '@/lib/api'
+import { useClosePeriod, useDownload, useReopenPeriod, useTimesheet, useUsers } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
 import { csvNumber } from '@/lib/csv'
 import { formatCurrency, formatDate, formatDateTime, formatEntryCount, formatHours, getErrorMessage, toLocalDateString } from '@/lib/utils'
@@ -35,6 +36,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
   const users = useUsers()
   const sheet = useTimesheet(userId, month)
   const [dialog, setDialog] = useState<null | 'close' | 'reopen'>(null)
+  const download = useDownload()
 
   const employees = useMemo(() => (users.data ?? []).filter((u) => u.role === 'mitarbeiter').sort((a, b) => a.name.localeCompare(b.name, 'de')), [users.data])
   const employee = employees.find((u) => u.id === userId)
@@ -97,9 +99,17 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
         </div>
         {data &&
           (closed ? (
-            <Button variant="outline" onClick={() => setDialog('reopen')}>
-              <LockOpen aria-hidden="true" /> Wieder öffnen…
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" onClick={() => setDialog('reopen')}>
+                <LockOpen aria-hidden="true" /> Wieder öffnen…
+              </Button>
+              <Button
+                loading={download.isPending}
+                onClick={() => download.mutate({ key: `${userId}-${month}`, run: () => adminApi.downloadPayslip(userId, month) })}
+              >
+                <FileDown aria-hidden="true" /> Lohnzettel (PDF)
+              </Button>
+            </div>
           ) : (
             <Button
               onClick={() => setDialog('close')}

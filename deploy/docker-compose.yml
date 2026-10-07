@@ -26,6 +26,7 @@ services:
       TRUST_PROXY: "1"
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      PAYSLIP_COMPANY_ADDRESS: ${PAYSLIP_COMPANY_ADDRESS:-}
     volumes:
       - db-data:/data
       # nur lesend: Statusdatei und Wiederherstellung (npm run db:restore) aus dem Backend-Container

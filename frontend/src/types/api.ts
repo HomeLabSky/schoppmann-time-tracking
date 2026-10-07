@@ -61,6 +61,21 @@ export interface UserSettings {
   lohnzettelEmail: string
 }
 
+/** Lohnzettel einer abgeschlossenen Periode (Beträge beim Abschluss festgeschrieben, in Euro) */
+export interface Payslip {
+  /** Kennung des Abschlusses – für den PDF-Download */
+  id: number
+  /** z. B. "August 2026" */
+  label: string
+  periodStart: string
+  periodEnd: string
+  closedAt: string
+  totalHours: number
+  earnings: number
+  paid: number
+  carryOut: number
+}
+
 export interface MinijobSetting {
   id: number
   monthlyLimit: number
