@@ -8,7 +8,6 @@
  */
 import PDFDocument from 'pdfkit';
 import type { TimeEntryJSON } from '../models/timeEntry';
-import { TIME_ZONE } from './clock';
 
 /** Alles, was auf einem Lohnzettel steht (Beträge in Cent, aus dem Abschluss eingefroren). */
 export interface Payslip {
@@ -62,14 +61,6 @@ const hours = (minutes: number): string => euroFormat.format(Math.round((minutes
 const date = (iso: string): string => iso.split('-').reverse().join('.');
 const weekday = (iso: string): string =>
   new Date(`${iso}T12:00:00.000Z`).toLocaleDateString('de-DE', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
-const dateTime = (value: Date): string =>
-  `${value.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: TIME_ZONE })}, ` +
-  `${value.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: TIME_ZONE })} Uhr`;
-const entryCount = (entries: number, days: number): string => {
-  const text = `${entries} ${entries === 1 ? 'Eintrag' : 'Einträge'}`;
-  return days > 0 && days !== entries ? `${text} an ${days} ${days === 1 ? 'Tag' : 'Tagen'}` : text;
-};
-
 // Windows-1252 (WinAnsi): Zeichensatz der PDF-Standardschriften
 const WIN_ANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ');
 /** Zeichen, die die Standardschriften nicht darstellen können, durch "?" ersetzen (Zeilenumbrüche → Leerzeichen). */
@@ -152,36 +143,17 @@ const drawHeader = (doc: Doc, payslip: Payslip, address: string[], continued: bo
   return y + 16;
 };
 
-/** Mitarbeiter- und Abschlussdaten in zwei Spalten */
-const drawInfo = (doc: Doc, payslip: Payslip, now: Date, y: number): number => {
-  const labelWidth = 92;
-  const column = (x: number, rows: [string, string, boolean?][]) => {
-    rows.forEach(([label, value, bold], i) => {
-      const rowY = y + i * 15;
-      doc.font(FONT.regular).fontSize(8.5).fillColor(COLOR.muted);
-      write(doc, label, x, rowY);
-      doc.font(bold ? FONT.bold : FONT.regular).fontSize(bold ? 10 : 9).fillColor(COLOR.text);
-      write(doc, fit(doc, toWinAnsi(value), CONTENT_WIDTH / 2 - labelWidth - 10), x + labelWidth, rowY - (bold ? 1 : 0));
-    });
-  };
-  column(MARGIN.left, [
-    ['Mitarbeiter', payslip.employee.name, true],
-    ['E-Mail', payslip.employee.email]
-  ]);
-  column(MARGIN.left + CONTENT_WIDTH / 2 + 10, [
-    ['Periode', `${date(payslip.period.startDate)} – ${date(payslip.period.endDate)}`],
-    ['Abgeschlossen am', dateTime(payslip.closedAt)],
-    ['Erstellt am', dateTime(now)]
-  ]);
-  return y + 3 * 15 + 12;
-};
+// Höhe des Blocks unter dem Kopf: Die Abrechnung beginnt immer an derselben Stelle
+const INFO_HEIGHT = 3 * 15 + 12;
 
-const rateRange = (payslip: Payslip): string => {
-  const rates = [...new Set(payslip.entries.map((e) => e.hourlyRateCents ?? 0))].sort((a, b) => a - b);
-  if (rates.length === 0) return '–';
-  const first = rates[0] ?? 0;
-  const last = rates[rates.length - 1] ?? 0;
-  return first === last ? euros(first) : `${euros(first)} – ${euros(last)}`;
+/** Mitarbeitername unter dem Kopf */
+const drawInfo = (doc: Doc, payslip: Payslip, y: number): number => {
+  const labelWidth = 92;
+  doc.font(FONT.regular).fontSize(8.5).fillColor(COLOR.muted);
+  write(doc, 'Mitarbeiter', MARGIN.left, y);
+  doc.font(FONT.bold).fontSize(10).fillColor(COLOR.text);
+  write(doc, fit(doc, toWinAnsi(payslip.employee.name), CONTENT_WIDTH - labelWidth), MARGIN.left + labelWidth, y - 1);
+  return y + INFO_HEIGHT;
 };
 
 /** Abrechnung: Arbeitszeit links, Rechenweg zur Auszahlung rechts */
@@ -200,9 +172,6 @@ const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
   write(doc, 'Arbeitszeit', leftX, y + 36);
   doc.font(FONT.bold).fontSize(16).fillColor(COLOR.text);
   write(doc, `${hours(t.minutes)} Std.`, leftX, y + 48);
-  doc.font(FONT.regular).fontSize(8.5).fillColor(COLOR.muted);
-  write(doc, entryCount(t.entryCount, t.workDays), leftX, y + 70);
-  write(doc, `Stundensatz ${rateRange(payslip)}`, leftX, y + 82);
 
   // Rechts: Rechenweg
   const boxX = MARGIN.left + CONTENT_WIDTH / 2 - 10;
@@ -213,12 +182,11 @@ const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
     doc.fillColor(COLOR.text);
     write(doc, value, boxX, rowY, { width: boxWidth, align: 'right' });
   };
-  line('Verdienst in dieser Periode', euros(t.earningsCents), y + pad);
-  line('+ Übertrag aus Vorperioden', euros(t.carryInCents), y + pad + 14);
-  line('Minijob-Grenze', euros(t.limitCents), y + pad + 28);
-  doc.moveTo(boxX, y + pad + 43).lineTo(boxX + boxWidth, y + pad + 43).lineWidth(0.75).strokeColor(COLOR.line).stroke();
-  line('Auszahlung', euros(t.paidCents), y + pad + 50, true, 12);
-  line('Übertrag in die nächste Periode', euros(t.carryOutCents), y + pad + 70);
+  line('Verdienst in diesem Monat', euros(t.earningsCents), y + pad);
+  line('+ Übertrag aus Vormonat', euros(t.carryInCents), y + pad + 16);
+  doc.moveTo(boxX, y + pad + 34).lineTo(boxX + boxWidth, y + pad + 34).lineWidth(0.75).strokeColor(COLOR.line).stroke();
+  line('Auszahlung', euros(t.paidCents), y + pad + 42, true, 12);
+  line('Übertrag in den nächsten Monat', euros(t.carryOutCents), y + pad + 64);
 
   return y + height + 22;
 };
@@ -230,14 +198,11 @@ interface Column {
 }
 
 const COLUMNS: Column[] = [
-  { label: 'Datum', width: 74 },
-  { label: 'Beginn', width: 40 },
-  { label: 'Ende', width: 50 },
-  { label: 'Pause', width: 42, align: 'right' },
-  { label: 'Std.', width: 42, align: 'right' },
-  { label: 'Satz', width: 54, align: 'right' },
-  { label: 'Verdienst', width: 62, align: 'right' },
-  { label: 'Tätigkeit', width: 0 }
+  { label: 'Datum', width: 130 },
+  { label: 'Beginn', width: 90 },
+  { label: 'Ende', width: 90 },
+  { label: 'Std.', width: 85, align: 'right' },
+  { label: 'Verdienst', width: 0, align: 'right' }
 ];
 const fixedWidth = COLUMNS.reduce((sum, c) => sum + c.width, 0);
 const lastColumn = COLUMNS[COLUMNS.length - 1];
@@ -278,7 +243,7 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
   const bottom = PAGE.height - MARGIN.bottom;
   if (payslip.entries.length === 0) {
     doc.font(FONT.regular).fontSize(9).fillColor(COLOR.muted);
-    write(doc, 'In dieser Periode wurden keine Arbeitszeiten erfasst.', MARGIN.left + CELL_PAD, y + 6);
+    write(doc, 'In diesem Monat wurden keine Arbeitszeiten erfasst.', MARGIN.left + CELL_PAD, y + 6);
     return y + ROW_HEIGHT + 12;
   }
 
@@ -289,29 +254,16 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
       `${weekday(entry.date)}, ${date(entry.date)}`,
       entry.startTime,
       overnight ? `${entry.endTime} (+1)` : entry.endTime,
-      entry.breakMinutes ? `${entry.breakMinutes} Min.` : '–',
       hours(entry.workMinutes),
-      euros(entry.hourlyRateCents ?? 0),
-      euros(entry.earningsCents),
-      entry.description || ''
+      euros(entry.earningsCents)
     ], y, { fill: i % 2 === 1 ? COLOR.fill : undefined });
     y += ROW_HEIGHT;
   });
 
   if (y + ROW_HEIGHT + 4 > bottom) y = drawTableHead(doc, newPage());
   hr(doc, y + 1, COLOR.text, 0.75);
-  drawRow(doc, ['Summe', '', '', '', hours(payslip.totals.minutes), '', euros(payslip.totals.earningsCents), ''], y + 3, { bold: true });
+  drawRow(doc, ['Summe', '', '', hours(payslip.totals.minutes), euros(payslip.totals.earningsCents)], y + 3, { bold: true });
   return y + ROW_HEIGHT + 18;
-};
-
-const drawNote = (doc: Doc, y: number): void => {
-  const text =
-    'Minijob: Ausgezahlt wird höchstens die Minijob-Grenze der Periode. Verdienst darüber wird als Übertrag in die ' +
-    'nächste Periode mitgenommen. Alle Beträge wurden beim Abschluss der Periode festgeschrieben.';
-  doc.font(FONT.regular).fontSize(7.5).fillColor(COLOR.muted);
-  const height = doc.heightOfString(text, { width: CONTENT_WIDTH });
-  if (y + height > PAGE.height - MARGIN.bottom) return; // kein Platz mehr: Hinweis entfällt statt Leerseite
-  doc.text(text, MARGIN.left, y, { width: CONTENT_WIDTH });
 };
 
 /** Fußzeile mit Seitenzahl "x von y" je Lohnzettel (nach dem Zeichnen aller Seiten) */
@@ -368,10 +320,9 @@ export const renderPayslipsPdf = (payslips: Payslip[], options: PayslipPdfOption
       return drawHeader(doc, payslip, address, true);
     };
     let y = drawHeader(doc, payslip, address, false);
-    y = drawInfo(doc, payslip, now, y);
+    y = drawInfo(doc, payslip, y);
     y = drawSummary(doc, payslip, y);
-    y = drawEntries(doc, payslip, y, newPage);
-    drawNote(doc, y);
+    drawEntries(doc, payslip, y, newPage);
     ranges.push({ payslip, first, count: doc.bufferedPageRange().count - first });
   }
   drawFooters(doc, ranges);
