@@ -344,8 +344,10 @@ async function main(): Promise<void> {
       overview.json
     );
 
-    const closeRunning = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: currentMonthParam } });
-    check('Abschluss laufender Periode 409 PERIOD_NOT_ENDED', closeRunning.status === 409 && closeRunning.json?.code === 'PERIOD_NOT_ENDED', closeRunning.json);
+    const [cy = 0, cm = 1] = currentMonthParam.split('-').map(Number);
+    const nextMonthParam = cm === 12 ? `${cy + 1}-01` : `${cy}-${String(cm + 1).padStart(2, '0')}`;
+    const closeFuture = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: nextMonthParam } });
+    check('Abschluss künftiger Periode 409 PERIOD_NOT_STARTED', closeFuture.status === 409 && closeFuture.json?.code === 'PERIOD_NOT_STARTED', closeFuture.json);
 
     const closeNoLimit = await api('POST', `/api/admin/timesheets/${empId}/close`, { token: adminToken, body: { month: prevMonth } });
     check(

@@ -45,7 +45,9 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
   const data = sheet.data
   const summary = data?.summary
   const closed = data?.period.status === 'closed'
-  const ended = data ? data.period.endDate < toLocalDateString() : false
+  const today = toLocalDateString()
+  const ended = data ? data.period.endDate < today : false
+  const started = data ? data.period.startDate <= today : false
   const limitMissing = !closed && !!summary?.minijobLimitMissing
   const status = closed ? 'closed' : ended ? 'ready' : 'open'
 
@@ -124,8 +126,8 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
           ) : (
             <Button
               onClick={() => setDialog('close')}
-              disabled={!ended || limitMissing}
-              title={limitMissing ? 'Erst eine Minijob-Grenze hinterlegen' : !ended ? `Abschluss erst nach dem ${formatDate(data.period.endDate)}` : undefined}
+              disabled={!started || limitMissing}
+              title={limitMissing ? 'Erst eine Minijob-Grenze hinterlegen' : !started ? `Die Periode beginnt erst am ${formatDate(data.period.startDate)}` : undefined}
             >
               <Lock aria-hidden="true" /> Periode abschließen…
             </Button>
@@ -158,7 +160,9 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
       )}
       {!closed && !ended && data && (
         <Alert variant="info" title="Periode läuft noch">
-          Abschließen ist ab dem {formatDate(data.period.endDate)} (Periodenende) möglich.
+          {started
+            ? `Die Periode endet am ${formatDate(data.period.endDate)}. Sie können sie schon vorher abschließen; Arbeitszeiten für die restlichen Tage werden dann als Nachtrag in der nächsten Periode abgerechnet.`
+            : `Die Periode beginnt erst am ${formatDate(data.period.startDate)}.`}
         </Alert>
       )}
 
@@ -216,6 +220,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
             userId={userId}
             month={month}
             name={employee?.name ?? ''}
+            runsUntil={ended ? undefined : data.period.endDate}
             details={[
               `${formatDate(data.period.startDate)} – ${formatDate(data.period.endDate)}`,
               `${formatEntryCount(summary.entryCount, summary.workDays)}, ${formatHours(summary.totalHours)}`,
@@ -229,7 +234,24 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
   )
 }
 
-function CloseDialog({ open, onClose, userId, month, name, details }: { open: boolean; onClose: () => void; userId: number; month: string; name: string; details: string[] }) {
+function CloseDialog({
+  open,
+  onClose,
+  userId,
+  month,
+  name,
+  details,
+  runsUntil,
+}: {
+  open: boolean
+  onClose: () => void
+  userId: number
+  month: string
+  name: string
+  details: string[]
+  /** Periodenende, wenn vorzeitig abgeschlossen wird */
+  runsUntil?: string
+}) {
   const close = useClosePeriod()
   const [error, setError] = useState<string | null>(null)
 
@@ -247,14 +269,20 @@ function CloseDialog({ open, onClose, userId, month, name, details }: { open: bo
     <Modal open={open} onClose={onClose} title="Periode abschließen?" description={name} dismissible={!close.isPending}>
       <ModalBody>
         {error && <Alert variant="danger" title={error} />}
+        {runsUntil && (
+          <Alert variant="warning" title="Vorzeitiger Abschluss">
+            Die Periode läuft noch bis zum {formatDate(runsUntil)}. Arbeitszeiten, die danach noch für diese Periode erfasst werden, rechnet das
+            System als Nachtrag in der nächsten Periode ab.
+          </Alert>
+        )}
         <ul className="tabular space-y-1 text-sm">
           {details.map((d) => (
             <li key={d}>{d}</li>
           ))}
         </ul>
         <p className="text-sm text-muted-foreground">
-          Danach kann der Mitarbeiter in dieser Periode nichts mehr anlegen, ändern oder löschen. Die Beträge werden festgeschrieben, der
-          Vorgang wird protokolliert.
+          Danach kann der Mitarbeiter Einträge dieser Periode nicht mehr ändern oder löschen; neue Einträge werden Nachträge in der nächsten
+          offenen Periode. Die Beträge werden festgeschrieben, der Vorgang wird protokolliert.
         </p>
       </ModalBody>
       <ModalFooter>

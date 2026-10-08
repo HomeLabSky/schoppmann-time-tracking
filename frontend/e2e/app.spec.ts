@@ -214,3 +214,36 @@ test('Nachtrag: Arbeitszeit im abgeschlossenen Vormonat wird in der laufenden Pe
   await expect(row.getByText('Nachtrag', { exact: true })).toBeVisible()
   await logout(page)
 })
+
+test('Vorzeitiger Abschluss: laufender Monat wird abgeschlossen, weitere Arbeitszeit ist Nachtrag im Folgemonat', async ({ page }) => {
+  const now = new Date()
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  await login(page, ADMIN)
+  await page.goto(`/admin/timesheets?month=${currentMonth}`)
+  await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
+  await expect(page.getByText('Periode läuft noch')).toBeVisible()
+  await page.getByRole('button', { name: 'Periode abschließen…' }).click()
+  const closeDialog = page.getByRole('dialog', { name: 'Periode abschließen?' })
+  await expect(closeDialog.getByText('Vorzeitiger Abschluss')).toBeVisible()
+  await closeDialog.getByRole('button', { name: 'Abschließen' }).click()
+  await expect(closeDialog).toBeHidden()
+  await expect(page.getByText(/^Abgeschlossen am/)).toBeVisible()
+  await logout(page)
+
+  // Der Mitarbeiter landet in der nächsten offenen Periode und kann dort weiter erfassen
+  await login(page, EMPLOYEE)
+  await page.getByRole('button', { name: 'Arbeitszeit erfassen' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Arbeitszeit erfassen' })
+  await expect(dialog.getByTestId('nachtrag-hint')).toBeVisible()
+  await dialog.getByLabel('Beginn').fill('18:00')
+  await dialog.getByLabel('Ende').fill('19:00')
+  await dialog.getByLabel('Pause (Min.)').fill('0')
+  await dialog.getByLabel('Tätigkeit').fill('E2E Vorzeitig')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Als Nachtrag erfasst.')).toBeVisible()
+  const row = page.getByRole('row').filter({ hasText: 'E2E Vorzeitig' })
+  await expect(row.getByText('Nachtrag', { exact: true })).toBeVisible()
+  await logout(page)
+})

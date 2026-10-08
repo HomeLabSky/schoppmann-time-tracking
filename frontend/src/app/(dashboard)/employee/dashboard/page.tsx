@@ -28,8 +28,17 @@ export default function EmployeeDashboard() {
   const download = useDownload()
   const [confirm, confirmDialog] = useConfirm()
 
-  // Ohne eigene Auswahl: aktuelle Periode
-  const month = selectedMonth || periods.data?.currentPeriod?.value || periods.data?.periods.at(-1)?.value || ''
+  // Ist die aktuelle Periode schon (vorzeitig) abgeschlossen, landen neue Einträge als Nachtrag in der nächsten offenen
+  // Periode – sie ist dann die Arbeitsperiode und wird angezeigt
+  const currentPeriodValue = periods.data?.currentPeriod?.value
+  const workingPeriodValue = useMemo(() => {
+    if (!currentPeriodValue) return undefined
+    const later = [...(periods.data?.periods ?? [])].filter((p) => p.value >= currentPeriodValue).sort((a, b) => a.value.localeCompare(b.value))
+    return (later.find((p) => !p.isClosed) ?? later[0])?.value ?? currentPeriodValue
+  }, [periods.data, currentPeriodValue])
+
+  // Ohne eigene Auswahl: aktuelle (offene) Periode
+  const month = selectedMonth || workingPeriodValue || periods.data?.periods.at(-1)?.value || ''
 
   const sheet = useMyMonth(month)
   const data = sheet.data
@@ -38,14 +47,13 @@ export default function EmployeeDashboard() {
   const closureId = data?.closure?.id
   const limitMissing = !closed && !!summary?.minijobLimitMissing
 
-  // Perioden chronologisch (älteste zuerst) für Vor/Zurück; künftige Perioden ausblenden
-  const currentPeriodValue = periods.data?.currentPeriod?.value
+  // Perioden chronologisch (älteste zuerst) für Vor/Zurück; künftige Perioden außer der Arbeitsperiode ausblenden
   const periodList = useMemo(
     () =>
       [...(periods.data?.periods ?? [])]
-        .filter((p) => !currentPeriodValue || p.value <= currentPeriodValue)
+        .filter((p) => !workingPeriodValue || p.value <= workingPeriodValue)
         .sort((a, b) => a.value.localeCompare(b.value)),
-    [periods.data, currentPeriodValue]
+    [periods.data, workingPeriodValue]
   )
   const index = periodList.findIndex((p) => p.value === month)
 

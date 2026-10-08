@@ -63,8 +63,10 @@ Lokal müssen Frontend und Backend unter demselben Hostnamen laufen (`http://loc
 Im Admin-Bereich:
 
 - **Zeitnachweise** (`/admin/timesheets`): Zeiten eines Mitarbeiters je Abrechnungsperiode prüfen,
-  die Periode **abschließen** (erst nach Periodenende) oder mit Begründung **wieder öffnen**. In einer abgeschlossenen
-  Periode kann der Mitarbeiter nichts mehr anlegen, ändern oder löschen; die Beträge sind festgeschrieben.
+  die Periode **abschließen** (auch schon vor Periodenende) oder mit Begründung **wieder öffnen**. In einer
+  abgeschlossenen Periode kann der Mitarbeiter nichts mehr ändern oder löschen; die Beträge sind festgeschrieben.
+  Arbeitszeiten, die danach noch für die Periode erfasst werden, rechnet das System als **Nachtrag** in der nächsten
+  offenen Periode ab.
 - **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen
   (Arbeitszeitnachweis, Verdienst, Übertrag, Auszahlung). Admins laden ihn im Zeitnachweis eines Mitarbeiters herunter;
   in der Übersicht erzeugt **Alle Lohnzettel (PDF)** zum Monatsabschluss eine Datei mit allen abgeschlossenen

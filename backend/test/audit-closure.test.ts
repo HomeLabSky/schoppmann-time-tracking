@@ -182,10 +182,33 @@ const previousMonth = () => {
   return { year, month, first: `${year}-${pad(month)}-01`, last: `${year}-${pad(month)}-${pad(lastDay)}` };
 };
 
-test('Abschluss: laufende Periode kann nicht abgeschlossen werden', async () => {
+test('Abschluss: künftige Periode kann nicht abgeschlossen werden', async () => {
   const user = await makeUser();
   const [y, m] = todayString().split('-').map(Number);
-  await reject(PeriodService.closePeriod(user.id, y, m, adminActor), /PERIOD_NOT_ENDED/);
+  const next = m === 12 ? [y + 1, 1] : [y, m + 1];
+  await reject(PeriodService.closePeriod(user.id, next[0], next[1], adminActor), /PERIOD_NOT_STARTED/);
+});
+
+test('Abschluss: laufende Periode vorzeitig abschließen – spätere Arbeitszeit wird Nachtrag im Folgemonat', async () => {
+  const user = await makeUser();
+  const today = todayString();
+  const [y, m] = today.split('-').map(Number);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const nextStart = m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`;
+  const entry = await TimeEntryService.createTimeEntry({ userId: user.id, date: today, startTime: '08:00', endTime: '09:00', breakMinutes: 0 }, actorOf(user));
+
+  const closure = await PeriodService.closePeriod(user.id, y, m, adminActor);
+  assert.equal(closure.entryCount, 1);
+  const [log] = await logFor(user.id, 'period.close');
+  assert.deepEqual(log.meta, { early: true }, 'vorzeitiger Abschluss im Protokoll');
+
+  // Bestehende Einträge sind gesperrt; weitere Arbeit am selben Tag wird Nachtrag in der nächsten Periode
+  await reject(TimeEntryService.updateTimeEntry(entry.id, { endTime: '10:00' }, user.id, actorOf(user)), /PERIOD_CLOSED/);
+  const late = await TimeEntryService.createTimeEntry({ userId: user.id, date: today, startTime: '18:00', endTime: '19:00', breakMinutes: 0 }, actorOf(user));
+  assert.equal(late.billingDate, nextStart);
+  const next = await TimeEntryService.getMonthlyTimeRecords(user.id, Number(nextStart.slice(0, 4)), Number(nextStart.slice(5, 7)));
+  assert.deepEqual(next.records.map((r) => r.id), [late.id]);
+  assert.equal((await TimeEntryService.getMonthlyTimeRecords(user.id, y, m)).summary.entryCount, 1, 'Abschluss unverändert');
 });
 
 test('Abschluss: sperrt Ändern und Löschen in der Periode, andere Perioden bleiben frei', async () => {
