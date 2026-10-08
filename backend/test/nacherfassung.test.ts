@@ -1,6 +1,7 @@
 /**
  * Nacherfassung: Der Admin gibt einem Mitarbeiter frei, Zeiten weiter als einen Monat zurück zu erfassen (z. B. Übernahme
- * aus Excel). Nacherfasste Einträge landen in ihrem eigenen Monat und werden nie zu Nachträgen.
+ * aus Excel). Nacherfasste Einträge landen in ihrem eigenen Monat; ist er abgeschlossen, als Nachtrag nur im direkt
+ * folgenden Monat.
  */
 import './env/unit-env';
 import assert from 'node:assert/strict';
@@ -69,15 +70,33 @@ test('Nacherfassung: erst nach Freigabe möglich, Eintrag landet im eigenen Mona
   assert.equal((log?.before as { nacherfassungAb?: string })?.nacherfassungAb, threeMonthsAgo, 'Freigabe steht im Protokoll');
 });
 
-test('Nacherfassung: abgeschlossener Monat wird abgelehnt statt als Nachtrag verschoben', async () => {
+test('Nacherfassung: Tag im abgeschlossenen Monat wird Nachtrag im direkt folgenden Monat', async () => {
   const user = await makeUser({ nacherfassungAb: threeMonthsAgo });
   addEntry(user, threeMonthsAgo);
   const [year, month] = monthOf(threeMonthsAgo);
-  await PeriodService.closePeriod(user.id, year, month, actorOf(admin));
+  await PeriodService.closePeriod(user.id, year, month, actorOf(admin)); // wie damals: Monat schon abgerechnet
+
+  const lateDay = billing.addDays(billing.addMonths(threeMonthsAgo, 1), -3); // gegen Ende des abgeschlossenen Monats
+  const late = await TimeEntryService.createTimeEntry(entry(user.id, lateDay), actorOf(user));
+  const nextStart = billing.addMonths(threeMonthsAgo, 1);
+  assert.equal(late.billingDate, nextStart, 'abgerechnet im Folgemonat');
+  const [ny, nm] = monthOf(nextStart);
+  assert.deepEqual((await TimeEntryService.getMonthlyTimeRecords(user.id, ny, nm)).records.map((r) => r.id), [late.id]);
+});
+
+test('Nacherfassung: ist auch der Folgemonat abgeschlossen, wird abgelehnt statt weiter verschoben', async () => {
+  const user = await makeUser({ nacherfassungAb: threeMonthsAgo });
+  const nextStart = billing.addMonths(threeMonthsAgo, 1);
+  addEntry(user, threeMonthsAgo);
+  addEntry(user, nextStart);
+  for (const date of [threeMonthsAgo, nextStart]) {
+    const [y, m] = monthOf(date);
+    await PeriodService.closePeriod(user.id, y, m, actorOf(admin));
+  }
 
   await reject(
     TimeEntryService.createTimeEntry(entry(user.id, billing.addDays(threeMonthsAgo, 1)), actorOf(user)),
-    /PERIOD_CLOSED/
+    /PERIOD_CLOSED.*ebenfalls abgeschlossen/
   );
 });
 

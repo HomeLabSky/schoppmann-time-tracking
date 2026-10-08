@@ -40,6 +40,24 @@ export const assertDateOpen = (userId: number, date: string): void => {
   }
 };
 
+/**
+ * Nacherfassung: Ein Nachtrag darf nur in die direkt folgende Periode wandern. Liegen zwischen dem Arbeitstag und der
+ * Ziel-Periode weitere abgeschlossene Perioden, wird abgelehnt (PERIOD_CLOSED) – der Admin öffnet sie zuerst wieder.
+ */
+export const assertNoClosedPeriodBetween = (userId: number, date: string, target: BillingPeriod): void => {
+  const skipped = db().select().from(periodClosures).where(eq(periodClosures.userId, userId)).all()
+    .filter((c) => c.periodStart > date && c.periodEnd < target.startDate)
+    .sort((a, b) => a.periodStart.localeCompare(b.periodStart));
+  const first = skipped[0];
+  if (!first) return;
+  throw new AppError('PERIOD_CLOSED',
+    `Der ${DateService.formatDateForDisplay(date)} liegt in einer abgeschlossenen Periode, und die folgende Periode ` +
+    `${DateService.formatDateForDisplay(first.periodStart)} – ${DateService.formatDateForDisplay(first.periodEnd)} ist ebenfalls ` +
+    'abgeschlossen. Als Nachtrag würde der Eintrag erst ab dem ' +
+    `${DateService.formatDateForDisplay(target.startDate)} abgerechnet – bitte zuerst die Perioden wieder öffnen lassen.`
+  );
+};
+
 const referenceDate = (year: number, month: number): string => {
   const d = new Date(Date.UTC(year, month - 1, 15));
   return d.toISOString().slice(0, 10);
