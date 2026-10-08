@@ -238,8 +238,10 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 `PeriodClosure` hält je (Mitarbeiter, Abrechnungsperiode) die eingefrorenen Zahlen (Minuten, Verdienst, Grenze,
 Übertrag ein/aus, Auszahlung). Regeln (`services/periodService.ts`):
 
-- Abschluss erst **nach Periodenende** und nur, wenn frühere Perioden **mit Einträgen** bereits abgeschlossen sind
-  (der Übertrag baut aufeinander auf).
+- Abschluss, sobald die Periode **begonnen** hat – auch **vor Periodenende** (vorzeitiger Abschluss, etwa um die
+  Unterlagen früher an den Steuerberater zu geben; im Protokoll `meta.early`). Künftige Perioden: `PERIOD_NOT_STARTED`.
+  Arbeitszeiten für die restlichen Tage werden Nachträge in der nächsten offenen Periode (siehe unten).
+- Nur, wenn frühere Perioden **mit Einträgen** bereits abgeschlossen sind (der Übertrag baut aufeinander auf).
 - In abgeschlossenen Perioden sind Ändern und Löschen von Zeiteinträgen gesperrt (`PERIOD_CLOSED`,
   Prüfung in `periodGuard.assertDateOpen`, innerhalb der Eintrags-Transaktion).
 - **Nachträge:** Ein neuer Eintrag für einen Tag in einer abgeschlossenen Periode wird nicht abgelehnt, sondern

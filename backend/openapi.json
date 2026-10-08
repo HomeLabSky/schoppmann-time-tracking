@@ -5780,7 +5780,7 @@
       "post": {
         "operationId": "postAdminTimesheetsByUserIdClose",
         "summary": "Periode abschließen (Zahlen werden eingefroren)",
-        "description": "Erst nach Periodenende; frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.",
+        "description": "Möglich, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss; spätere Einträge für die Periode werden Nachträge in der nächsten offenen Periode). Frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.",
         "tags": [
           "Zeitnachweise"
         ],
@@ -5900,7 +5900,7 @@
             }
           },
           "409": {
-            "description": "PERIOD_NOT_ENDED, PERIOD_ALREADY_CLOSED, PERIOD_OVERLAP, PERIOD_PREVIOUS_OPEN, MINIJOB_LIMIT_MISSING",
+            "description": "PERIOD_NOT_STARTED, PERIOD_ALREADY_CLOSED, PERIOD_OVERLAP, PERIOD_PREVIOUS_OPEN, MINIJOB_LIMIT_MISSING",
             "content": {
               "application/json": {
                 "schema": {
@@ -6579,7 +6579,7 @@
               "ENTRY_OVERLAP",
               "CLIENT_ID_CONFLICT",
               "PERIOD_CLOSED",
-              "PERIOD_NOT_ENDED",
+              "PERIOD_NOT_STARTED",
               "PERIOD_ALREADY_CLOSED",
               "PERIOD_NOT_CLOSED",
               "PERIOD_PREVIOUS_OPEN",

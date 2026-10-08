@@ -66,8 +66,9 @@ const closuresOf = (userId: number): PeriodClosure[] =>
  * Monatsabschluss: Eine Abrechnungsperiode eines Mitarbeiters wird festgeschrieben.
  *
  * Regeln:
- * - abschließen erst nach Periodenende und nur, wenn frühere Perioden mit Einträgen
- *   bereits abgeschlossen sind (der Übertrag baut aufeinander auf);
+ * - abschließen, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss, z. B. für den
+ *   Steuerberater); Arbeitszeiten für die restlichen Tage werden dann Nachträge in der nächsten offenen Periode;
+ * - nur, wenn frühere Perioden mit Einträgen bereits abgeschlossen sind (der Übertrag baut aufeinander auf);
  * - wieder öffnen nur mit Begründung und nur die jüngste abgeschlossene Periode;
  * - beides steht im Änderungsprotokoll, Zahlen werden beim Abschluss eingefroren.
  */
@@ -77,10 +78,11 @@ export class PeriodService {
     return transaction(() => {
       const { startDay, endDay, target } = resolveTarget(userId, year, month);
 
-      if (todayString() <= target.endDate) {
-        throw new AppError('PERIOD_NOT_ENDED',
-          `Die Periode ${displayRange(target.startDate, target.endDate)} läuft noch ` +
-          'und kann erst nach ihrem Ende abgeschlossen werden'
+      const today = todayString();
+      if (today < target.startDate) {
+        throw new AppError('PERIOD_NOT_STARTED',
+          `Die Periode ${displayRange(target.startDate, target.endDate)} hat noch nicht begonnen ` +
+          'und kann noch nicht abgeschlossen werden'
         );
       }
 
@@ -139,7 +141,9 @@ export class PeriodService {
         entityType: 'PeriodClosure',
         entityId: closure.id,
         targetUserId: userId,
-        after: closureSnapshot(closure)
+        after: closureSnapshot(closure),
+        // Vor Periodenende abgeschlossen: spätere Arbeitszeiten der Periode werden Nachträge
+        ...(today <= target.endDate && { meta: { early: true } })
       });
       return closure;
     });

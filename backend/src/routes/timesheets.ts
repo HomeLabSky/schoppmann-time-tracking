@@ -96,14 +96,16 @@ api.get('/:userId', {
 
 api.post('/:userId/close', {
   summary: 'Periode abschließen (Zahlen werden eingefroren)',
-  description: 'Erst nach Periodenende; frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.',
+  description: 'Möglich, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss; spätere Einträge ' +
+    'für die Periode werden Nachträge in der nächsten offenen Periode). Frühere Perioden mit Einträgen müssen ' +
+    'abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.',
   auth: 'admin',
   params: UserIdParam,
   body: ClosePeriodBody,
   response: ClosureData,
   status: 201,
   message: 'Periode erfolgreich abgeschlossen',
-  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_ENDED', 'PERIOD_ALREADY_CLOSED', 'PERIOD_OVERLAP', 'PERIOD_PREVIOUS_OPEN', 'MINIJOB_LIMIT_MISSING']
+  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_STARTED', 'PERIOD_ALREADY_CLOSED', 'PERIOD_OVERLAP', 'PERIOD_PREVIOUS_OPEN', 'MINIJOB_LIMIT_MISSING']
 }, async (req) => {
   const [year, month] = parseMonth(req.valid.body.month);
   const closure = await PeriodService.closePeriod(req.valid.params.userId, year, month, actorOf(req));
