@@ -24,6 +24,8 @@ services:
       CORS_ORIGIN: https://${DOMAIN:?DOMAIN fehlt in deploy/.env}
       # Hinter Caddy: ein Proxy – nötig, damit Rate-Limits die echte Client-IP sehen
       TRUST_PROXY: "1"
+      # Anfragen je Gerät (IP) in 15 Minuten; bei "Zu viele Anfragen" erhöhen (Anmeldung bleibt eigens begrenzt)
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-1000}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       PAYSLIP_COMPANY_ADDRESS: ${PAYSLIP_COMPANY_ADDRESS:-}

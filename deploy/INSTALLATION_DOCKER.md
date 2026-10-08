@@ -277,6 +277,7 @@ bleiben bei Updates erhalten; **nicht** `docker compose down -v` ausführen (lö
 | „Permission denied“ beim Sichern | Ordner muss für Benutzer-ID 1000 beschreibbar sein (`chown 1000:1000` bzw. `uid=1000` in den Mount-Optionen). |
 | Port 80/443 belegt | Anderen Dienst verlegen oder stoppen (Schritt 2). |
 | Browser warnt vor dem Zertifikat | Stammzertifikat fehlt auf dem Arbeitsplatz (Schritt 9). |
+| „Zu viele Anfragen. Bitte versuchen Sie es später erneut.“ auf jeder Seite | Das Gerät hat die Anfragegrenze erreicht (gezählt pro IP, nicht pro Benutzer). Sofort beheben: `docker compose restart backend` (Daten und Anmeldungen bleiben erhalten) oder 15 Minuten warten. Dauerhaft: `RATE_LIMIT_MAX_REQUESTS` in `deploy/.env` erhöhen (Standard 1000), dann `docker compose up -d`. |
 
 ---
 
@@ -324,6 +325,7 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       CORS_ORIGIN: https://${DOMAIN}
       TRUST_PROXY: "1"
+      RATE_LIMIT_MAX_REQUESTS: "1000"
       ALLOW_REGISTRATION: "false"
     volumes:
       - db-data:/data
