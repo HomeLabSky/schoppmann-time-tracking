@@ -10,7 +10,7 @@ import * as billing from '../utils/billing';
 import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService, type BillingPeriod } from './dateService';
-import { assertDateOpen, overlaps } from './periodGuard';
+import { assertDateOpen, billingDateOf, billingDateSql, nextOpenPeriodFor, overlaps } from './periodGuard';
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}-15`;
@@ -22,7 +22,8 @@ const entrySnapshot = (entry: TimeEntryRow) => ({
   endTime: String(entry.endTime).substring(0, 5),
   breakMinutes: entry.breakMinutes,
   description: entry.description || null,
-  hourlyRateCents: entry.hourlyRateCents
+  hourlyRateCents: entry.hourlyRateCents,
+  ...(entry.billingDate && { billingDate: entry.billingDate })
 });
 
 /** Auslöser für das Protokoll; ohne Angabe gilt der Mitarbeiter selbst. */
@@ -100,7 +101,8 @@ const findOwnEntry = (entryId: number, userId: number): TimeEntryRow => {
  * Zeiterfassung und Abrechnung je Periode.
  * Die reine Rechenlogik (Cent-Beträge, Übertrag, Fachregeln) liegt in utils/billing.ts.
  * Jede Änderung wird in derselben Transaktion im Änderungsprotokoll festgehalten
- * und ist in abgeschlossenen Perioden gesperrt.
+ * und ist in abgeschlossenen Perioden gesperrt. Neue Einträge für einen Tag in einer abgeschlossenen Periode
+ * werden zum Nachtrag: Sie behalten ihr Datum, abgerechnet werden sie in der nächsten offenen Periode (billingDate).
  */
 export class TimeEntryService {
   /**
@@ -110,9 +112,9 @@ export class TimeEntryService {
   static listPeriodsUpTo(userId: number, startDay: number, endDay: number, year: number, month: number): BillingPeriod[] {
     const target = DateService.createBillingPeriod(startDay, endDay, referenceDate(year, month));
 
-    const first = db().select({ date: timeEntries.date }).from(timeEntries)
-      .where(and(eq(timeEntries.userId, userId), lt(timeEntries.date, target.startDate)))
-      .orderBy(asc(timeEntries.date))
+    const first = db().select({ date: billingDateSql }).from(timeEntries)
+      .where(and(eq(timeEntries.userId, userId), lt(billingDateSql, target.startDate)))
+      .orderBy(asc(billingDateSql))
       .get();
     if (!first) return [target];
 
@@ -171,8 +173,9 @@ export class TimeEntryService {
 
     const settings = db().select().from(minijobSettings).all();
     const closures = db().select().from(periodClosures).where(eq(periodClosures.userId, userId)).all();
+    // Zuordnung nach Abrechnungsdatum: Nachträge zählen in der Periode, in der sie abgerechnet werden
     const entries = db().select().from(timeEntries)
-      .where(and(eq(timeEntries.userId, userId), between(timeEntries.date, firstPeriod.startDate, target.endDate)))
+      .where(and(eq(timeEntries.userId, userId), between(billingDateSql, firstPeriod.startDate, target.endDate)))
       .orderBy(asc(timeEntries.date), asc(timeEntries.startTime))
       .all();
 
@@ -180,7 +183,7 @@ export class TimeEntryService {
       closures.find((c) => overlaps(period.startDate, period.endDate, c.periodStart, c.periodEnd)) || null;
 
     const rows = periods.map((period) => {
-      const own = entries.filter((e) => e.date >= period.startDate && e.date <= period.endDate);
+      const own = entries.filter((e) => billingDateOf(e) >= period.startDate && billingDateOf(e) <= period.endDate);
       const closure = closureFor(period);
       return {
         period,
@@ -241,6 +244,7 @@ export class TimeEntryService {
   /**
    * Erstellt einen neuen Zeiteintrag. Der aktuelle Stundenlohn des Mitarbeiters wird
    * im Eintrag eingefroren; spätere Lohnänderungen wirken nicht rückwirkend.
+   * Liegt der Tag in einer abgeschlossenen Periode, wird der Eintrag ein Nachtrag (`billingDate` gesetzt).
    */
   static async createTimeEntry(entryData: CreateEntryInput, actor?: Actor): Promise<TimeEntryJSON> {
     const { entry } = await this.createTimeEntryIdempotent(entryData, actor);
@@ -282,7 +286,8 @@ export class TimeEntryService {
         { today: todayString(), checkDateWindow: true }
       ));
 
-      assertDateOpen(entryData.userId, entryData.date);
+      // Tag in abgeschlossener Periode: Nachtrag, abgerechnet in der nächsten offenen Periode
+      const nachtrag = nextOpenPeriodFor(entryData.userId, entryData.date);
       assertFitsDay({ userId: entryData.userId, date: entryData.date, startTime, endTime, breakMinutes }, around);
 
       const user = db().select().from(users).where(eq(users.id, entryData.userId)).get();
@@ -296,7 +301,8 @@ export class TimeEntryService {
         endTime,
         breakMinutes,
         description: entryData.description || null,
-        hourlyRateCents: user.stundenlohn == null ? billing.DEFAULT_HOURLY_RATE_CENTS : billing.toCents(user.stundenlohn)
+        hourlyRateCents: user.stundenlohn == null ? billing.DEFAULT_HOURLY_RATE_CENTS : billing.toCents(user.stundenlohn),
+        billingDate: nachtrag ? nachtrag.startDate : null
       }).returning().get();
 
       AuditService.record({
@@ -315,7 +321,7 @@ export class TimeEntryService {
   static async updateTimeEntry(entryId: number, updateData: UpdateEntryInput, userId: number, actor?: Actor): Promise<TimeEntryJSON> {
     return transaction(() => {
       const entry = findOwnEntry(entryId, userId);
-      assertDateOpen(userId, entry.date);
+      assertDateOpen(userId, billingDateOf(entry));
 
       const merged = {
         userId,
@@ -354,7 +360,7 @@ export class TimeEntryService {
   static async deleteTimeEntry(entryId: number, userId: number, actor?: Actor): Promise<boolean> {
     return transaction(() => {
       const entry = findOwnEntry(entryId, userId);
-      assertDateOpen(userId, entry.date);
+      assertDateOpen(userId, billingDateOf(entry));
       db().delete(timeEntries).where(eq(timeEntries.id, entry.id)).run();
       AuditService.record({
         actor: resolveActor(actor, userId),

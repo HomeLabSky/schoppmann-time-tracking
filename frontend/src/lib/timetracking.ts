@@ -20,6 +20,11 @@ export interface TimeRecord {
   earnings: number
   formattedEarnings: string
   hourlyRate?: number
+  /**
+   * Nachtrag: Der Tag lag beim Erfassen in einer abgeschlossenen Periode. Abgerechnet wird der Eintrag in der
+   * Periode, die dieses Datum enthält. null = Periode des Arbeitstags.
+   */
+  billingDate?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -79,6 +84,11 @@ export interface TimeEntryPayload {
 }
 
 type Envelope<T> = { success: boolean; message: string; data: T }
+
+/** Periode, die das Datum enthält (YYYY-MM-DD) */
+export function periodContaining<P extends { startDate: string; endDate: string }>(periods: P[] | undefined, date: string): P | undefined {
+  return periods?.find((p) => p.startDate <= date && p.endDate >= date)
+}
 
 export const timeApi = {
   getMonth: (month: string) =>

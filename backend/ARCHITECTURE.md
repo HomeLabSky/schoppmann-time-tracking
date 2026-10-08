@@ -240,8 +240,13 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
 
 - Abschluss erst **nach Periodenende** und nur, wenn frühere Perioden **mit Einträgen** bereits abgeschlossen sind
   (der Übertrag baut aufeinander auf).
-- In abgeschlossenen Perioden sind Anlegen, Ändern und Löschen von Zeiteinträgen gesperrt (`PERIOD_CLOSED`,
+- In abgeschlossenen Perioden sind Ändern und Löschen von Zeiteinträgen gesperrt (`PERIOD_CLOSED`,
   Prüfung in `periodGuard.assertDateOpen`, innerhalb der Eintrags-Transaktion).
+- **Nachträge:** Ein neuer Eintrag für einen Tag in einer abgeschlossenen Periode wird nicht abgelehnt, sondern
+  behält sein Datum und bekommt `billingDate` = Beginn der nächsten offenen Periode (`periodGuard.nextOpenPeriodFor`).
+  Perioden ordnen Einträge nach `coalesce(billingDate, date)` zu (Summen, Übertrag, Abschluss, Lohnzettel), der
+  Abschluss des Arbeitstag-Monats bleibt unverändert. Gesperrt wird ein Nachtrag, sobald seine Abrechnungsperiode
+  abgeschlossen ist. Überschneidungs- und Tagesregeln gelten weiter nach dem echten Datum.
 - Für abgeschlossene Perioden gelten die **eingefrorenen** Zahlen – spätere Änderungen an Minijob-Grenzen verändern
   Auszahlung und Übertrag nicht.
 - Wiedereröffnen nur durch Admins, **mit Begründung** (mind. 5 Zeichen) und nur für die **jüngste** abgeschlossene

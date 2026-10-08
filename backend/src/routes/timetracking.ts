@@ -63,7 +63,9 @@ api.post('/', {
   description: 'Regeln: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h, Ende < Start = über Mitternacht. ' +
     'Mehrere Einträge pro Tag sind erlaubt, solange sie sich nicht überschneiden (auch nicht mit einer Nachtschicht ' +
     'vom Vortag; direkt anschließend ist erlaubt → sonst 409 ENTRY_OVERLAP) und die Arbeitszeit des Tages 12 h nicht ' +
-    'übersteigt. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück.',
+    'übersteigt. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück. ' +
+    'Liegt der Tag in einer bereits abgeschlossenen Periode, wird der Eintrag als Nachtrag angelegt: Er behält sein Datum, ' +
+    'abgerechnet wird er in der nächsten offenen Periode (`billingDate` = deren Beginn).',
   body: CreateTimeEntryBody,
   response: EntryData,
   status: 201,
@@ -74,14 +76,14 @@ api.post('/', {
     { ...req.valid.body, userId: req.user.userId },
     actorOf(req)
   );
-  return replayed
-    ? { status: 200, message: 'Zeiteintrag bereits vorhanden', data: { entry } }
-    : { data: { entry } };
+  if (replayed) return { status: 200, message: 'Zeiteintrag bereits vorhanden', data: { entry } };
+  return entry.billingDate ? { message: 'Zeiteintrag als Nachtrag erfasst', data: { entry } } : { data: { entry } };
 });
 
 api.put('/:id', {
   summary: 'Zeiteintrag ändern (Datum ist nicht änderbar)',
-  description: 'Gleiche Regeln wie beim Anlegen, auch Überschneidung (ENTRY_OVERLAP) und 12 h je Tag.',
+  description: 'Gleiche Regeln wie beim Anlegen, auch Überschneidung (ENTRY_OVERLAP) und 12 h je Tag. Gesperrt, sobald die ' +
+    'Periode abgeschlossen ist, in der der Eintrag abgerechnet wird (bei Nachträgen die von `billingDate`).',
   params: EntryIdParam,
   body: UpdateTimeEntryBody,
   response: EntryData,

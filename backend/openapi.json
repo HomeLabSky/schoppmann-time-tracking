@@ -4487,7 +4487,7 @@
       "post": {
         "operationId": "postTimetracking",
         "summary": "Zeiteintrag anlegen",
-        "description": "Regeln: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h, Ende < Start = über Mitternacht. Mehrere Einträge pro Tag sind erlaubt, solange sie sich nicht überschneiden (auch nicht mit einer Nachtschicht vom Vortag; direkt anschließend ist erlaubt → sonst 409 ENTRY_OVERLAP) und die Arbeitszeit des Tages 12 h nicht übersteigt. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück.",
+        "description": "Regeln: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h, Ende < Start = über Mitternacht. Mehrere Einträge pro Tag sind erlaubt, solange sie sich nicht überschneiden (auch nicht mit einer Nachtschicht vom Vortag; direkt anschließend ist erlaubt → sonst 409 ENTRY_OVERLAP) und die Arbeitszeit des Tages 12 h nicht übersteigt. Mit `clientId` sicher wiederholbar: Existiert bereits ein Eintrag mit dieser Kennung, kommt er mit 200 zurück. Liegt der Tag in einer bereits abgeschlossenen Periode, wird der Eintrag als Nachtrag angelegt: Er behält sein Datum, abgerechnet wird er in der nächsten offenen Periode (`billingDate` = deren Beginn).",
         "tags": [
           "Zeiterfassung"
         ],
@@ -5013,7 +5013,7 @@
       "put": {
         "operationId": "putTimetrackingById",
         "summary": "Zeiteintrag ändern (Datum ist nicht änderbar)",
-        "description": "Gleiche Regeln wie beim Anlegen, auch Überschneidung (ENTRY_OVERLAP) und 12 h je Tag.",
+        "description": "Gleiche Regeln wie beim Anlegen, auch Überschneidung (ENTRY_OVERLAP) und 12 h je Tag. Gesperrt, sobald die Periode abgeschlossen ist, in der der Eintrag abgerechnet wird (bei Nachträgen die von `billingDate`).",
         "tags": [
           "Zeiterfassung"
         ],
@@ -7155,6 +7155,13 @@
             ],
             "description": "Beim Anlegen eingefrorener Stundensatz in Cent"
           },
+          "billingDate": {
+            "description": "Nachtrag: Der Tag lag beim Erfassen in einer abgeschlossenen Periode; abgerechnet wird der Eintrag in der Periode, die dieses Datum enthält (YYYY-MM-DD). null = Periode des Arbeitstags",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "hourlyRate": {
             "type": "number",
             "description": "Eingefrorener Stundensatz in Euro"
@@ -7197,6 +7204,7 @@
           "breakMinutes",
           "description",
           "hourlyRateCents",
+          "billingDate",
           "hourlyRate",
           "workMinutes",
           "workTime",
