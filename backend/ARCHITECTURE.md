@@ -210,8 +210,10 @@ Wichtige Regeln:
 - Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
 - **Nacherfassung:** Der Admin kann je Mitarbeiter `nacherfassungAb` setzen (Abrechnungsdaten); dann darf bis zu diesem
   Tag zurück erfasst werden, z. B. um bisher in Excel geführte Monate zu übernehmen. Einträge älter als das normale
-  Fenster landen immer in ihrem eigenen Monat: In abgeschlossenen Perioden werden sie mit `PERIOD_CLOSED` abgelehnt,
-  nie als Nachtrag verschoben. Danach werden die Monate der Reihe nach normal abgeschlossen.
+  Fenster landen in ihrem eigenen Monat; ist der schon abgeschlossen, werden sie wie gewohnt zum Nachtrag – aber nur in
+  die **direkt folgende** Periode (`periodGuard.assertNoClosedPeriodBetween`). Ist auch die abgeschlossen, lehnt das
+  System mit `PERIOD_CLOSED` ab, statt z. B. einen Januartag im Oktober abzurechnen. So lassen sich auch damalige
+  Nachträge (Monat schon abgerechnet, Stunden danach) nachbilden: Monat abschließen, späte Tage nacherfassen.
 - **Mehrere Einträge pro Tag** (geteilte Schichten): erlaubt, solange sie sich nicht überschneiden
   (`findOverlap`, Zeiträume auf einer durchgehenden Zeitachse, also auch mit einer Nachtschicht vom Vortag; direkt
   anschließend ist erlaubt) und die Arbeitszeit aller Einträge mit demselben Datum 12 h nicht übersteigt

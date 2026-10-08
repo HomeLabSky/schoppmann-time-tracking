@@ -10,7 +10,7 @@ import * as billing from '../utils/billing';
 import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService, type BillingPeriod } from './dateService';
-import { assertDateOpen, billingDateOf, billingDateSql, nextOpenPeriodFor, overlaps } from './periodGuard';
+import { assertDateOpen, assertNoClosedPeriodBetween, billingDateOf, billingDateSql, nextOpenPeriodFor, overlaps } from './periodGuard';
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}-15`;
@@ -289,10 +289,12 @@ export class TimeEntryService {
         { today, checkDateWindow: true, backdateFrom: user.nacherfassungAb }
       ));
 
-      // Nacherfassung (älter als das normale Fenster): nur in offenen Perioden, nie als Nachtrag in einen späteren
-      // Monat verschoben. Sonst gilt: Tag in abgeschlossener Periode → Nachtrag in der nächsten offenen Periode.
-      if (entryData.date < billing.earliestRegularDate(today)) assertDateOpen(entryData.userId, entryData.date);
+      // Tag in abgeschlossener Periode → Nachtrag in der nächsten offenen Periode. Bei Nacherfassung (älter als das
+      // normale Fenster) nur in die direkt folgende Periode – sonst würde z. B. ein Januartag im Oktober abgerechnet.
       const nachtrag = nextOpenPeriodFor(entryData.userId, entryData.date);
+      if (nachtrag && entryData.date < billing.earliestRegularDate(today)) {
+        assertNoClosedPeriodBetween(entryData.userId, entryData.date, nachtrag);
+      }
       assertFitsDay({ userId: entryData.userId, date: entryData.date, startTime, endTime, breakMinutes }, around);
 
       const created = db().insert(timeEntries).values({

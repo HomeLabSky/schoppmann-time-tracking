@@ -69,7 +69,8 @@ Im Admin-Bereich:
   offenen Periode ab.
 - **Nacherfassung**: In den Abrechnungsdaten eines Mitarbeiters kann ein Admin „Nacherfassung erlauben ab“ setzen. Dann
   darf der Mitarbeiter weiter als einen Monat zurück erfassen (z. B. Übernahme aus Excel); die Einträge landen in ihrem
-  eigenen, noch offenen Monat. Danach das Datum wieder leeren und die Monate der Reihe nach abschließen.
+  eigenen Monat. Ist der schon abgeschlossen, werden sie Nachtrag im direkt folgenden Monat (wie damals bei Stunden nach
+  der Abrechnung). Danach das Datum wieder leeren und die Monate der Reihe nach abschließen.
 - **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen
   (Arbeitszeitnachweis, Verdienst, Übertrag, Auszahlung). Admins laden ihn im Zeitnachweis eines Mitarbeiters herunter;
   in der Übersicht erzeugt **Alle Lohnzettel (PDF)** zum Monatsabschluss eine Datei mit allen abgeschlossenen

@@ -292,3 +292,41 @@ test('Nacherfassung: Admin gibt frei, Mitarbeiter erfasst einen Tag vor drei Mon
   await expect(row.getByText('Nachtrag', { exact: true })).toHaveCount(0)
   await logout(page)
 })
+
+test('Nacherfassung: Tag im schon abgeschlossenen Monat wird Nachtrag im direkt folgenden Monat', async ({ page }) => {
+  const d = new Date()
+  const start = new Date(d.getFullYear(), d.getMonth() - 3, 1)
+  const last = new Date(d.getFullYear(), d.getMonth() - 2, 0)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ym = `${start.getFullYear()}-${pad(start.getMonth() + 1)}`
+  const following = new Date(d.getFullYear(), d.getMonth() - 2, 1)
+  const ymFollowing = `${following.getFullYear()}-${pad(following.getMonth() + 1)}`
+
+  // Wie damals: Der Monat ist schon abgerechnet
+  await login(page, ADMIN)
+  await page.goto(`/admin/timesheets?month=${ym}`)
+  await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
+  await page.getByRole('button', { name: 'Periode abschließen…' }).click()
+  const closeDialog = page.getByRole('dialog', { name: 'Periode abschließen?' })
+  await closeDialog.getByRole('button', { name: 'Abschließen' }).click()
+  await expect(page.getByText(/^Abgeschlossen am/)).toBeVisible()
+  await logout(page)
+
+  await login(page, EMPLOYEE)
+  await page.getByRole('button', { name: 'Arbeitszeit erfassen' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Arbeitszeit erfassen' })
+  await dialog.getByLabel('Datum').fill(`${ym}-${pad(last.getDate())}`)
+  await expect(dialog.getByTestId('nachtrag-hint')).toBeVisible()
+  await dialog.getByLabel('Beginn').fill('09:00')
+  await dialog.getByLabel('Ende').fill('11:00')
+  await dialog.getByLabel('Pause (Min.)').fill('0')
+  await dialog.getByLabel('Tätigkeit').fill('E2E später Tag')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Als Nachtrag erfasst.')).toBeVisible()
+
+  await page.getByLabel('Abrechnungsperiode').selectOption(ymFollowing)
+  const row = page.getByRole('row').filter({ hasText: 'E2E später Tag' })
+  await expect(row.getByText('Nachtrag', { exact: true })).toBeVisible()
+  await logout(page)
+})

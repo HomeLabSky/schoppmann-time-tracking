@@ -75,11 +75,15 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
   const minDate = backdateFrom && backdateFrom < regularMin ? backdateFrom : regularMin
   const historic = !!date && date < regularMin
 
-  // Tag in abgeschlossener Periode: Nachtrag in der nächsten offenen Periode – außer bei Nacherfassung, die bleibt im
-  // eigenen Monat und ist in abgeschlossenen Perioden nicht möglich
+  // Tag in abgeschlossener Periode: Nachtrag in der nächsten offenen Periode. Bei Nacherfassung nur in die direkt
+  // folgende – ist auch die abgeschlossen, lehnt das Backend ab
   const datePeriod = !editing && date ? periodContaining(periods.data?.periods, date) : undefined
-  const nachtrag = datePeriod?.isClosed && !historic ? datePeriod : undefined
-  const historicClosed = datePeriod?.isClosed && historic ? datePeriod : undefined
+  const followingPeriod = datePeriod
+    ? [...(periods.data?.periods ?? [])].sort((a, b) => a.startDate.localeCompare(b.startDate)).find((p) => p.startDate > datePeriod.endDate)
+    : undefined
+  const blocked = !!datePeriod?.isClosed && historic && !!followingPeriod?.isClosed
+  const nachtrag = datePeriod?.isClosed && !blocked ? datePeriod : undefined
+  const historicClosed = blocked ? datePeriod : undefined
 
   const valid = TIME_PATTERN.test(startTime ?? '') && TIME_PATTERN.test(endTime ?? '') && startTime !== endTime
   const span = valid ? spanMinutes(startTime, endTime) : 0
@@ -133,8 +137,8 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
           )}
           {historicClosed && (
             <Alert variant="warning" title="Periode abgeschlossen" data-testid="historic-closed-hint">
-              {historicClosed.monthName} {historicClosed.year} ist bereits abgeschlossen. Nacherfassungen sind nur in offenen Perioden
-              möglich – bitte wenden Sie sich an Ihren Administrator.
+              {historicClosed.monthName} {historicClosed.year} und der Folgemonat sind bereits abgeschlossen. Nacherfasste Tage
+              werden höchstens im direkt folgenden Monat abgerechnet – bitte wenden Sie sich an Ihren Administrator.
             </Alert>
           )}
           {editing?.billingDate && (
