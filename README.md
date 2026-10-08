@@ -73,7 +73,8 @@ Im Admin-Bereich:
   der Abrechnung). Danach das Datum wieder leeren und die Monate der Reihe nach abschließen.
 - **Sonderposten**: Hat ein Mitarbeiter etwas privat bezahlt (z. B. im Baumarkt), erfasst ein Admin den Betrag im
   Zeitnachweis unter *Sonderposten* (Kaufdatum, Bezeichnung, Betrag). Er steht als eigene Tabelle auf dem Lohnzettel und
-  wird zusätzlich zum Lohn ausgezahlt – ohne Anrechnung auf die Minijob-Grenze und ohne Übertrag. In abgeschlossenen
+  wird mit dem Lohn ausgezahlt: Verdienst, Sonderposten und Übertrag zählen zusammen gegen die Minijob-Grenze, was
+  darüber liegt, geht in den Übertrag. In abgeschlossenen
   Perioden sind Sonderposten gesperrt; ein Kaufdatum in einem abgeschlossenen Monat wird Nachtrag in der nächsten
   offenen Periode. Mitarbeiter sehen ihre Sonderposten in der Zeiterfassung.
 - **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen

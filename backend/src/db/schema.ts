@@ -139,7 +139,7 @@ export const periodClosures = sqliteTable('PeriodClosures', {
   carryInCents: integer('carryInCents').notNull().default(0),
   paidCents: integer('paidCents').notNull().default(0),
   carryOutCents: integer('carryOutCents').notNull().default(0),
-  /** Summe der Sonderposten (Erstattung zusätzlich zum Lohn, zählt nicht gegen die Grenze) */
+  /** Summe der Sonderposten (zählt wie der Verdienst gegen die Grenze; in paidCents/carryOutCents enthalten) */
   specialItemsCents: integer('specialItemsCents').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt()
@@ -151,7 +151,7 @@ export const periodClosures = sqliteTable('PeriodClosures', {
 
 /**
  * Sonderposten: privat verauslagter Betrag eines Mitarbeiters (z. B. Einkauf im Baumarkt), vom Admin erfasst und mit
- * dem Lohnzettel zusätzlich zum Lohn erstattet. Zuordnung zur Periode wie bei Zeiteinträgen über das Datum bzw.
+ * dem Lohn ausgezahlt (zählt gegen die Minijob-Grenze, Rest im Übertrag). Zuordnung zur Periode wie bei Zeiteinträgen über das Datum bzw.
  * `billingDate` (Kaufdatum lag beim Erfassen schon in einer abgeschlossenen Periode).
  */
 export const specialItems = sqliteTable('SpecialItems', {

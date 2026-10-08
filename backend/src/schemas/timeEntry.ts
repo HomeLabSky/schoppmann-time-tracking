@@ -69,7 +69,7 @@ const SpecialItem = z.object({
   createdBy: z.number().int().nullable(),
   createdAt: timestamp(),
   updatedAt: timestamp()
-}).meta({ id: 'SpecialItem', description: 'Sonderposten: privat verauslagter Betrag, wird zusätzlich zum Lohn erstattet' });
+}).meta({ id: 'SpecialItem', description: 'Sonderposten: privat verauslagter Betrag, wird mit dem Lohn ausgezahlt (zählt gegen die Grenze)' });
 
 const specialItemAmount = euro('Betrag', 100000).refine((value) => value > 0, 'Betrag muss größer als 0 sein');
 const specialItemDescription = z.string({ error: 'Bezeichnung ist erforderlich' })
@@ -107,13 +107,13 @@ const Period = z.object({
 
 const Summary = z.object({
   totalHours: z.number(),
-  totalEarnings: z.number().describe('Verdienst der Periode in Euro'),
-  actualEarnings: z.number().describe('Verdienst + Übertrag aus Vorperioden'),
+  totalEarnings: z.number().describe('Verdienst der Periode in Euro (ohne Sonderposten)'),
+  actualEarnings: z.number().describe('Verdienst + Sonderposten + Übertrag aus Vorperioden'),
   carryIn: z.number(),
   carryOut: z.number().describe('Übertrag in die nächste Periode (über der Grenze)'),
-  paidThisMonth: z.number().describe('Lohn-Auszahlung dieser Periode (höchstens die Grenze)'),
-  specialItemsTotal: z.number().describe('Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)'),
-  payout: z.number().describe('Gesamtauszahlung: Lohn + Sonderposten'),
+  paidThisMonth: z.number().describe('Auszahlung dieser Periode inkl. Sonderposten (höchstens die Grenze)'),
+  specialItemsTotal: z.number().describe('Summe der Sonderposten in Euro (zählen wie der Verdienst gegen die Grenze)'),
+  payout: z.number().describe('Auszahlung (gleich paidThisMonth; Sonderposten sind enthalten)'),
   minijobLimit: z.number(),
   hourlyRate: z.number(),
   exceedsLimit: z.boolean(),

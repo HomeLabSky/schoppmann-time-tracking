@@ -35,7 +35,7 @@ interface Props {
 }
 
 /**
- * Sonderposten einer Periode: privat verauslagte Beträge, die mit dem Lohnzettel zusätzlich zum Lohn erstattet werden.
+ * Sonderposten einer Periode: privat verauslagte Beträge, die mit dem Lohn ausgezahlt werden (zählen gegen die Grenze).
  * Ohne Sonderposten und ohne Bearbeitung erscheint nichts (wie auf dem Lohnzettel).
  */
 export function SpecialItemsSection({ items, total, editable }: Props) {
@@ -61,7 +61,7 @@ export function SpecialItemsSection({ items, total, editable }: Props) {
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <CardTitle>Sonderposten</CardTitle>
-          <CardDescription>Privat verauslagte Beträge – werden mit dem Lohnzettel zusätzlich zum Lohn erstattet.</CardDescription>
+          <CardDescription>Privat verauslagte Beträge – werden mit dem Lohn ausgezahlt und zählen zur Minijob-Grenze.</CardDescription>
         </div>
         {editable && (
           <Button size="sm" variant="outline" onClick={() => setDialog('new')}>
@@ -179,7 +179,7 @@ function SpecialItemDialog({ item, onClose, userId, periodStart, periodEnd }: { 
       open={item !== null}
       onClose={onClose}
       title={editing ? 'Sonderposten bearbeiten' : 'Sonderposten erfassen'}
-      description="Erscheint auf dem Lohnzettel und wird zusätzlich zum Lohn ausgezahlt – ohne Anrechnung auf die Minijob-Grenze."
+      description="Erscheint auf dem Lohnzettel und wird mit dem Lohn ausgezahlt. Zählt zur Minijob-Grenze; was darüber liegt, geht in den Übertrag."
       dismissible={!save.isPending}
     >
       <form onSubmit={onSubmit} noValidate>

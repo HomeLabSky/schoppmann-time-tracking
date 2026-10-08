@@ -255,7 +255,13 @@ export default function EmployeeDashboard() {
           value={summary ? formatCurrency(summary.totalEarnings) : ''}
           icon={Euro}
           loading={loading}
-          hint={summary ? `${formatEntryCount(summary.entryCount, summary.workDays)}${summary.carryIn > 0 ? ` · + ${formatCurrency(summary.carryIn)} Übertrag` : ''}` : undefined}
+          hint={
+            summary
+              ? `${formatEntryCount(summary.entryCount, summary.workDays)}` +
+                `${summary.specialItemsTotal > 0 ? ` · + ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : ''}` +
+                `${summary.carryIn > 0 ? ` · + ${formatCurrency(summary.carryIn)} Übertrag` : ''}`
+              : undefined
+          }
         />
         <StatCard
           label="Auszahlung"
@@ -263,16 +269,7 @@ export default function EmployeeDashboard() {
           icon={Wallet}
           tone={limitMissing ? 'warning' : 'default'}
           loading={loading}
-          hint={
-            summary
-              ? [
-                  limitMissing ? 'vorläufig' : `Grenze ${formatCurrency(summary.minijobLimit)}`,
-                  summary.specialItemsTotal > 0 ? `inkl. ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : undefined
-          }
+          hint={summary ? (limitMissing ? 'vorläufig' : `Grenze ${formatCurrency(summary.minijobLimit)}`) : undefined}
         >
           {summary && !loading && <Progress value={usagePct} tone={usageTone} label="Ausschöpfung der Minijob-Grenze" />}
         </StatCard>

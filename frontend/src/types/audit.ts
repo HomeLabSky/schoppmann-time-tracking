@@ -33,11 +33,11 @@ export interface TimesheetOverviewRow {
   workDays: number
   totalHours: number
   totalEarnings: number
-  /** Lohn-Auszahlung (höchstens die Grenze) */
+  /** Auszahlung inkl. Sonderposten (höchstens die Grenze) */
   paidThisMonth: number
-  /** Summe der Sonderposten */
+  /** Summe der Sonderposten (in der Auszahlung bzw. im Übertrag enthalten) */
   specialItemsTotal: number
-  /** Gesamtauszahlung: Lohn + Sonderposten */
+  /** Gleich paidThisMonth */
   payout: number
   carryOut: number
   minijobLimit: number

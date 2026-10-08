@@ -11,7 +11,7 @@ import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService, type BillingPeriod } from './dateService';
 import { assertDateOpen, assertNoClosedPeriodBetween, billingDateOf, billingDateSql, nextOpenPeriodFor, overlaps } from './periodGuard';
-import { SpecialItemService, toSpecialItemJSON } from './specialItemService';
+import { SpecialItemService, firstSpecialItemBefore, toSpecialItemJSON } from './specialItemService';
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}-15`;
@@ -107,17 +107,20 @@ const findOwnEntry = (entryId: number, userId: number): TimeEntryRow => {
  */
 export class TimeEntryService {
   /**
-   * Alle Abrechnungsperioden vom Monat des ersten Eintrags bis einschließlich der
+   * Alle Abrechnungsperioden vom Monat des ersten Eintrags (Zeiteintrag oder Sonderposten) bis einschließlich der
    * Zielperiode (chronologisch). Ohne frühere Einträge nur die Zielperiode.
    */
   static listPeriodsUpTo(userId: number, startDay: number, endDay: number, year: number, month: number): BillingPeriod[] {
     const target = DateService.createBillingPeriod(startDay, endDay, referenceDate(year, month));
 
-    const first = db().select({ date: billingDateSql }).from(timeEntries)
+    const firstEntry = db().select({ date: billingDateSql }).from(timeEntries)
       .where(and(eq(timeEntries.userId, userId), lt(billingDateSql, target.startDate)))
       .orderBy(asc(billingDateSql))
-      .get();
-    if (!first) return [target];
+      .get()?.date;
+    const firstItem = firstSpecialItemBefore(userId, target.startDate);
+    const firstDate = firstEntry && firstItem ? (firstEntry < firstItem ? firstEntry : firstItem) : firstEntry ?? firstItem;
+    if (!firstDate) return [target];
+    const first = { date: firstDate };
 
     const [firstYear = 0, firstMonth = 1, firstDay = 1] = first.date.split('-').map(Number);
     let currentYear = firstYear;
@@ -179,20 +182,30 @@ export class TimeEntryService {
       .where(and(eq(timeEntries.userId, userId), between(billingDateSql, firstPeriod.startDate, target.endDate)))
       .orderBy(asc(timeEntries.date), asc(timeEntries.startTime))
       .all();
+    // Sonderposten zählen wie Verdienst gegen die Grenze (Übertrag inklusive)
+    const items = SpecialItemService.listForPeriod(userId, firstPeriod.startDate, target.endDate);
 
     const closureFor = (period: BillingPeriod): PeriodClosure | null =>
       closures.find((c) => overlaps(period.startDate, period.endDate, c.periodStart, c.periodEnd)) || null;
 
     const rows = periods.map((period) => {
-      const own = entries.filter((e) => billingDateOf(e) >= period.startDate && billingDateOf(e) <= period.endDate);
+      const inPeriod = (date: string) => date >= period.startDate && date <= period.endDate;
+      const own = entries.filter((e) => inPeriod(billingDateOf(e)));
+      const ownItems = items.filter((item) => inPeriod(item.billingDate ?? item.date));
       const closure = closureFor(period);
+      // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
+      const workCents = closure ? closure.earningsCents : own.reduce((sum, e) => sum + entryEarningsCents(e), 0);
+      const specialItemsCents = closure ? closure.specialItemsCents : ownItems.reduce((sum, item) => sum + item.amountCents, 0);
       return {
         period,
         closure,
         entries: own,
-        // Abgeschlossene Perioden: eingefrorene Werte statt Neuberechnung
+        items: ownItems,
         minutes: closure ? closure.totalMinutes : own.reduce((sum, e) => sum + entryWorkMinutes(e), 0),
-        earningsCents: closure ? closure.earningsCents : own.reduce((sum, e) => sum + entryEarningsCents(e), 0),
+        workCents,
+        specialItemsCents,
+        // Gegen die Grenze verrechnet: Verdienst + Sonderposten
+        earningsCents: workCents + specialItemsCents,
         limitCents: closure ? closure.limitCents : billing.limitCentsForDate(settings, period.endDate),
         limitMissing: !closure && !billing.hasLimitForDate(settings, period.endDate)
       };
@@ -205,25 +218,23 @@ export class TimeEntryService {
     const result = folded[folded.length - 1] as billing.CarryRow;
     const closure = current.closure;
     const hourlyRate = user.stundenlohn == null ? billing.toEuros(billing.DEFAULT_HOURLY_RATE_CENTS) : Number(user.stundenlohn);
-    // Sonderposten: Erstattung zusätzlich zum Lohn, außerhalb von Grenze und Übertrag
-    const items = SpecialItemService.listForPeriod(userId, target.startDate, target.endDate);
-    const specialItemsCents = closure ? closure.specialItemsCents : items.reduce((sum, item) => sum + item.amountCents, 0);
 
     // Anzeige-Werte (Benennung nach End- bzw. Referenzmonat)
     const periodInfo = this.createPeriodObjectForUser(new Date(referenceDate(year, month)), startDay, endDay);
 
     return {
       records: current.entries.map(toTimeEntryJSON),
-      specialItems: items.map(toSpecialItemJSON),
+      specialItems: current.items.map(toSpecialItemJSON),
       summary: {
         totalHours: Math.round((current.minutes / 60) * 100) / 100,
-        totalEarnings: billing.toEuros(current.earningsCents),
+        totalEarnings: billing.toEuros(current.workCents),
         actualEarnings: billing.toEuros(result.actualCents),
         carryIn: billing.toEuros(result.carryInCents),
         carryOut: billing.toEuros(result.carryOutCents),
         paidThisMonth: billing.toEuros(result.paidCents),
-        specialItemsTotal: billing.toEuros(specialItemsCents),
-        payout: billing.toEuros(result.paidCents + specialItemsCents),
+        specialItemsTotal: billing.toEuros(current.specialItemsCents),
+        // Sonderposten sind in der Auszahlung enthalten (gleicher Wert wie paidThisMonth)
+        payout: billing.toEuros(result.paidCents),
         minijobLimit: billing.toEuros(result.limitCents),
         hourlyRate,
         exceedsLimit: result.actualCents > result.limitCents,

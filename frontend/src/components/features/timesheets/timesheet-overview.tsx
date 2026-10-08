@@ -43,7 +43,7 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
   const totals = useMemo(
     () => ({
       hours: rows.reduce((s, r) => s + r.totalHours, 0),
-      payout: rows.reduce((s, r) => s + r.payout, 0),
+      payout: rows.reduce((s, r) => s + r.paidThisMonth, 0),
       ready: rows.filter((r) => r.status === 'ready').length,
       closed: rows.filter((r) => r.status === 'closed').length,
     }),
@@ -86,20 +86,22 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
         accessorFn: (r) => r.totalEarnings,
         header: 'Verdienst',
         meta: { className: 'text-right tabular' },
-        cell: ({ row }) => formatCurrency(row.original.totalEarnings),
+        cell: ({ row }) => (
+          <div>
+            {formatCurrency(row.original.totalEarnings)}
+            {row.original.specialItemsTotal > 0 && (
+              <p className="text-xs text-muted-foreground">+ {formatCurrency(row.original.specialItemsTotal)} Sonderposten</p>
+            )}
+          </div>
+        ),
       },
       {
         id: 'paid',
-        accessorFn: (r) => r.payout,
+        accessorFn: (r) => r.paidThisMonth,
         header: 'Auszahlung',
         meta: { className: 'text-right tabular' },
         cell: ({ row }) => (
-          <div>
-            <span className={row.original.minijobLimitMissing ? 'text-warning' : undefined}>{formatCurrency(row.original.payout)}</span>
-            {row.original.specialItemsTotal > 0 && (
-              <p className="text-xs text-muted-foreground">inkl. {formatCurrency(row.original.specialItemsTotal)} Sonderposten</p>
-            )}
-          </div>
+          <span className={row.original.minijobLimitMissing ? 'text-warning' : undefined}>{formatCurrency(row.original.paidThisMonth)}</span>
         ),
       },
       {
@@ -184,9 +186,8 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
             { header: 'Tage', value: (r) => r.workDays },
             { header: 'Stunden', value: (r) => csvNumber(r.totalHours) },
             { header: 'Verdienst (€)', value: (r) => csvNumber(r.totalEarnings) },
-            { header: 'Lohn (€)', value: (r) => csvNumber(r.paidThisMonth) },
             { header: 'Sonderposten (€)', value: (r) => csvNumber(r.specialItemsTotal) },
-            { header: 'Auszahlung (€)', value: (r) => csvNumber(r.payout) },
+            { header: 'Auszahlung (€)', value: (r) => csvNumber(r.paidThisMonth) },
             { header: 'Übertrag (€)', value: (r) => csvNumber(r.carryOut) },
             { header: 'Grenze (€)', value: (r) => (r.minijobLimitMissing ? '' : csvNumber(r.minijobLimit)) },
             { header: 'Status', value: (r) => statusLabel(r) },
