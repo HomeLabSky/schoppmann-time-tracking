@@ -254,3 +254,41 @@ test('Vorzeitiger Abschluss: laufender Monat wird abgeschlossen, weitere Arbeits
   await expect(row.getByText('Nachtrag', { exact: true })).toBeVisible()
   await logout(page)
 })
+
+test('Nacherfassung: Admin gibt frei, Mitarbeiter erfasst einen Tag vor drei Monaten im eigenen Monat', async ({ page }) => {
+  const d = new Date()
+  const start = new Date(d.getFullYear(), d.getMonth() - 3, 1)
+  const ym = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
+
+  await login(page, ADMIN)
+  await page.goto('/admin/users')
+  await page.getByRole('button', { name: 'Aktionen für Emil Mitarbeiter' }).click()
+  await page.getByRole('menuitem', { name: 'Abrechnungsdaten' }).click()
+  const settings = page.getByRole('dialog', { name: 'Abrechnungsdaten' })
+  await settings.getByLabel('Nacherfassung erlauben ab').fill(`${ym}-01`)
+  await settings.getByRole('button', { name: 'Speichern' }).click()
+  await expect(settings).toBeHidden()
+  await expect(page.getByRole('row').filter({ hasText: 'Emil Mitarbeiter' }).getByText(/^Nacherfassung ab/)).toBeVisible()
+  await logout(page)
+
+  await login(page, EMPLOYEE)
+  await page.getByRole('button', { name: 'Arbeitszeit erfassen' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Arbeitszeit erfassen' })
+  await expect(dialog.getByText(/Nacherfassung freigegeben/)).toBeVisible()
+  await dialog.getByLabel('Datum').fill(`${ym}-02`)
+  await dialog.getByLabel('Beginn').fill('09:00')
+  await dialog.getByLabel('Ende').fill('12:00')
+  await dialog.getByLabel('Pause (Min.)').fill('0')
+  await dialog.getByLabel('Tätigkeit').fill('E2E Excel-Übernahme')
+  await expect(dialog.getByTestId('nachtrag-hint')).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Arbeitszeit erfasst.')).toBeVisible()
+
+  // Steht im eigenen Monat, nicht als Nachtrag
+  await page.getByLabel('Abrechnungsperiode').selectOption(ym)
+  const row = page.getByRole('row').filter({ hasText: 'E2E Excel-Übernahme' })
+  await expect(row).toBeVisible()
+  await expect(row.getByText('Nachtrag', { exact: true })).toHaveCount(0)
+  await logout(page)
+})

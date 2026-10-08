@@ -83,14 +83,17 @@ export interface EntryTimes {
   breakMinutes: number | null;
 }
 
+/** Frühester Tag, der ohne Nacherfassung erfasst werden darf (heute vor einem Monat). */
+export const earliestRegularDate = (today: string): string => addMonths(today, -RULES.MAX_BACKDATE_MONTHS);
+
 /**
  * Serverseitige Fachregeln für einen Zeiteintrag.
- * @param ctx today = Berliner Kalendertag; checkDateWindow nur beim Anlegen
+ * @param ctx today = Berliner Kalendertag; checkDateWindow nur beim Anlegen; backdateFrom = freigegebene Nacherfassung
  * @returns Fehlermeldungen (leer = gültig)
  */
 export const validateEntryRules = (
   entry: EntryTimes,
-  { today, checkDateWindow = false }: { today: string; checkDateWindow?: boolean }
+  { today, checkDateWindow = false, backdateFrom = null }: { today: string; checkDateWindow?: boolean; backdateFrom?: string | null }
 ): string[] => {
   const errors: string[] = [];
   const span = spanMinutes(entry.startTime, entry.endTime);
@@ -114,7 +117,13 @@ export const validateEntryRules = (
     if (entry.date > today) {
       errors.push('Datum darf nicht in der Zukunft liegen');
     }
-    if (entry.date < addMonths(today, -RULES.MAX_BACKDATE_MONTHS)) {
+    const regular = earliestRegularDate(today);
+    if (backdateFrom && backdateFrom < regular) {
+      // Nacherfassung freigegeben: weiter zurück bis zum freigegebenen Tag
+      if (entry.date < backdateFrom) {
+        errors.push(`Datum darf nicht vor dem ${backdateFrom.split('-').reverse().join('.')} liegen (Nacherfassung)`);
+      }
+    } else if (entry.date < regular) {
       errors.push('Datum darf nicht mehr als einen Monat zurückliegen');
     }
   }

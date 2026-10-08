@@ -43,6 +43,13 @@
       "when": 1791446762572,
       "tag": "0005_nachtrag_billing_date",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791450721079,
+      "tag": "0006_nacherfassung",
+      "breakpoints": true
     }
   ]
 }

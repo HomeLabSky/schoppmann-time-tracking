@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { toLocalDateString } from '@/lib/utils'
 
 /**
  * Formular-Schemas – spiegeln die Regeln aus backend/middleware/validation.js und utils/billing.js.
@@ -66,6 +67,11 @@ export const userSettingsSchema = z.object({
   abrechnungStart: numberSchema.int('Ganze Zahl').min(1, '1 bis 31').max(31, '1 bis 31'),
   abrechnungEnde: numberSchema.int('Ganze Zahl').min(1, '1 bis 31').max(31, '1 bis 31'),
   lohnzettelEmail: z.union([z.literal(''), emailSchema]),
+  // Nacherfassung: leer = nur einen Monat zurück
+  nacherfassungAb: z.union([
+    z.literal(''),
+    z.iso.date('Bitte ein Datum wählen').refine((d) => d <= toLocalDateString(), 'Darf nicht in der Zukunft liegen'),
+  ]),
 })
 export type UserSettingsInput = z.infer<typeof userSettingsSchema>
 

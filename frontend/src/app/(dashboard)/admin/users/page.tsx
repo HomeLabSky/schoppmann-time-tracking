@@ -140,6 +140,11 @@ export default function UsersPage() {
           row.original.role === 'mitarbeiter' ? (
             <span className="tabular text-muted-foreground">
               {row.original.abrechnungStart ?? 1}. – {row.original.abrechnungEnde ?? 31}.
+              {row.original.nacherfassungAb && (
+                <Badge variant="info" className="ml-2" title="Nacherfassung freigegeben">
+                  Nacherfassung ab {formatDate(row.original.nacherfassungAb)}
+                </Badge>
+              )}
             </span>
           ) : (
             <span className="text-muted-foreground">–</span>

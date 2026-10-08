@@ -71,8 +71,9 @@ api.put('/users/:id', {
 });
 
 api.put('/users/:id/settings', {
-  summary: 'Lohn, Abrechnungszeitraum und Lohnzettel-E-Mail festlegen',
-  description: 'Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein).',
+  summary: 'Lohn, Abrechnungszeitraum, Lohnzettel-E-Mail und Nacherfassung festlegen',
+  description: 'Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein). ' +
+    '`nacherfassungAb` erlaubt dem Mitarbeiter, Zeiten bis zu diesem Tag zurück zu erfassen (z. B. Übernahme aus Excel).',
   auth: 'admin',
   params: UserIdParam,
   body: UserSettingsBody,

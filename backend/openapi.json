@@ -1838,8 +1838,8 @@
     "/admin/users/{id}/settings": {
       "put": {
         "operationId": "putAdminUsersByIdSettings",
-        "summary": "Lohn, Abrechnungszeitraum und Lohnzettel-E-Mail festlegen",
-        "description": "Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein).",
+        "summary": "Lohn, Abrechnungszeitraum, Lohnzettel-E-Mail und Nacherfassung festlegen",
+        "description": "Ein geänderter Stundenlohn gilt nur für neue Zeiteinträge (jeder Eintrag friert seinen Satz ein). `nacherfassungAb` erlaubt dem Mitarbeiter, Zeiten bis zu diesem Tag zurück zu erfassen (z. B. Übernahme aus Excel).",
         "tags": [
           "Benutzerverwaltung"
         ],
@@ -1895,6 +1895,22 @@
                       },
                       {
                         "type": "string"
+                      }
+                    ]
+                  },
+                  "nacherfassungAb": {
+                    "description": "Nacherfassung freigeben: Zeiten dürfen bis zu diesem Tag zurück erfasst werden (statt nur einen Monat); leer/null hebt die Freigabe auf. Gilt nur für offene Perioden – Nacherfassungen werden nie zu Nachträgen.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "format": "date"
                       }
                     ]
                   }
@@ -2743,6 +2759,22 @@
                       },
                       {
                         "type": "string"
+                      }
+                    ]
+                  },
+                  "nacherfassungAb": {
+                    "description": "Nacherfassung freigeben: Zeiten dürfen bis zu diesem Tag zurück erfasst werden (statt nur einen Monat); leer/null hebt die Freigabe auf. Gilt nur für offene Perioden – Nacherfassungen werden nie zu Nachträgen.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "null"
+                      },
+                      {
+                        "type": "string",
+                        "format": "date"
                       }
                     ]
                   }
@@ -7401,6 +7433,13 @@
               "null"
             ]
           },
+          "nacherfassungAb": {
+            "description": "Nacherfassung freigegeben bis zu diesem Tag zurück (YYYY-MM-DD); null = nur einen Monat",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "createdAt": {
             "type": "string",
             "description": "Zeitpunkt (ISO 8601)"
@@ -7420,6 +7459,7 @@
           "abrechnungStart",
           "abrechnungEnde",
           "lohnzettelEmail",
+          "nacherfassungAb",
           "createdAt",
           "updatedAt"
         ],
@@ -7446,13 +7486,21 @@
               "string",
               "null"
             ]
+          },
+          "nacherfassungAb": {
+            "description": "Nacherfassung freigegeben bis zu diesem Tag zurück (YYYY-MM-DD); null = nur einen Monat",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
           "stundenlohn",
           "abrechnungStart",
           "abrechnungEnde",
-          "lohnzettelEmail"
+          "lohnzettelEmail",
+          "nacherfassungAb"
         ],
         "description": "Arbeitseinstellungen (Lohn und Abrechnungszeitraum legt der Admin fest)"
       }

@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Moon } from 'lucide-react'
-import { useMyPeriods, useSaveTimeEntry } from '@/lib/queries'
+import { useMyPeriods, useMySettings, useSaveTimeEntry } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
 import { periodContaining, type TimeRecord } from '@/lib/timetracking'
 import { formatDate, formatHours, toLocalDateString } from '@/lib/utils'
@@ -37,6 +37,7 @@ interface Props {
 export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
   const save = useSaveTimeEntry()
   const periods = useMyPeriods()
+  const settings = useMySettings()
   const editing = entry && entry !== 'new' ? entry : null
   const form = useForm<TimeEntryInput>({
     resolver: zodResolver(timeEntrySchema),
@@ -68,9 +69,17 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry, form])
 
-  // Tag in abgeschlossener Periode: Der Eintrag wird als Nachtrag in der nächsten offenen Periode abgerechnet
+  // Nacherfassung (vom Admin freigegeben): weiter als einen Monat zurück
+  const regularMin = earliestDate()
+  const backdateFrom = settings.data?.nacherfassungAb
+  const minDate = backdateFrom && backdateFrom < regularMin ? backdateFrom : regularMin
+  const historic = !!date && date < regularMin
+
+  // Tag in abgeschlossener Periode: Nachtrag in der nächsten offenen Periode – außer bei Nacherfassung, die bleibt im
+  // eigenen Monat und ist in abgeschlossenen Perioden nicht möglich
   const datePeriod = !editing && date ? periodContaining(periods.data?.periods, date) : undefined
-  const nachtrag = datePeriod?.isClosed ? datePeriod : undefined
+  const nachtrag = datePeriod?.isClosed && !historic ? datePeriod : undefined
+  const historicClosed = datePeriod?.isClosed && historic ? datePeriod : undefined
 
   const valid = TIME_PATTERN.test(startTime ?? '') && TIME_PATTERN.test(endTime ?? '') && startTime !== endTime
   const span = valid ? spanMinutes(startTime, endTime) : 0
@@ -94,7 +103,13 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
           <FormField
             id="te-date"
             label="Datum"
-            hint={editing ? 'Das Datum eines Eintrags kann nicht geändert werden.' : 'Höchstens einen Monat zurück, nicht in der Zukunft.'}
+            hint={
+              editing
+                ? 'Das Datum eines Eintrags kann nicht geändert werden.'
+                : minDate < regularMin
+                  ? `Nacherfassung freigegeben: ab dem ${formatDate(minDate)}, nicht in der Zukunft.`
+                  : 'Höchstens einen Monat zurück, nicht in der Zukunft.'
+            }
             error={errors.date?.message}
             required
           >
@@ -103,7 +118,7 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
                 {...c}
                 type="date"
                 readOnly={!!editing}
-                min={editing ? undefined : earliestDate()}
+                min={editing ? undefined : minDate}
                 max={editing ? undefined : toLocalDateString()}
                 className="max-w-48 read-only:bg-muted read-only:text-muted-foreground"
                 {...form.register('date')}
@@ -114,6 +129,12 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
             <Alert variant="info" title="Nachtrag" data-testid="nachtrag-hint">
               Der {formatDate(date)} gehört zur bereits abgeschlossenen Periode {nachtrag.monthName} {nachtrag.year}. Der Eintrag
               wird als Nachtrag in der nächsten offenen Periode abgerechnet.
+            </Alert>
+          )}
+          {historicClosed && (
+            <Alert variant="warning" title="Periode abgeschlossen" data-testid="historic-closed-hint">
+              {historicClosed.monthName} {historicClosed.year} ist bereits abgeschlossen. Nacherfassungen sind nur in offenen Perioden
+              möglich – bitte wenden Sie sich an Ihren Administrator.
             </Alert>
           )}
           {editing?.billingDate && (

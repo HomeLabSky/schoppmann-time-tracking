@@ -25,7 +25,8 @@ const settingsSnapshot = (user: User) => ({
   stundenlohn: user.stundenlohn == null ? null : Number(user.stundenlohn),
   abrechnungStart: user.abrechnungStart,
   abrechnungEnde: user.abrechnungEnde,
-  lohnzettelEmail: user.lohnzettelEmail || null
+  lohnzettelEmail: user.lohnzettelEmail || null,
+  nacherfassungAb: user.nacherfassungAb || null
 });
 
 /** Optionale Einschränkung neuer Konten auf bestimmte E-Mail-Domains (ALLOWED_EMAIL_DOMAINS) */
@@ -78,6 +79,8 @@ export interface WorkSettingsInput {
   abrechnungStart?: number | undefined;
   abrechnungEnde?: number | undefined;
   lohnzettelEmail?: string | null | undefined;
+  /** Nacherfassung ab Tag (YYYY-MM-DD); '' oder null = aufheben */
+  nacherfassungAb?: string | null | undefined;
 }
 
 const settingsUpdate = (settings: WorkSettingsInput): Partial<User> => {
@@ -86,6 +89,7 @@ const settingsUpdate = (settings: WorkSettingsInput): Partial<User> => {
   if (settings.abrechnungStart !== undefined) update.abrechnungStart = Number(settings.abrechnungStart);
   if (settings.abrechnungEnde !== undefined) update.abrechnungEnde = Number(settings.abrechnungEnde);
   if (settings.lohnzettelEmail !== undefined) update.lohnzettelEmail = settings.lohnzettelEmail || null;
+  if (settings.nacherfassungAb !== undefined) update.nacherfassungAb = settings.nacherfassungAb || null;
   return update;
 };
 
@@ -236,7 +240,8 @@ export class UserService {
       stundenlohn: updated.stundenlohn,
       abrechnungStart: updated.abrechnungStart,
       abrechnungEnde: updated.abrechnungEnde,
-      lohnzettelEmail: updated.lohnzettelEmail
+      lohnzettelEmail: updated.lohnzettelEmail,
+      nacherfassungAb: updated.nacherfassungAb ?? null
     };
   }
 

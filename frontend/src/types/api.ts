@@ -15,6 +15,8 @@ export interface User {
   abrechnungStart?: number
   abrechnungEnde?: number
   lohnzettelEmail?: string
+  /** Nacherfassung freigegeben bis zu diesem Tag zurück (YYYY-MM-DD); null = nur einen Monat */
+  nacherfassungAb?: string | null
 }
 
 export interface LoginCredentials {
@@ -59,6 +61,8 @@ export interface UserSettings {
   abrechnungStart: number
   abrechnungEnde: number
   lohnzettelEmail: string
+  /** '' oder null hebt die Freigabe auf */
+  nacherfassungAb?: string | null
 }
 
 /** Lohnzettel einer abgeschlossenen Periode (Beträge beim Abschluss festgeschrieben, in Euro) */

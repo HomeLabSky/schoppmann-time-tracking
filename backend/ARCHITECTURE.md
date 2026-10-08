@@ -208,6 +208,10 @@ Wichtige Regeln:
 - Pause: nur wenn *keine* Angabe vorliegt, gilt der Standard – 30 min für den ersten Eintrag eines Tages, 0 für
   weitere (die Pause liegt zwischen den Einträgen); ein ausdrückliches `0` bleibt `0`.
 - Neue Einträge: nicht in der Zukunft, höchstens 1 Monat zurück, 15 min bis 12 h.
+- **Nacherfassung:** Der Admin kann je Mitarbeiter `nacherfassungAb` setzen (Abrechnungsdaten); dann darf bis zu diesem
+  Tag zurück erfasst werden, z. B. um bisher in Excel geführte Monate zu übernehmen. Einträge älter als das normale
+  Fenster landen immer in ihrem eigenen Monat: In abgeschlossenen Perioden werden sie mit `PERIOD_CLOSED` abgelehnt,
+  nie als Nachtrag verschoben. Danach werden die Monate der Reihe nach normal abgeschlossen.
 - **Mehrere Einträge pro Tag** (geteilte Schichten): erlaubt, solange sie sich nicht überschneiden
   (`findOverlap`, Zeiträume auf einer durchgehenden Zeitachse, also auch mit einer Nachtschicht vom Vortag; direkt
   anschließend ist erlaubt) und die Arbeitszeit aller Einträge mit demselben Datum 12 h nicht übersteigt
