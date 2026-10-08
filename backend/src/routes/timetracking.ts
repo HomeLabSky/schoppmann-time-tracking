@@ -8,13 +8,16 @@ import { createApiRouter } from '../lib/route';
 import { idParam } from '../schemas/common';
 import { actorOf } from '../middleware/auth';
 import TimeEntryService from '../services/timeEntryService';
+import SpecialItemService from '../services/specialItemService';
 import {
-  CreateTimeEntryBody, UpdateTimeEntryBody, MonthQuery, MultiMonthQuery, MonthlyRecords, PeriodsData, EntryData, MultiMonthStats
+  CreateTimeEntryBody, UpdateTimeEntryBody, MonthQuery, MultiMonthQuery, MonthlyRecords, PeriodsData, EntryData, MultiMonthStats,
+  CreateSpecialItemBody, UpdateSpecialItemBody, SpecialItemData
 } from '../schemas/timeEntry';
 
 const api = createApiRouter('/timetracking', { tags: ['Zeiterfassung'] });
 
 const EntryIdParam = idParam('id', 'Eintrag-ID');
+const SpecialItemIdParam = idParam('id', 'Sonderposten-ID');
 
 api.get('/', {
   summary: 'Zeiteinträge und Abrechnung einer Periode',
@@ -102,6 +105,48 @@ api.delete('/:id', {
   errors: ['ENTRY_NOT_FOUND', 'PERIOD_CLOSED']
 }, async (req) => {
   await TimeEntryService.deleteTimeEntry(req.valid.params.id, req.user.userId, actorOf(req));
+  return {};
+});
+
+// Sonderposten: eigene, privat verauslagte Beträge (erscheinen in GET /timetracking unter `specialItems`)
+api.post('/special-items', {
+  summary: 'Sonderposten erfassen (privat verauslagter Betrag)',
+  description: 'Erscheint auf dem Lohnzettel und wird mit dem Lohn ausgezahlt; zählt wie der Verdienst gegen die ' +
+    'Minijob-Grenze, der Rest geht in den Übertrag. Kaufdatum: nicht in der Zukunft, höchstens 1 Monat zurück (bzw. bis ' +
+    'zur freigegebenen Nacherfassung). Liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten ' +
+    'offenen (`billingDate`). Mit `clientId` sicher wiederholbar: Existiert bereits ein Posten mit dieser Kennung, kommt er mit 200 zurück.',
+  tags: ['Sonderposten'],
+  body: CreateSpecialItemBody,
+  response: SpecialItemData,
+  status: 201,
+  message: 'Sonderposten erfasst',
+  errors: ['VALIDATION_ERROR', 'PERIOD_CLOSED']
+}, async (req) => {
+  const { item, replayed } = SpecialItemService.create(req.user.userId, req.valid.body, actorOf(req));
+  if (replayed) return { status: 200, message: 'Sonderposten bereits vorhanden', data: { item } };
+  return item.billingDate ? { message: 'Sonderposten als Nachtrag erfasst', data: { item } } : { data: { item } };
+});
+
+api.put('/special-items/:id', {
+  summary: 'Eigenen Sonderposten ändern',
+  description: 'Gleiche Regeln wie beim Anlegen. Gesperrt, sobald die Periode abgeschlossen ist, in der er abgerechnet wird.',
+  tags: ['Sonderposten'],
+  params: SpecialItemIdParam,
+  body: UpdateSpecialItemBody,
+  response: SpecialItemData,
+  message: 'Sonderposten geändert',
+  errors: ['VALIDATION_ERROR', 'SPECIAL_ITEM_NOT_FOUND', 'PERIOD_CLOSED']
+}, async (req) => ({ data: { item: SpecialItemService.update(req.user.userId, req.valid.params.id, req.valid.body, actorOf(req)) } }));
+
+api.delete('/special-items/:id', {
+  summary: 'Eigenen Sonderposten löschen',
+  description: 'Gesperrt, sobald die Periode abgeschlossen ist, in der er abgerechnet wird. Bleibt im Änderungsprotokoll erhalten.',
+  tags: ['Sonderposten'],
+  params: SpecialItemIdParam,
+  message: 'Sonderposten gelöscht',
+  errors: ['SPECIAL_ITEM_NOT_FOUND', 'PERIOD_CLOSED']
+}, async (req) => {
+  SpecialItemService.delete(req.user.userId, req.valid.params.id, actorOf(req));
   return {};
 });
 

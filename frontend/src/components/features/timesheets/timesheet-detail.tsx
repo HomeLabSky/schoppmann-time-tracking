@@ -238,11 +238,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
       )}
 
       {data && summary && (
-        <SpecialItemsSection
-          items={data.specialItems}
-          total={summary.specialItemsTotal}
-          editable={closed ? undefined : { userId, periodStart: data.period.startDate, periodEnd: data.period.endDate }}
-        />
+        <SpecialItemsSection items={data.specialItems} total={summary.specialItemsTotal} />
       )}
 
       {data && summary && (

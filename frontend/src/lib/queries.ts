@@ -3,10 +3,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { adminApi, employeeApi, authApi } from './api'
-import { periodContaining, timeApi, type BillingPeriod, type TimeEntryPayload } from './timetracking'
+import { periodContaining, timeApi, type BillingPeriod, type SpecialItemPayload, type TimeEntryPayload } from './timetracking'
 import { formatDate, getErrorMessage } from './utils'
 import type { AuditQuery } from '@/types/audit'
-import type { NewMinijobSetting, NewUser, EditUser, SpecialItemPayload, UserSettings } from '@/types/api'
+import type { NewMinijobSetting, NewUser, EditUser, UserSettings } from '@/types/api'
 
 /**
  * Server-Zustand an einer Stelle: Abfragen mit Cache, Ladezustand und automatischem Neuladen.
@@ -271,30 +271,6 @@ export function useClosePeriod() {
   })
 }
 
-export function useSaveSpecialItem() {
-  const invalidate = useInvalidateTimesheets()
-  return useMutation({
-    mutationFn: ({ userId, id, data }: { userId: number; id?: number; data: SpecialItemPayload }) =>
-      id ? adminApi.updateSpecialItem(userId, id, data) : adminApi.createSpecialItem(userId, data),
-    onSuccess: (_r, vars) => {
-      invalidate()
-      toast.success(vars.id ? 'Sonderposten gespeichert.' : 'Sonderposten erfasst.')
-    },
-  })
-}
-
-export function useDeleteSpecialItem() {
-  const invalidate = useInvalidateTimesheets()
-  return useMutation({
-    mutationFn: ({ userId, id }: { userId: number; id: number }) => adminApi.deleteSpecialItem(userId, id),
-    onSuccess: () => {
-      invalidate()
-      toast.success('Sonderposten gelöscht.')
-    },
-    onError: notifyError('Sonderposten konnte nicht gelöscht werden'),
-  })
-}
-
 export function useReopenPeriod() {
   const invalidate = useInvalidateTimesheets()
   return useMutation({
@@ -390,6 +366,41 @@ export function useDeleteTimeEntry() {
       toast.success('Eintrag gelöscht.')
     },
     onError: notifyError('Eintrag konnte nicht gelöscht werden'),
+  })
+}
+
+export function useSaveSpecialItem() {
+  const qc = useQueryClient()
+  const invalidate = useInvalidateMyTime()
+  return useMutation({
+    mutationFn: ({ id, data }: { id?: number; data: SpecialItemPayload }) =>
+      id ? timeApi.updateSpecialItem(id, data) : timeApi.createSpecialItem(data),
+    onSuccess: (item, vars) => {
+      if (!vars.id && item.billingDate) {
+        const periods = qc.getQueryData<{ periods: BillingPeriod[] }>(queryKeys.myPeriods)?.periods
+        const target = periodContaining(periods, item.billingDate)
+        toast.success('Sonderposten als Nachtrag erfasst.', {
+          description: `Der ${formatDate(item.date)} gehört zu einer abgeschlossenen Periode. Ausgezahlt wird der Betrag ${
+            target ? `im ${target.monthName} ${target.year}` : `in der Periode ab ${formatDate(item.billingDate)}`
+          }.`,
+        })
+      } else {
+        toast.success(vars.id ? 'Sonderposten gespeichert.' : 'Sonderposten erfasst.')
+      }
+      invalidate()
+    },
+  })
+}
+
+export function useDeleteSpecialItem() {
+  const invalidate = useInvalidateMyTime()
+  return useMutation({
+    mutationFn: (id: number) => timeApi.removeSpecialItem(id),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Sonderposten gelöscht.')
+    },
+    onError: notifyError('Sonderposten konnte nicht gelöscht werden'),
   })
 }
 

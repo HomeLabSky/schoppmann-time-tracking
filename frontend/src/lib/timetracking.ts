@@ -29,7 +29,7 @@ export interface TimeRecord {
   updatedAt: string
 }
 
-/** Sonderposten: privat verauslagter Betrag, wird mit dem Lohn ausgezahlt und zählt zur Grenze (nur Admin erfasst) */
+/** Sonderposten: privat verauslagter Betrag, wird mit dem Lohn ausgezahlt und zählt zur Grenze (erfasst der Mitarbeiter selbst) */
 export interface SpecialItem {
   id: number
   userId: number
@@ -106,6 +106,12 @@ export interface TimeEntryPayload {
   description?: string
 }
 
+export interface SpecialItemPayload {
+  date: string
+  description: string
+  amount: number
+}
+
 type Envelope<T> = { success: boolean; message: string; data: T }
 
 /** Periode, die das Datum enthält (YYYY-MM-DD) */
@@ -129,4 +135,13 @@ export const timeApi = {
     apiClient.put<Envelope<{ entry: TimeRecord }>>(`/api/timetracking/${id}`, entry).then((r) => r.data.entry),
 
   remove: (id: number) => apiClient.delete<Envelope<unknown>>(`/api/timetracking/${id}`),
+
+  // Sonderposten: eigene, privat verauslagte Beträge
+  createSpecialItem: (item: SpecialItemPayload) =>
+    apiClient.post<Envelope<{ item: SpecialItem }>>('/api/timetracking/special-items', item).then((r) => r.data.item),
+
+  updateSpecialItem: (id: number, item: SpecialItemPayload) =>
+    apiClient.put<Envelope<{ item: SpecialItem }>>(`/api/timetracking/special-items/${id}`, item).then((r) => r.data.item),
+
+  removeSpecialItem: (id: number) => apiClient.delete<Envelope<unknown>>(`/api/timetracking/special-items/${id}`),
 }

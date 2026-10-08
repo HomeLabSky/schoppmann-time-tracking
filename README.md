@@ -71,12 +71,12 @@ Im Admin-Bereich:
   darf der Mitarbeiter weiter als einen Monat zurück erfassen (z. B. Übernahme aus Excel); die Einträge landen in ihrem
   eigenen Monat. Ist der schon abgeschlossen, werden sie Nachtrag im direkt folgenden Monat (wie damals bei Stunden nach
   der Abrechnung). Danach das Datum wieder leeren und die Monate der Reihe nach abschließen.
-- **Sonderposten**: Hat ein Mitarbeiter etwas privat bezahlt (z. B. im Baumarkt), erfasst ein Admin den Betrag im
-  Zeitnachweis unter *Sonderposten* (Kaufdatum, Bezeichnung, Betrag). Er steht als eigene Tabelle auf dem Lohnzettel und
-  wird mit dem Lohn ausgezahlt: Verdienst, Sonderposten und Übertrag zählen zusammen gegen die Minijob-Grenze, was
-  darüber liegt, geht in den Übertrag. In abgeschlossenen
-  Perioden sind Sonderposten gesperrt; ein Kaufdatum in einem abgeschlossenen Monat wird Nachtrag in der nächsten
-  offenen Periode. Mitarbeiter sehen ihre Sonderposten in der Zeiterfassung.
+- **Sonderposten**: Hat ein Mitarbeiter etwas privat bezahlt (z. B. im Baumarkt), erfasst er den Betrag selbst in der
+  Zeiterfassung unter *Sonderposten* (Kaufdatum, Bezeichnung, Betrag; gleiches Datumsfenster wie Arbeitszeiten). Admins
+  sehen die Sonderposten im Zeitnachweis. Sie stehen als eigene Tabelle auf dem Lohnzettel und werden mit dem Lohn
+  ausgezahlt: Verdienst, Sonderposten und Übertrag zählen zusammen gegen die Minijob-Grenze, was darüber liegt, geht in
+  den Übertrag. In abgeschlossenen Perioden sind Sonderposten gesperrt; ein Kaufdatum in einem abgeschlossenen Monat
+  wird Nachtrag in der nächsten offenen Periode.
 - **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen
   (Arbeitszeitnachweis, Verdienst, Übertrag, Auszahlung). Admins laden ihn im Zeitnachweis eines Mitarbeiters herunter;
   in der Übersicht erzeugt **Alle Lohnzettel (PDF)** zum Monatsabschluss eine Datei mit allen abgeschlossenen

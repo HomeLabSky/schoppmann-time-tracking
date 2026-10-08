@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useDeleteSpecialItem, useSaveSpecialItem } from '@/lib/queries'
+import { useDeleteSpecialItem, useMySettings, useSaveSpecialItem } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
 import type { SpecialItem } from '@/lib/timetracking'
 import { formatCurrency, formatDate, toLocalDateString } from '@/lib/utils'
@@ -21,16 +21,22 @@ import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal'
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 interface Editable {
-  userId: number
-  /** Periode des Zeitnachweises: Vorschlag und Obergrenze für das Kaufdatum */
+  /** Angezeigte Periode: Vorschlag für das Kaufdatum */
   periodStart: string
   periodEnd: string
+}
+
+/** Frühestes erlaubtes Kaufdatum: heute vor einem Monat (Backend-Regel wie bei Arbeitszeiten). */
+function earliestDate(today = new Date()): string {
+  const d = new Date(today)
+  d.setMonth(d.getMonth() - 1)
+  return toLocalDateString(d)
 }
 
 interface Props {
   items: SpecialItem[]
   total: number
-  /** Nur Admins in offenen Perioden: erfassen, ändern, löschen */
+  /** Nur der Mitarbeiter selbst in offenen Perioden: erfassen, ändern, löschen */
   editable?: Editable
 }
 
@@ -53,7 +59,7 @@ export function SpecialItemsSection({ items, total, editable }: Props) {
       confirmLabel: 'Löschen',
       destructive: true,
     })
-    if (ok) remove.mutate({ userId: editable.userId, id: item.id })
+    if (ok) remove.mutate(item.id)
   }
 
   return (
@@ -145,13 +151,17 @@ export function SpecialItemsSection({ items, total, editable }: Props) {
 }
 
 /** Anlegen (item = 'new') oder Bearbeiten eines Sonderpostens. */
-function SpecialItemDialog({ item, onClose, userId, periodStart, periodEnd }: { item: SpecialItem | 'new' | null; onClose: () => void } & Editable) {
+function SpecialItemDialog({ item, onClose, periodStart, periodEnd }: { item: SpecialItem | 'new' | null; onClose: () => void } & Editable) {
   const save = useSaveSpecialItem()
+  const settings = useMySettings()
   const editing = item && item !== 'new' ? item : null
   const today = toLocalDateString()
-  // Vorschlag: heute, sofern in der Periode – sonst ihr letzter Tag
-  const suggestedDate = today >= periodStart && today <= periodEnd ? today : periodEnd < today ? periodEnd : today
-  const maxDate = periodEnd < today ? periodEnd : today
+  // Nacherfassung (vom Admin freigegeben): weiter als einen Monat zurück
+  const regularMin = earliestDate()
+  const backdateFrom = settings.data?.nacherfassungAb
+  const minDate = backdateFrom && backdateFrom < regularMin ? backdateFrom : regularMin
+  // Vorschlag: heute, sofern in der Periode – sonst ihr letzter Tag (falls erlaubt)
+  const suggestedDate = today >= periodStart && today <= periodEnd ? today : periodEnd < today && periodEnd >= minDate ? periodEnd : today
   const form = useForm<SpecialItemInput>({
     resolver: zodResolver(specialItemSchema),
     defaultValues: { date: suggestedDate, description: '', amount: Number.NaN },
@@ -167,7 +177,7 @@ function SpecialItemDialog({ item, onClose, userId, periodStart, periodEnd }: { 
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
-      await save.mutateAsync({ userId, id: editing?.id, data: values })
+      await save.mutateAsync({ id: editing?.id, data: values })
       onClose()
     } catch (error) {
       applyServerErrors(error, form.setError, ['date', 'description', 'amount'])
@@ -188,11 +198,13 @@ function SpecialItemDialog({ item, onClose, userId, periodStart, periodEnd }: { 
           <FormField
             id="si-date"
             label="Kaufdatum"
-            hint="Liegt es in einer abgeschlossenen Periode, wird der Posten in der nächsten offenen Periode erstattet."
+            hint={`${
+              minDate < regularMin ? `Nacherfassung freigegeben: ab dem ${formatDate(minDate)}` : 'Höchstens einen Monat zurück'
+            }, nicht in der Zukunft. Liegt es in einer abgeschlossenen Periode, wird der Betrag in der nächsten offenen ausgezahlt.`}
             error={errors.date?.message}
             required
           >
-            {(c) => <Input {...c} type="date" max={maxDate} className="max-w-48" {...form.register('date')} />}
+            {(c) => <Input {...c} type="date" min={minDate} max={today} className="max-w-48" {...form.register('date')} />}
           </FormField>
           <FormField id="si-description" label="Bezeichnung" error={errors.description?.message} required>
             {(c) => <Input {...c} maxLength={200} placeholder="z. B. Leuchtmittel Treppenhaus (Baumarkt)" {...form.register('description')} />}
