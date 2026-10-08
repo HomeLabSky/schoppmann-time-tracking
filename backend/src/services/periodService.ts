@@ -28,6 +28,8 @@ export interface TimesheetOverviewRow {
   minijobLimit: number;
   minijobLimitMissing: boolean;
   exceedsLimit: boolean;
+  /** Etwas abzurechnen: Einträge oder Übertrag aus Vorperioden (oder bereits abgeschlossen) */
+  billable: boolean;
   /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
   status: 'open' | 'ready' | 'closed';
   closedAt: Date | null;
@@ -69,6 +71,7 @@ const closuresOf = (userId: number): PeriodClosure[] =>
  * - abschließen, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss, z. B. für den
  *   Steuerberater); Arbeitszeiten für die restlichen Tage werden dann Nachträge in der nächsten offenen Periode;
  * - nur, wenn frühere Perioden mit Einträgen bereits abgeschlossen sind (der Übertrag baut aufeinander auf);
+ * - nur mit etwas abzurechnen (Einträge oder Übertrag) – leere Lohnzettel entstehen nicht;
  * - wieder öffnen nur mit Begründung und nur die jüngste abgeschlossene Periode;
  * - beides steht im Änderungsprotokoll, Zahlen werden beim Abschluss eingefroren.
  */
@@ -113,6 +116,12 @@ export class PeriodService {
 
       const data = TimeEntryService.getMonthlyTimeRecordsSync(userId, year, month);
       const s = data.summary;
+      if (s.entryCount === 0 && s.carryIn === 0) {
+        throw new AppError('PERIOD_EMPTY',
+          `In der Periode ${displayRange(target.startDate, target.endDate)} gibt es weder Einträge noch einen Übertrag – ` +
+          'es gibt nichts abzuschließen'
+        );
+      }
       if (s.minijobLimitMissing) {
         throw new AppError('MINIJOB_LIMIT_MISSING',
           'Für diese Periode (oder eine frühere offene Periode im Übertrag) ist keine ' +
@@ -220,6 +229,7 @@ export class PeriodService {
         // Abgeschlossene Perioden rechnen mit der eingefrorenen Grenze – dort fehlt nichts
         minijobLimitMissing: !closed && s.minijobLimitMissing,
         exceedsLimit: s.exceedsLimit,
+        billable: closed || s.entryCount > 0 || s.carryIn > 0,
         status: closed ? 'closed' : today > data.period.endDate ? 'ready' : 'open',
         closedAt: data.closure ? data.closure.closedAt : null
       });

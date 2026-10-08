@@ -41,7 +41,7 @@ export default function AdminOverviewPage() {
     }
   }, [current.data])
 
-  const toClose = (previous.data ?? []).filter((r) => r.status === 'ready' && r.entryCount > 0)
+  const toClose = (previous.data ?? []).filter((r) => r.status === 'ready' && r.billable)
   const closedCount = (previous.data ?? []).filter((r) => r.status === 'closed').length
   const nearLimit = (current.data ?? [])
     .filter((r) => r.entryCount > 0)

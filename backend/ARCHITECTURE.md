@@ -258,7 +258,9 @@ Mitarbeiter betroffen ist (`targetUserId`) sowie Zustand vorher/nachher als JSON
   `summary.minijobLimitMissing`; der Abschluss wird mit `MINIJOB_LIMIT_MISSING` (409) abgelehnt.
 - Monatsübersicht aller Mitarbeiter: `GET /api/v1/admin/timesheets/overview?month=YYYY-MM` – je Mitarbeiter Stunden,
   Beträge und Status (`open` läuft, `ready` abschließbar, `closed`) in dessen eigener Abrechnungsperiode
-  (`PeriodService.overview`). Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.
+  (`PeriodService.overview`). Deaktivierte Konten erscheinen nur mit Einträgen in der Periode. `billable: false` heißt
+  weder Einträge noch Übertrag: Die Oberfläche blendet solche Mitarbeiter aus, und `closePeriod` lehnt den Abschluss mit
+  `PERIOD_EMPTY` ab (keine leeren Lohnzettel). Ein Übertrag ohne neue Einträge muss dagegen abgeschlossen werden.
 
 ## Tests
 

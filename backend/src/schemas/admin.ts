@@ -50,6 +50,7 @@ const TimesheetOverviewRow = z.object({
   minijobLimit: z.number(),
   minijobLimitMissing: z.boolean().describe('Offene Periode ohne gültige Minijob-Grenze (Abschluss gesperrt)'),
   exceedsLimit: z.boolean(),
+  billable: z.boolean().describe('Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen'),
   status: z.enum(['open', 'ready', 'closed']).describe('open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen'),
   closedAt: timestamp().nullable()
 }).meta({ id: 'TimesheetOverviewRow', description: 'Kennzahlen eines Mitarbeiters in seiner Abrechnungsperiode' });

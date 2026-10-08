@@ -5276,7 +5276,7 @@
       "get": {
         "operationId": "getAdminTimesheetsOverview",
         "summary": "Monatsübersicht aller Mitarbeiter",
-        "description": "Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.",
+        "description": "Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. Deaktivierte Konten erscheinen nur mit Einträgen in der Periode. `billable: false` = weder Einträge noch Übertrag, nichts abzuschließen (die Oberfläche blendet solche Zeilen aus).",
         "tags": [
           "Zeitnachweise"
         ],
@@ -5780,7 +5780,7 @@
       "post": {
         "operationId": "postAdminTimesheetsByUserIdClose",
         "summary": "Periode abschließen (Zahlen werden eingefroren)",
-        "description": "Möglich, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss; spätere Einträge für die Periode werden Nachträge in der nächsten offenen Periode). Frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.",
+        "description": "Möglich, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss; spätere Einträge für die Periode werden Nachträge in der nächsten offenen Periode). Frühere Perioden mit Einträgen müssen abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein. Ohne Einträge und ohne Übertrag gibt es nichts abzuschließen (PERIOD_EMPTY).",
         "tags": [
           "Zeitnachweise"
         ],
@@ -5900,7 +5900,7 @@
             }
           },
           "409": {
-            "description": "PERIOD_NOT_STARTED, PERIOD_ALREADY_CLOSED, PERIOD_OVERLAP, PERIOD_PREVIOUS_OPEN, MINIJOB_LIMIT_MISSING",
+            "description": "PERIOD_NOT_STARTED, PERIOD_EMPTY, PERIOD_ALREADY_CLOSED, PERIOD_OVERLAP, PERIOD_PREVIOUS_OPEN, MINIJOB_LIMIT_MISSING",
             "content": {
               "application/json": {
                 "schema": {
@@ -6580,6 +6580,7 @@
               "CLIENT_ID_CONFLICT",
               "PERIOD_CLOSED",
               "PERIOD_NOT_STARTED",
+              "PERIOD_EMPTY",
               "PERIOD_ALREADY_CLOSED",
               "PERIOD_NOT_CLOSED",
               "PERIOD_PREVIOUS_OPEN",
@@ -7272,6 +7273,10 @@
           "exceedsLimit": {
             "type": "boolean"
           },
+          "billable": {
+            "type": "boolean",
+            "description": "Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -7309,6 +7314,7 @@
           "minijobLimit",
           "minijobLimitMissing",
           "exceedsLimit",
+          "billable",
           "status",
           "closedAt"
         ],

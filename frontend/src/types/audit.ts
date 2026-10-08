@@ -38,6 +38,8 @@ export interface TimesheetOverviewRow {
   minijobLimit: number
   minijobLimitMissing: boolean
   exceedsLimit: boolean
+  /** Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen – sonst nichts abzuschließen */
+  billable: boolean
   /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
   status: 'open' | 'ready' | 'closed'
   closedAt: string | null

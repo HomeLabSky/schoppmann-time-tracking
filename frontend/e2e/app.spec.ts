@@ -144,6 +144,13 @@ test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', as
   await login(page, ADMIN)
   await page.goto('/admin/timesheets')
 
+  // Nora Neu (ohne Stunden) ist ausgeblendet – es gibt nichts abzuschließen; auf Wunsch einblendbar
+  await expect(page.getByTestId('hidden-empty')).toContainText('1 Mitarbeiter ohne Stunden')
+  await expect(page.getByRole('button', { name: 'Nora Neu' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Einblenden' }).click()
+  await expect(page.getByRole('row').filter({ hasText: 'Nora Neu' }).getByText('Keine Stunden')).toBeVisible()
+  await page.getByRole('button', { name: 'Ausblenden' }).click()
+
   await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
   await expect(page).toHaveURL(/user=\d+/)
   await expect(page.getByText('Bereit zum Abschluss')).toBeVisible()
