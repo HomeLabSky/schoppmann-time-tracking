@@ -134,9 +134,9 @@ api.post('/:userId/reopen', {
 const SpecialItemParams = UserIdParam.extend({ itemId: integer('Sonderposten-ID', { min: 1 }) });
 
 api.post('/:userId/special-items', {
-  summary: 'Sonderposten erfassen (Erstattung zusätzlich zum Lohn)',
-  description: 'Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird zusätzlich zum Lohn ' +
-    'ausgezahlt (zählt nicht gegen die Minijob-Grenze, kein Übertrag). Zugeordnet nach Kaufdatum; liegt es in einer ' +
+  summary: 'Sonderposten erfassen (privat verauslagter Betrag)',
+  description: 'Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird mit dem Lohn ' +
+    'ausgezahlt. Zählt wie der Verdienst gegen die Minijob-Grenze, der Rest geht in den Übertrag. Zugeordnet nach Kaufdatum; liegt es in einer ' +
     'abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).',
   auth: 'admin',
   tags: ['Sonderposten'],

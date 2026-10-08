@@ -281,7 +281,7 @@ export const adminApi = {
   reopenPeriod: (userId: number, month: string, reason: string) =>
     apiClient.post<Message>(`/api/admin/timesheets/${userId}/reopen`, { month, reason }),
 
-  // Sonderposten (Erstattung zusätzlich zum Lohn)
+  // Sonderposten (verauslagte Beträge, zählen zur Grenze)
   createSpecialItem: (userId: number, data: SpecialItemPayload) =>
     apiClient.post<Envelope<{ item: SpecialItem }>>(`/api/admin/timesheets/${userId}/special-items`, data),
 

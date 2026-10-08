@@ -4812,11 +4812,11 @@
                               },
                               "totalEarnings": {
                                 "type": "number",
-                                "description": "Verdienst der Periode in Euro"
+                                "description": "Verdienst der Periode in Euro (ohne Sonderposten)"
                               },
                               "actualEarnings": {
                                 "type": "number",
-                                "description": "Verdienst + Übertrag aus Vorperioden"
+                                "description": "Verdienst + Sonderposten + Übertrag aus Vorperioden"
                               },
                               "carryIn": {
                                 "type": "number"
@@ -4827,15 +4827,15 @@
                               },
                               "paidThisMonth": {
                                 "type": "number",
-                                "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+                                "description": "Auszahlung dieser Periode inkl. Sonderposten (höchstens die Grenze)"
                               },
                               "specialItemsTotal": {
                                 "type": "number",
-                                "description": "Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)"
+                                "description": "Summe der Sonderposten in Euro (zählen wie der Verdienst gegen die Grenze)"
                               },
                               "payout": {
                                 "type": "number",
-                                "description": "Gesamtauszahlung: Lohn + Sonderposten"
+                                "description": "Auszahlung (gleich paidThisMonth; Sonderposten sind enthalten)"
                               },
                               "minijobLimit": {
                                 "type": "number"
@@ -6106,8 +6106,8 @@
     "/admin/timesheets/{userId}/special-items": {
       "post": {
         "operationId": "postAdminTimesheetsByUserIdSpecialItems",
-        "summary": "Sonderposten erfassen (Erstattung zusätzlich zum Lohn)",
-        "description": "Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird zusätzlich zum Lohn ausgezahlt (zählt nicht gegen die Minijob-Grenze, kein Übertrag). Zugeordnet nach Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).",
+        "summary": "Sonderposten erfassen (privat verauslagter Betrag)",
+        "description": "Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird mit dem Lohn ausgezahlt. Zählt wie der Verdienst gegen die Minijob-Grenze, der Rest geht in den Übertrag. Zugeordnet nach Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).",
         "tags": [
           "Sonderposten"
         ],
@@ -7349,15 +7349,15 @@
           },
           "paid": {
             "type": "number",
-            "description": "Lohn-Auszahlung in Euro (höchstens die Grenze)"
+            "description": "Auszahlung in Euro inkl. Sonderposten (höchstens die Grenze)"
           },
           "specialItems": {
             "type": "number",
-            "description": "Erstattete Sonderposten in Euro"
+            "description": "Sonderposten der Periode in Euro (in der Auszahlung enthalten)"
           },
           "payout": {
             "type": "number",
-            "description": "Gesamtauszahlung in Euro: Lohn + Sonderposten"
+            "description": "Auszahlung in Euro (gleich paid)"
           },
           "carryOut": {
             "type": "number",
@@ -7431,7 +7431,7 @@
           },
           "specialItemsCents": {
             "type": "integer",
-            "description": "Summe der Sonderposten (Erstattung zusätzlich zum Lohn)"
+            "description": "Summe der Sonderposten (in paidCents/carryOutCents enthalten)"
           },
           "createdAt": {
             "type": "string",
@@ -7470,11 +7470,11 @@
           },
           "totalEarnings": {
             "type": "number",
-            "description": "Verdienst der Periode in Euro"
+            "description": "Verdienst der Periode in Euro (ohne Sonderposten)"
           },
           "actualEarnings": {
             "type": "number",
-            "description": "Verdienst + Übertrag aus Vorperioden"
+            "description": "Verdienst + Sonderposten + Übertrag aus Vorperioden"
           },
           "carryIn": {
             "type": "number"
@@ -7485,15 +7485,15 @@
           },
           "paidThisMonth": {
             "type": "number",
-            "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+            "description": "Auszahlung dieser Periode inkl. Sonderposten (höchstens die Grenze)"
           },
           "specialItemsTotal": {
             "type": "number",
-            "description": "Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)"
+            "description": "Summe der Sonderposten in Euro (zählen wie der Verdienst gegen die Grenze)"
           },
           "payout": {
             "type": "number",
-            "description": "Gesamtauszahlung: Lohn + Sonderposten"
+            "description": "Auszahlung (gleich paidThisMonth; Sonderposten sind enthalten)"
           },
           "minijobLimit": {
             "type": "number"
@@ -7661,7 +7661,7 @@
           "createdAt",
           "updatedAt"
         ],
-        "description": "Sonderposten: privat verauslagter Betrag, wird zusätzlich zum Lohn erstattet"
+        "description": "Sonderposten: privat verauslagter Betrag, wird mit dem Lohn ausgezahlt (zählt gegen die Grenze)"
       },
       "TimeEntry": {
         "type": "object",
@@ -7811,7 +7811,7 @@
           },
           "paidThisMonth": {
             "type": "number",
-            "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+            "description": "Auszahlung dieser Periode inkl. Sonderposten (höchstens die Grenze)"
           },
           "specialItemsTotal": {
             "type": "number",
@@ -7819,7 +7819,7 @@
           },
           "payout": {
             "type": "number",
-            "description": "Gesamtauszahlung: Lohn + Sonderposten"
+            "description": "Auszahlung (gleich paidThisMonth; Sonderposten sind enthalten)"
           },
           "carryOut": {
             "type": "number",

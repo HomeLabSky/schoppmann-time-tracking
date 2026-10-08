@@ -179,22 +179,27 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Arbeitszeit" value={summary ? formatHours(summary.totalHours) : ''} loading={sheet.isLoading} hint={summary ? formatEntryCount(summary.entryCount, summary.workDays) : undefined} />
-        <StatCard label="Verdienst" value={summary ? formatCurrency(summary.totalEarnings) : ''} loading={sheet.isLoading} hint={summary && summary.carryIn > 0 ? `+ ${formatCurrency(summary.carryIn)} Übertrag` : undefined} />
+        <StatCard
+          label="Verdienst"
+          value={summary ? formatCurrency(summary.totalEarnings) : ''}
+          loading={sheet.isLoading}
+          hint={
+            summary
+              ? [
+                  summary.specialItemsTotal > 0 ? `+ ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : null,
+                  summary.carryIn > 0 ? `+ ${formatCurrency(summary.carryIn)} Übertrag` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || undefined
+              : undefined
+          }
+        />
         <StatCard
           label="Auszahlung"
           value={summary ? formatCurrency(summary.payout) : ''}
           tone={limitMissing ? 'warning' : 'default'}
           loading={sheet.isLoading}
-          hint={
-            summary
-              ? [
-                  limitMissing ? 'vorläufig, keine Grenze' : `Grenze ${formatCurrency(summary.minijobLimit)}`,
-                  summary.specialItemsTotal > 0 ? `inkl. ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')
-              : undefined
-          }
+          hint={summary ? (limitMissing ? 'vorläufig, keine Grenze' : `Grenze ${formatCurrency(summary.minijobLimit)}`) : undefined}
         />
         <StatCard
           label="Übertrag in nächste Periode"
@@ -252,10 +257,9 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
             details={[
               `${formatDate(data.period.startDate)} – ${formatDate(data.period.endDate)}`,
               `${formatEntryCount(summary.entryCount, summary.workDays)}, ${formatHours(summary.totalHours)}`,
-              `Verdienst ${formatCurrency(summary.totalEarnings)} · Lohn ${formatCurrency(summary.paidThisMonth)} · Übertrag ${formatCurrency(summary.carryOut)}`,
-              ...(summary.specialItemsTotal > 0
-                ? [`Sonderposten ${formatCurrency(summary.specialItemsTotal)} (${data.specialItems.length}) · Auszahlung gesamt ${formatCurrency(summary.payout)}`]
-                : []),
+              `Verdienst ${formatCurrency(summary.totalEarnings)}` +
+                (summary.specialItemsTotal > 0 ? ` · Sonderposten ${formatCurrency(summary.specialItemsTotal)} (${data.specialItems.length})` : ''),
+              `Auszahlung ${formatCurrency(summary.paidThisMonth)} · Übertrag ${formatCurrency(summary.carryOut)}`,
             ]}
           />
           <ReopenDialog open={dialog === 'reopen'} onClose={() => setDialog(null)} userId={userId} month={month} name={employee?.name ?? ''} />

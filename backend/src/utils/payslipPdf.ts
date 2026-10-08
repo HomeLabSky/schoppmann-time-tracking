@@ -16,7 +16,7 @@ export interface Payslip {
   period: { startDate: string; endDate: string; label: string };
   closedAt: Date;
   entries: TimeEntryJSON[];
-  /** Sonderposten: privat verauslagt, zusätzlich zum Lohn erstattet (Tabelle nur, wenn vorhanden) */
+  /** Sonderposten: privat verauslagt, mit dem Lohn ausgezahlt – zählen gegen die Grenze (Tabelle nur, wenn vorhanden) */
   specialItems: { date: string; description: string; amountCents: number; billingDate: string | null }[];
   totals: {
     minutes: number;
@@ -159,11 +159,11 @@ const drawInfo = (doc: Doc, payslip: Payslip, y: number): number => {
   return y + INFO_HEIGHT;
 };
 
-/** Abrechnung: Arbeitszeit links, Rechenweg zur Auszahlung rechts (mit Sonderposten zwei Zeilen mehr) */
+/** Abrechnung: Arbeitszeit links, Rechenweg zur Auszahlung rechts (mit Sonderposten eine Zeile mehr) */
 const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
   const t = payslip.totals;
   const withItems = t.specialItemsCents > 0;
-  const extra = withItems ? 34 : 0;
+  const extra = withItems ? 16 : 0;
   const height = 104 + extra;
   doc.roundedRect(MARGIN.left, y, CONTENT_WIDTH, height, 4).fillColor(COLOR.fill).fill();
 
@@ -189,15 +189,12 @@ const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
   };
   const rule = (ruleY: number) =>
     doc.moveTo(boxX, ruleY).lineTo(boxX + boxWidth, ruleY).lineWidth(0.75).strokeColor(COLOR.line).stroke();
+  // Verdienst, Sonderposten und Übertrag zählen zusammen gegen die Grenze; ausgezahlt wird höchstens die Grenze
   line('Verdienst in diesem Monat', euros(t.earningsCents), y + pad);
-  line('+ Übertrag aus Vormonat', euros(t.carryInCents), y + pad + 16);
-  rule(y + pad + 34);
-  if (withItems) {
-    line('Lohn', euros(t.paidCents), y + pad + 40);
-    line('+ Sonderposten (Erstattung)', euros(t.specialItemsCents), y + pad + 56);
-    rule(y + pad + 74);
-  }
-  line('Auszahlung', euros(t.paidCents + t.specialItemsCents), y + pad + 42 + extra, true, 12);
+  if (withItems) line('+ Sonderposten', euros(t.specialItemsCents), y + pad + 16);
+  line('+ Übertrag aus Vormonat', euros(t.carryInCents), y + pad + 16 + extra);
+  rule(y + pad + 34 + extra);
+  line('Auszahlung', euros(t.paidCents), y + pad + 42 + extra, true, 12);
   line('Übertrag in den nächsten Monat', euros(t.carryOutCents), y + pad + 64 + extra);
 
   return y + height + 22;

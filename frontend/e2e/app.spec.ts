@@ -186,7 +186,7 @@ test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', as
   await expect(page.getByText('Periode abgeschlossen').first()).toBeVisible()
 })
 
-test('Sonderposten: Admin erfasst eine Auslage, sie erhöht die Auszahlung und lässt sich bearbeiten', async ({ page }) => {
+test('Sonderposten: Admin erfasst eine Auslage, sie zählt mit dem Verdienst zur Auszahlung und lässt sich bearbeiten', async ({ page }) => {
   await login(page, ADMIN)
   await page.goto('/admin/timesheets')
   await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
@@ -203,7 +203,9 @@ test('Sonderposten: Admin erfasst eine Auslage, sie erhöht die Auszahlung und l
 
   const row = page.getByRole('row').filter({ hasText: 'E2E Leuchtmittel' })
   await expect(row).toContainText('23,90')
-  await expect(page.getByText(/inkl\. 23,90\s€ Sonderposten/)).toBeVisible()
+  // 54,00 € Verdienst + 23,90 € Sonderposten, unter der Grenze von 603 € → beides wird ausgezahlt
+  await expect(page.getByText(/^\+ 23,90\s€ Sonderposten$/)).toBeVisible()
+  await expect(page.getByText(/^77,90\s€$/)).toBeVisible()
 
   await row.getByRole('button', { name: 'Aktionen für E2E Leuchtmittel' }).click()
   await page.getByRole('menuitem', { name: 'Bearbeiten' }).click()
@@ -211,7 +213,7 @@ test('Sonderposten: Admin erfasst eine Auslage, sie erhöht die Auszahlung und l
   await edit.getByLabel('Betrag (€)').fill('24.50')
   await edit.getByRole('button', { name: 'Speichern' }).click()
   await expect(edit).toBeHidden()
-  await expect(page.getByText(/inkl\. 24,50\s€ Sonderposten/)).toBeVisible()
+  await expect(page.getByText(/^78,50\s€$/)).toBeVisible()
 
   await page.goto('/admin/audit')
   await expect(page.getByText('Sonderposten geändert').first()).toBeVisible()

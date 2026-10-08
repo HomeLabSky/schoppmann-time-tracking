@@ -29,7 +29,7 @@ export interface TimeRecord {
   updatedAt: string
 }
 
-/** Sonderposten: privat verauslagter Betrag, wird mit dem Lohnzettel zusätzlich zum Lohn erstattet (nur Admin erfasst) */
+/** Sonderposten: privat verauslagter Betrag, wird mit dem Lohn ausgezahlt und zählt zur Grenze (nur Admin erfasst) */
 export interface SpecialItem {
   id: number
   userId: number
@@ -51,11 +51,11 @@ export interface TimeRecordSummary {
   actualEarnings: number
   carryIn: number
   carryOut: number
-  /** Lohn-Auszahlung (höchstens die Grenze) */
+  /** Auszahlung inkl. Sonderposten (höchstens die Grenze) */
   paidThisMonth: number
-  /** Summe der Sonderposten (zusätzlich zum Lohn, ohne Grenze und Übertrag) */
+  /** Summe der Sonderposten (zählen wie der Verdienst gegen die Grenze) */
   specialItemsTotal: number
-  /** Gesamtauszahlung: Lohn + Sonderposten */
+  /** Gleich paidThisMonth (Sonderposten sind enthalten) */
   payout: number
   minijobLimit: number
   hourlyRate: number

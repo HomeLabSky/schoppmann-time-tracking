@@ -422,11 +422,13 @@ async function main(): Promise<void> {
     const itemUpdated = await api('PUT', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken, body: { amount: 24.5 } });
     check('Sonderposten geändert 200', itemUpdated.status === 200 && itemUpdated.json?.data?.item?.amount === 24.5, itemUpdated.json);
     const empMonthItems = await api('GET', `/api/timetracking?month=${prevMonth}`, { token: empToken });
+    const itemSummary = empMonthItems.json?.data?.summary;
     check(
-      'Mitarbeiter sieht Sonderposten und Gesamtauszahlung',
-      empMonthItems.json?.data?.specialItems?.length === 1 && empMonthItems.json.data.summary.specialItemsTotal === 24.5 &&
-        empMonthItems.json.data.summary.payout === empMonthItems.json.data.summary.paidThisMonth + 24.5,
-      empMonthItems.json?.data?.summary
+      'Mitarbeiter sieht Sonderposten; sie zählen mit dem Verdienst gegen die Grenze',
+      empMonthItems.json?.data?.specialItems?.length === 1 && itemSummary?.specialItemsTotal === 24.5 &&
+        Math.abs(itemSummary.actualEarnings - (itemSummary.totalEarnings + itemSummary.carryIn + 24.5)) < 0.001 &&
+        itemSummary.payout === itemSummary.paidThisMonth,
+      itemSummary
     );
     const itemDeleted = await api('DELETE', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken });
     check('Sonderposten gelöscht 200', itemDeleted.status === 200, itemDeleted.json);

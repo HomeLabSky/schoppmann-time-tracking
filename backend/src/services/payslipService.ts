@@ -102,7 +102,7 @@ export class PayslipService {
         earnings: billing.toEuros(c.earningsCents),
         paid: billing.toEuros(c.paidCents),
         specialItems: billing.toEuros(c.specialItemsCents),
-        payout: billing.toEuros(c.paidCents + c.specialItemsCents),
+        payout: billing.toEuros(c.paidCents),
         carryOut: billing.toEuros(c.carryOutCents)
       }));
   }

@@ -76,11 +76,11 @@ export interface Payslip {
   closedAt: string
   totalHours: number
   earnings: number
-  /** Lohn-Auszahlung (höchstens die Grenze) */
+  /** Auszahlung inkl. Sonderposten (höchstens die Grenze) */
   paid: number
-  /** Erstattete Sonderposten */
+  /** Sonderposten der Periode (in der Auszahlung bzw. im Übertrag enthalten) */
   specialItems: number
-  /** Gesamtauszahlung: Lohn + Sonderposten */
+  /** Gleich paid */
   payout: number
   carryOut: number
 }

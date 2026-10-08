@@ -27,7 +27,7 @@ const PeriodClosure = z.object({
   carryInCents: z.number().int(),
   paidCents: z.number().int(),
   carryOutCents: z.number().int(),
-  specialItemsCents: z.number().int().describe('Summe der Sonderposten (Erstattung zusätzlich zum Lohn)'),
+  specialItemsCents: z.number().int().describe('Summe der Sonderposten (in paidCents/carryOutCents enthalten)'),
   createdAt: timestamp(),
   updatedAt: timestamp()
 }).meta({ id: 'PeriodClosure', description: 'Monatsabschluss mit eingefrorenen Zahlen (Beträge in Cent)' });
@@ -46,9 +46,9 @@ const TimesheetOverviewRow = z.object({
   workDays: z.number().int().describe('Anzahl Tage mit Einträgen'),
   totalHours: z.number(),
   totalEarnings: z.number().describe('Verdienst der Periode in Euro'),
-  paidThisMonth: z.number().describe('Lohn-Auszahlung dieser Periode (höchstens die Grenze)'),
+  paidThisMonth: z.number().describe('Auszahlung dieser Periode inkl. Sonderposten (höchstens die Grenze)'),
   specialItemsTotal: z.number().describe('Summe der Sonderposten in Euro'),
-  payout: z.number().describe('Gesamtauszahlung: Lohn + Sonderposten'),
+  payout: z.number().describe('Auszahlung (gleich paidThisMonth; Sonderposten sind enthalten)'),
   carryOut: z.number().describe('Übertrag in die nächste Periode'),
   minijobLimit: z.number(),
   minijobLimitMissing: z.boolean().describe('Offene Periode ohne gültige Minijob-Grenze (Abschluss gesperrt)'),

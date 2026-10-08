@@ -47,9 +47,16 @@ const resolveBillingDate = (userId: number, date: string): string | null => {
   return nextOpenPeriodFor(userId, date)?.startDate ?? null;
 };
 
+/** Abrechnungsdatum des frühesten Sonderpostens vor `before` (für die Periodenliste im Übertrag), sonst undefined */
+export const firstSpecialItemBefore = (userId: number, before: string): string | undefined =>
+  db().select({ date: specialItemBillingDateSql }).from(specialItems)
+    .where(and(eq(specialItems.userId, userId), sql`${specialItemBillingDateSql} < ${before}`))
+    .orderBy(asc(specialItemBillingDateSql))
+    .get()?.date;
+
 /**
- * Sonderposten: privat verauslagte Beträge eines Mitarbeiters, die mit dem Lohnzettel zusätzlich zum Lohn erstattet
- * werden. Sie zählen nicht gegen die Minijob-Grenze und gehen nie in den Übertrag. Nur Admins erfassen sie; in
+ * Sonderposten: privat verauslagte Beträge eines Mitarbeiters, die mit dem Lohn ausgezahlt werden. Sie zählen wie der
+ * Verdienst gegen die Minijob-Grenze; was darüber liegt, geht in den Übertrag. Nur Admins erfassen sie; in
  * abgeschlossenen Perioden sind sie gesperrt (Kaufdatum dort → Nachtrag in der nächsten offenen Periode).
  */
 export class SpecialItemService {
