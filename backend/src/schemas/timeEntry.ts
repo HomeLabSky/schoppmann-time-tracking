@@ -1,4 +1,4 @@
-import { z, integer, isoDate, month, clockTime, timestamp } from './common';
+import { z, integer, isoDate, month, clockTime, timestamp, euro } from './common';
 
 const breakMinutes = integer('Pausendauer', { min: 0, max: 480 })
   .optional()
@@ -57,6 +57,40 @@ const TimeEntry = z.object({
   updatedAt: timestamp()
 }).meta({ id: 'TimeEntry', description: 'Zeiteintrag; Beträge aus dem eingefrorenen Stundensatz' });
 
+const SpecialItem = z.object({
+  id: z.number().int(),
+  userId: z.number().int(),
+  date: z.string().describe('Kaufdatum (YYYY-MM-DD)'),
+  description: z.string(),
+  amountCents: z.number().int(),
+  amount: z.number().describe('Betrag in Euro'),
+  billingDate: z.string().nullable().describe('Nachtrag: Kaufdatum lag beim Erfassen in einer abgeschlossenen Periode; ' +
+    'abgerechnet in der Periode, die dieses Datum enthält. null = Periode des Kaufdatums'),
+  createdBy: z.number().int().nullable(),
+  createdAt: timestamp(),
+  updatedAt: timestamp()
+}).meta({ id: 'SpecialItem', description: 'Sonderposten: privat verauslagter Betrag, wird zusätzlich zum Lohn erstattet' });
+
+const specialItemAmount = euro('Betrag', 100000).refine((value) => value > 0, 'Betrag muss größer als 0 sein');
+const specialItemDescription = z.string({ error: 'Bezeichnung ist erforderlich' })
+  .trim()
+  .min(1, 'Bezeichnung ist erforderlich')
+  .max(200, 'Bezeichnung darf maximal 200 Zeichen haben');
+
+const CreateSpecialItemBody = z.object({
+  date: isoDate().describe('Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen'),
+  description: specialItemDescription,
+  amount: specialItemAmount.describe('Betrag in Euro (höchstens 2 Nachkommastellen)')
+});
+
+const UpdateSpecialItemBody = z.object({
+  date: isoDate().optional(),
+  description: specialItemDescription.optional(),
+  amount: specialItemAmount.optional()
+});
+
+const SpecialItemData = z.object({ item: SpecialItem });
+
 const Period = z.object({
   value: z.string().describe('Referenzmonat (YYYY-MM) – für ?month= verwenden'),
   label: z.string(),
@@ -77,7 +111,9 @@ const Summary = z.object({
   actualEarnings: z.number().describe('Verdienst + Übertrag aus Vorperioden'),
   carryIn: z.number(),
   carryOut: z.number().describe('Übertrag in die nächste Periode (über der Grenze)'),
-  paidThisMonth: z.number().describe('Auszahlung dieser Periode (höchstens die Grenze)'),
+  paidThisMonth: z.number().describe('Lohn-Auszahlung dieser Periode (höchstens die Grenze)'),
+  specialItemsTotal: z.number().describe('Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)'),
+  payout: z.number().describe('Gesamtauszahlung: Lohn + Sonderposten'),
   minijobLimit: z.number(),
   hourlyRate: z.number(),
   exceedsLimit: z.boolean(),
@@ -88,6 +124,7 @@ const Summary = z.object({
 
 const MonthlyRecords = z.object({
   records: z.array(TimeEntry),
+  specialItems: z.array(SpecialItem).describe('Sonderposten, die in dieser Periode erstattet werden'),
   summary: Summary,
   period: z.object({
     year: z.number().int(),
@@ -133,6 +170,10 @@ export {
   MonthQuery,
   MultiMonthQuery,
   TimeEntry,
+  SpecialItem,
+  CreateSpecialItemBody,
+  UpdateSpecialItemBody,
+  SpecialItemData,
   Period,
   MonthlyRecords,
   PeriodsData,

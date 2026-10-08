@@ -11,6 +11,7 @@ import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService, type BillingPeriod } from './dateService';
 import { assertDateOpen, assertNoClosedPeriodBetween, billingDateOf, billingDateSql, nextOpenPeriodFor, overlaps } from './periodGuard';
+import { SpecialItemService, toSpecialItemJSON } from './specialItemService';
 
 /** Referenzdatum (Monatsmitte) einer Abrechnungsperiode */
 const referenceDate = (year: number, month: number): string => `${year}-${String(month).padStart(2, '0')}-15`;
@@ -204,12 +205,16 @@ export class TimeEntryService {
     const result = folded[folded.length - 1] as billing.CarryRow;
     const closure = current.closure;
     const hourlyRate = user.stundenlohn == null ? billing.toEuros(billing.DEFAULT_HOURLY_RATE_CENTS) : Number(user.stundenlohn);
+    // Sonderposten: Erstattung zusätzlich zum Lohn, außerhalb von Grenze und Übertrag
+    const items = SpecialItemService.listForPeriod(userId, target.startDate, target.endDate);
+    const specialItemsCents = closure ? closure.specialItemsCents : items.reduce((sum, item) => sum + item.amountCents, 0);
 
     // Anzeige-Werte (Benennung nach End- bzw. Referenzmonat)
     const periodInfo = this.createPeriodObjectForUser(new Date(referenceDate(year, month)), startDay, endDay);
 
     return {
       records: current.entries.map(toTimeEntryJSON),
+      specialItems: items.map(toSpecialItemJSON),
       summary: {
         totalHours: Math.round((current.minutes / 60) * 100) / 100,
         totalEarnings: billing.toEuros(current.earningsCents),
@@ -217,6 +222,8 @@ export class TimeEntryService {
         carryIn: billing.toEuros(result.carryInCents),
         carryOut: billing.toEuros(result.carryOutCents),
         paidThisMonth: billing.toEuros(result.paidCents),
+        specialItemsTotal: billing.toEuros(specialItemsCents),
+        payout: billing.toEuros(result.paidCents + specialItemsCents),
         minijobLimit: billing.toEuros(result.limitCents),
         hourlyRate,
         exceedsLimit: result.actualCents > result.limitCents,

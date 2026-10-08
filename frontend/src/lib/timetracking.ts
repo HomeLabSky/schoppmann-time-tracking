@@ -29,13 +29,34 @@ export interface TimeRecord {
   updatedAt: string
 }
 
+/** Sonderposten: privat verauslagter Betrag, wird mit dem Lohnzettel zusätzlich zum Lohn erstattet (nur Admin erfasst) */
+export interface SpecialItem {
+  id: number
+  userId: number
+  /** Kaufdatum */
+  date: string
+  description: string
+  amountCents: number
+  /** Betrag in Euro */
+  amount: number
+  /** Nachtrag: Kaufdatum lag in einer abgeschlossenen Periode, erstattet in der Periode mit diesem Datum */
+  billingDate: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface TimeRecordSummary {
   totalHours: number
   totalEarnings: number
   actualEarnings: number
   carryIn: number
   carryOut: number
+  /** Lohn-Auszahlung (höchstens die Grenze) */
   paidThisMonth: number
+  /** Summe der Sonderposten (zusätzlich zum Lohn, ohne Grenze und Übertrag) */
+  specialItemsTotal: number
+  /** Gesamtauszahlung: Lohn + Sonderposten */
+  payout: number
   minijobLimit: number
   hourlyRate: number
   exceedsLimit: boolean
@@ -61,6 +82,8 @@ export interface BillingPeriod {
 
 export interface MonthlyTimeRecords {
   records: TimeRecord[]
+  /** Sonderposten, die in dieser Periode erstattet werden */
+  specialItems: SpecialItem[]
   summary: TimeRecordSummary
   period: {
     year: number

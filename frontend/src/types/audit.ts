@@ -33,12 +33,17 @@ export interface TimesheetOverviewRow {
   workDays: number
   totalHours: number
   totalEarnings: number
+  /** Lohn-Auszahlung (höchstens die Grenze) */
   paidThisMonth: number
+  /** Summe der Sonderposten */
+  specialItemsTotal: number
+  /** Gesamtauszahlung: Lohn + Sonderposten */
+  payout: number
   carryOut: number
   minijobLimit: number
   minijobLimitMissing: boolean
   exceedsLimit: boolean
-  /** Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen – sonst nichts abzuschließen */
+  /** Etwas abzurechnen (Einträge, Sonderposten oder Übertrag) oder bereits abgeschlossen – sonst nichts abzuschließen */
   billable: boolean
   /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
   status: 'open' | 'ready' | 'closed'

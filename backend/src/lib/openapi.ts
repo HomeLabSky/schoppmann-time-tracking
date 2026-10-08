@@ -219,6 +219,7 @@ export const buildOpenApiDocument = ({ version }: { version: string }): Json => 
       { name: 'Minijob-Grenzen' },
       { name: 'Zeitnachweise' },
       { name: 'Lohnzettel' },
+      { name: 'Sonderposten' },
       { name: 'Änderungsprotokoll' },
       { name: 'System' }
     ],

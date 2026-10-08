@@ -46,8 +46,10 @@ test('Lohnzettel: festgeschriebene Zahlen des Abschlusses und Einträge der Peri
     carryInCents: 0,
     limitCents: 10000,
     paidCents: 10000,
-    carryOutCents: 1500
+    carryOutCents: 1500,
+    specialItemsCents: 0
   });
+  assert.deepEqual(payslip.specialItems, []);
 
   assert.deepEqual(PayslipService.forClosure(user.id, closure.id).totals, payslip.totals);
   assert.deepEqual(PayslipService.listForUser(user.id).map((p) => [p.id, p.label, p.paid, p.carryOut, p.totalHours]), [

@@ -16,6 +16,8 @@ export interface Payslip {
   period: { startDate: string; endDate: string; label: string };
   closedAt: Date;
   entries: TimeEntryJSON[];
+  /** Sonderposten: privat verauslagt, zusätzlich zum Lohn erstattet (Tabelle nur, wenn vorhanden) */
+  specialItems: { date: string; description: string; amountCents: number; billingDate: string | null }[];
   totals: {
     minutes: number;
     entryCount: number;
@@ -25,6 +27,7 @@ export interface Payslip {
     limitCents: number;
     paidCents: number;
     carryOutCents: number;
+    specialItemsCents: number;
   };
 }
 
@@ -156,10 +159,12 @@ const drawInfo = (doc: Doc, payslip: Payslip, y: number): number => {
   return y + INFO_HEIGHT;
 };
 
-/** Abrechnung: Arbeitszeit links, Rechenweg zur Auszahlung rechts */
+/** Abrechnung: Arbeitszeit links, Rechenweg zur Auszahlung rechts (mit Sonderposten zwei Zeilen mehr) */
 const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
   const t = payslip.totals;
-  const height = 104;
+  const withItems = t.specialItemsCents > 0;
+  const extra = withItems ? 34 : 0;
+  const height = 104 + extra;
   doc.roundedRect(MARGIN.left, y, CONTENT_WIDTH, height, 4).fillColor(COLOR.fill).fill();
 
   const pad = 14;
@@ -182,11 +187,18 @@ const drawSummary = (doc: Doc, payslip: Payslip, y: number): number => {
     doc.fillColor(COLOR.text);
     write(doc, value, boxX, rowY, { width: boxWidth, align: 'right' });
   };
+  const rule = (ruleY: number) =>
+    doc.moveTo(boxX, ruleY).lineTo(boxX + boxWidth, ruleY).lineWidth(0.75).strokeColor(COLOR.line).stroke();
   line('Verdienst in diesem Monat', euros(t.earningsCents), y + pad);
   line('+ Übertrag aus Vormonat', euros(t.carryInCents), y + pad + 16);
-  doc.moveTo(boxX, y + pad + 34).lineTo(boxX + boxWidth, y + pad + 34).lineWidth(0.75).strokeColor(COLOR.line).stroke();
-  line('Auszahlung', euros(t.paidCents), y + pad + 42, true, 12);
-  line('Übertrag in den nächsten Monat', euros(t.carryOutCents), y + pad + 64);
+  rule(y + pad + 34);
+  if (withItems) {
+    line('Lohn', euros(t.paidCents), y + pad + 40);
+    line('+ Sonderposten (Erstattung)', euros(t.specialItemsCents), y + pad + 56);
+    rule(y + pad + 74);
+  }
+  line('Auszahlung', euros(t.paidCents + t.specialItemsCents), y + pad + 42 + extra, true, 12);
+  line('Übertrag in den nächsten Monat', euros(t.carryOutCents), y + pad + 64 + extra);
 
   return y + height + 22;
 };
@@ -197,25 +209,37 @@ interface Column {
   align?: 'left' | 'right';
 }
 
-const COLUMNS: Column[] = [
+/** Spalten auf die Inhaltsbreite bringen: Die Spalte mit Breite 0 bekommt den Rest */
+const fill = (columns: Column[]): Column[] => {
+  const fixed = columns.reduce((sum, c) => sum + c.width, 0);
+  return columns.map((c) => (c.width === 0 ? { ...c, width: CONTENT_WIDTH - fixed } : c));
+};
+
+const COLUMNS = fill([
   { label: 'Datum', width: 130 },
   { label: 'Beginn', width: 90 },
   { label: 'Ende', width: 90 },
   { label: 'Std.', width: 85, align: 'right' },
   { label: 'Verdienst', width: 0, align: 'right' }
-];
-const fixedWidth = COLUMNS.reduce((sum, c) => sum + c.width, 0);
-const lastColumn = COLUMNS[COLUMNS.length - 1];
-if (lastColumn) lastColumn.width = CONTENT_WIDTH - fixedWidth;
+]);
+
+const ITEM_COLUMNS = fill([
+  { label: 'Datum', width: 130 },
+  { label: 'Bezeichnung', width: 0 },
+  { label: 'Betrag', width: 100, align: 'right' }
+]);
 
 const ROW_HEIGHT = 15;
 const CELL_PAD = 5;
 
-const drawRow = (doc: Doc, cells: string[], y: number, { bold = false, fill }: { bold?: boolean; fill?: string } = {}): void => {
-  if (fill) doc.rect(MARGIN.left, y, CONTENT_WIDTH, ROW_HEIGHT).fillColor(fill).fill();
+const drawRow = (
+  doc: Doc, cells: string[], y: number,
+  { bold = false, background, columns = COLUMNS }: { bold?: boolean; background?: string | undefined; columns?: Column[] } = {}
+): void => {
+  if (background) doc.rect(MARGIN.left, y, CONTENT_WIDTH, ROW_HEIGHT).fillColor(background).fill();
   doc.font(bold ? FONT.bold : FONT.regular).fontSize(8.5).fillColor(COLOR.text);
   let x = MARGIN.left;
-  COLUMNS.forEach((column, i) => {
+  columns.forEach((column, i) => {
     const width = column.width - 2 * CELL_PAD;
     const text = fit(doc, toWinAnsi(cells[i] ?? ''), width);
     write(doc, text, x + CELL_PAD, y + 4, { width, align: column.align ?? 'left' });
@@ -223,11 +247,11 @@ const drawRow = (doc: Doc, cells: string[], y: number, { bold = false, fill }: {
   });
 };
 
-const drawTableHead = (doc: Doc, y: number): number => {
+const drawTableHead = (doc: Doc, y: number, columns: Column[] = COLUMNS): number => {
   doc.rect(MARGIN.left, y, CONTENT_WIDTH, ROW_HEIGHT + 2).fillColor(COLOR.brand).fill();
   doc.font(FONT.bold).fontSize(8.5).fillColor('#ffffff');
   let x = MARGIN.left;
-  for (const column of COLUMNS) {
+  for (const column of columns) {
     write(doc, column.label, x + CELL_PAD, y + 5, { width: column.width - 2 * CELL_PAD, align: column.align ?? 'left' });
     x += column.width;
   }
@@ -256,7 +280,7 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
       overnight ? `${entry.endTime} (+1)` : entry.endTime,
       hours(entry.workMinutes),
       euros(entry.earningsCents)
-    ], y, { fill: i % 2 === 1 ? COLOR.fill : undefined });
+    ], y, { background: i % 2 === 1 ? COLOR.fill : undefined });
     y += ROW_HEIGHT;
   });
 
@@ -269,6 +293,41 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
     if (y + 12 > bottom) y = newPage();
     doc.font(FONT.regular).fontSize(8).fillColor(COLOR.muted);
     write(doc, '* Nachtrag: Arbeitstag aus einem bereits abgeschlossenen Monat, abgerechnet in diesem Monat.', MARGIN.left, y - 8);
+    y += 10;
+  }
+  return y;
+};
+
+/** Sonderposten-Tabelle (nur, wenn es welche gibt); bricht bei Bedarf auf Folgeseiten um. */
+const drawSpecialItems = (doc: Doc, payslip: Payslip, y: number, newPage: () => number): number => {
+  if (payslip.specialItems.length === 0) return y;
+  const bottom = PAGE.height - MARGIN.bottom;
+  // Überschrift, Kopf und mindestens eine Zeile zusammenhalten
+  if (y + 16 + 2 * ROW_HEIGHT + 2 > bottom) y = newPage();
+  y += 6;
+  doc.font(FONT.bold).fontSize(10).fillColor(COLOR.brand);
+  write(doc, 'Sonderposten', MARGIN.left, y);
+  y = drawTableHead(doc, y + 16, ITEM_COLUMNS);
+
+  payslip.specialItems.forEach((item, i) => {
+    if (y + ROW_HEIGHT > bottom) y = drawTableHead(doc, newPage(), ITEM_COLUMNS);
+    drawRow(doc, [
+      `${weekday(item.date)}, ${date(item.date)}${item.billingDate ? ' *' : ''}`,
+      item.description,
+      euros(item.amountCents)
+    ], y, { background: i % 2 === 1 ? COLOR.fill : undefined, columns: ITEM_COLUMNS });
+    y += ROW_HEIGHT;
+  });
+
+  if (y + ROW_HEIGHT + 4 > bottom) y = drawTableHead(doc, newPage(), ITEM_COLUMNS);
+  hr(doc, y + 1, COLOR.text, 0.75);
+  drawRow(doc, ['Summe', '', euros(payslip.totals.specialItemsCents)], y + 3, { bold: true, columns: ITEM_COLUMNS });
+  y += ROW_HEIGHT + 18;
+
+  if (payslip.specialItems.some((item) => item.billingDate)) {
+    if (y + 12 > bottom) y = newPage();
+    doc.font(FONT.regular).fontSize(8).fillColor(COLOR.muted);
+    write(doc, '* Nachtrag: Kauf in einem bereits abgeschlossenen Monat, erstattet in diesem Monat.', MARGIN.left, y - 8);
     y += 10;
   }
   return y;
@@ -330,7 +389,8 @@ export const renderPayslipsPdf = (payslips: Payslip[], options: PayslipPdfOption
     let y = drawHeader(doc, payslip, address, false);
     y = drawInfo(doc, payslip, y);
     y = drawSummary(doc, payslip, y);
-    drawEntries(doc, payslip, y, newPage);
+    y = drawEntries(doc, payslip, y, newPage);
+    drawSpecialItems(doc, payslip, y, newPage);
     ranges.push({ payslip, first, count: doc.bufferedPageRange().count - first });
   }
   drawFooters(doc, ranges);

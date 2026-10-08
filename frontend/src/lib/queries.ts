@@ -6,7 +6,7 @@ import { adminApi, employeeApi, authApi } from './api'
 import { periodContaining, timeApi, type BillingPeriod, type TimeEntryPayload } from './timetracking'
 import { formatDate, getErrorMessage } from './utils'
 import type { AuditQuery } from '@/types/audit'
-import type { NewMinijobSetting, NewUser, EditUser, UserSettings } from '@/types/api'
+import type { NewMinijobSetting, NewUser, EditUser, SpecialItemPayload, UserSettings } from '@/types/api'
 
 /**
  * Server-Zustand an einer Stelle: Abfragen mit Cache, Ladezustand und automatischem Neuladen.
@@ -268,6 +268,30 @@ export function useClosePeriod() {
       invalidate()
       toast.success('Periode abgeschlossen.')
     },
+  })
+}
+
+export function useSaveSpecialItem() {
+  const invalidate = useInvalidateTimesheets()
+  return useMutation({
+    mutationFn: ({ userId, id, data }: { userId: number; id?: number; data: SpecialItemPayload }) =>
+      id ? adminApi.updateSpecialItem(userId, id, data) : adminApi.createSpecialItem(userId, data),
+    onSuccess: (_r, vars) => {
+      invalidate()
+      toast.success(vars.id ? 'Sonderposten gespeichert.' : 'Sonderposten erfasst.')
+    },
+  })
+}
+
+export function useDeleteSpecialItem() {
+  const invalidate = useInvalidateTimesheets()
+  return useMutation({
+    mutationFn: ({ userId, id }: { userId: number; id: number }) => adminApi.deleteSpecialItem(userId, id),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Sonderposten gelöscht.')
+    },
+    onError: notifyError('Sonderposten konnte nicht gelöscht werden'),
   })
 }
 

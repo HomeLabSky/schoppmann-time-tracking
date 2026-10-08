@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { StatCard } from '@/components/ui/stat-card'
 import { PeriodStatusBadge } from '../period-status'
 import { NachtragBadge } from '../time/nachtrag-badge'
+import { SpecialItemsSection } from '../special-items/special-items'
 
 const reopenSchema = z.object({ reason: z.string().trim().min(5, 'Bitte mindestens 5 Zeichen').max(500, 'Höchstens 500 Zeichen') })
 
@@ -50,8 +51,8 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
   const started = data ? data.period.startDate <= today : false
   const limitMissing = !closed && !!summary?.minijobLimitMissing
   const status = closed ? 'closed' : ended ? 'ready' : 'open'
-  // Weder Stunden noch Übertrag: nichts abzuschließen (kein leerer Lohnzettel)
-  const empty = !closed && !!summary && summary.entryCount === 0 && summary.carryIn === 0
+  // Weder Stunden noch Sonderposten noch Übertrag: nichts abzuschließen (kein leerer Lohnzettel)
+  const empty = !closed && !!summary && summary.entryCount === 0 && summary.carryIn === 0 && (data?.specialItems.length ?? 0) === 0
 
   const columns = useMemo<ColumnDef<TimeRecord, unknown>[]>(
     () => [
@@ -131,7 +132,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
               disabled={!started || limitMissing || empty}
               title={
                 empty
-                  ? 'Keine Stunden und kein Übertrag – nichts abzuschließen'
+                  ? 'Keine Stunden, keine Sonderposten und kein Übertrag – nichts abzuschließen'
                   : limitMissing
                     ? 'Erst eine Minijob-Grenze hinterlegen'
                     : !started
@@ -181,10 +182,19 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
         <StatCard label="Verdienst" value={summary ? formatCurrency(summary.totalEarnings) : ''} loading={sheet.isLoading} hint={summary && summary.carryIn > 0 ? `+ ${formatCurrency(summary.carryIn)} Übertrag` : undefined} />
         <StatCard
           label="Auszahlung"
-          value={summary ? formatCurrency(summary.paidThisMonth) : ''}
+          value={summary ? formatCurrency(summary.payout) : ''}
           tone={limitMissing ? 'warning' : 'default'}
           loading={sheet.isLoading}
-          hint={summary ? (limitMissing ? 'vorläufig, keine Grenze' : `Grenze ${formatCurrency(summary.minijobLimit)}`) : undefined}
+          hint={
+            summary
+              ? [
+                  limitMissing ? 'vorläufig, keine Grenze' : `Grenze ${formatCurrency(summary.minijobLimit)}`,
+                  summary.specialItemsTotal > 0 ? `inkl. ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : undefined
+          }
         />
         <StatCard
           label="Übertrag in nächste Periode"
@@ -223,6 +233,14 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
       )}
 
       {data && summary && (
+        <SpecialItemsSection
+          items={data.specialItems}
+          total={summary.specialItemsTotal}
+          editable={closed ? undefined : { userId, periodStart: data.period.startDate, periodEnd: data.period.endDate }}
+        />
+      )}
+
+      {data && summary && (
         <>
           <CloseDialog
             open={dialog === 'close'}
@@ -234,7 +252,10 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
             details={[
               `${formatDate(data.period.startDate)} – ${formatDate(data.period.endDate)}`,
               `${formatEntryCount(summary.entryCount, summary.workDays)}, ${formatHours(summary.totalHours)}`,
-              `Verdienst ${formatCurrency(summary.totalEarnings)} · Auszahlung ${formatCurrency(summary.paidThisMonth)} · Übertrag ${formatCurrency(summary.carryOut)}`,
+              `Verdienst ${formatCurrency(summary.totalEarnings)} · Lohn ${formatCurrency(summary.paidThisMonth)} · Übertrag ${formatCurrency(summary.carryOut)}`,
+              ...(summary.specialItemsTotal > 0
+                ? [`Sonderposten ${formatCurrency(summary.specialItemsTotal)} (${data.specialItems.length}) · Auszahlung gesamt ${formatCurrency(summary.payout)}`]
+                : []),
             ]}
           />
           <ReopenDialog open={dialog === 'reopen'} onClose={() => setDialog(null)} userId={userId} month={month} name={employee?.name ?? ''} />

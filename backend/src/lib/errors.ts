@@ -72,7 +72,10 @@ export const ERROR_STATUS = {
   REASON_REQUIRED: 400,
 
   // Lohnzettel
-  PAYSLIP_NOT_FOUND: 404
+  PAYSLIP_NOT_FOUND: 404,
+
+  // Sonderposten
+  SPECIAL_ITEM_NOT_FOUND: 404
 } as const satisfies Record<string, number>;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

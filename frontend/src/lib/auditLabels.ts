@@ -15,6 +15,9 @@ export const ACTION_LABELS: Record<string, string> = {
   'auth.session_revoke': 'Gerät abgemeldet',
   'auth.sessions_revoke_others': 'Auf allen anderen Geräten abgemeldet',
   'auth.sessions_revoke_all': 'Überall abgemeldet (durch Admin)',
+  'special_item.create': 'Sonderposten erfasst',
+  'special_item.update': 'Sonderposten geändert',
+  'special_item.delete': 'Sonderposten gelöscht',
   'period.close': 'Periode abgeschlossen',
   'period.reopen': 'Periode wieder geöffnet',
   'user.create': 'Benutzer angelegt',
@@ -34,6 +37,7 @@ export const ACTION_LABELS: Record<string, string> = {
 export const ACTION_FILTERS = [
   { value: '', label: 'Alle Vorgänge' },
   { value: 'time_entry', label: 'Zeiteinträge' },
+  { value: 'special_item', label: 'Sonderposten' },
   { value: 'period', label: 'Monatsabschluss' },
   { value: 'user', label: 'Benutzer' },
   { value: 'auth', label: 'Anmeldungen' },
@@ -67,6 +71,9 @@ export const FIELD_LABELS: Record<string, string> = {
   carryIn: 'Übertrag Vorperiode',
   paid: 'Auszahlung',
   carryOut: 'Übertrag',
+  amount: 'Betrag',
+  specialItems: 'Sonderposten',
+  billingDate: 'Abgerechnet ab',
   reason: 'Grund',
   ip: 'IP-Adresse',
   revokedCount: 'Beendete Sitzungen',
@@ -74,7 +81,7 @@ export const FIELD_LABELS: Record<string, string> = {
   device: 'Gerät',
 }
 
-const MONEY_FIELDS = new Set(['earnings', 'limit', 'carryIn', 'paid', 'carryOut', 'stundenlohn', 'monthlyLimit'])
+const MONEY_FIELDS = new Set(['earnings', 'limit', 'carryIn', 'paid', 'carryOut', 'stundenlohn', 'monthlyLimit', 'amount', 'specialItems'])
 
 export const formatValue = (key: string, value: unknown): string => {
   if (value === null || value === undefined || value === '') return '–'

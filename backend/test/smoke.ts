@@ -410,6 +410,29 @@ async function main(): Promise<void> {
     const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
 
+    // Sonderposten (nur Admin)
+    const itemBody = { date: pastEntry.date, description: 'Smoke: Leuchtmittel', amount: 23.9 };
+    const itemForbidden = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: empToken, body: itemBody });
+    check('Sonderposten: Mitarbeiter abgewiesen 403', itemForbidden.status === 403, itemForbidden.json);
+    const itemInvalid = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: adminToken, body: { ...itemBody, amount: 0 } });
+    check('Sonderposten: Betrag 0 → 400 mit Feld amount', itemInvalid.status === 400 && itemInvalid.json?.fields?.amount, itemInvalid.json);
+    const itemCreated = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: adminToken, body: itemBody });
+    const itemId = itemCreated.json?.data?.item?.id;
+    check('Sonderposten erfasst 201', itemCreated.status === 201 && itemCreated.json.data.item.amountCents === 2390, itemCreated.json);
+    const itemUpdated = await api('PUT', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken, body: { amount: 24.5 } });
+    check('Sonderposten geändert 200', itemUpdated.status === 200 && itemUpdated.json?.data?.item?.amount === 24.5, itemUpdated.json);
+    const empMonthItems = await api('GET', `/api/timetracking?month=${prevMonth}`, { token: empToken });
+    check(
+      'Mitarbeiter sieht Sonderposten und Gesamtauszahlung',
+      empMonthItems.json?.data?.specialItems?.length === 1 && empMonthItems.json.data.summary.specialItemsTotal === 24.5 &&
+        empMonthItems.json.data.summary.payout === empMonthItems.json.data.summary.paidThisMonth + 24.5,
+      empMonthItems.json?.data?.summary
+    );
+    const itemDeleted = await api('DELETE', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken });
+    check('Sonderposten gelöscht 200', itemDeleted.status === 200, itemDeleted.json);
+    const itemGone = await api('DELETE', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken });
+    check('Sonderposten nicht gefunden 404', itemGone.status === 404 && itemGone.json?.code === 'SPECIAL_ITEM_NOT_FOUND', itemGone.json);
+
     // ---- Cookie-Anmeldung & Sitzungen ----
     console.log('\n[Cookie-Anmeldung & Sitzungen]');
     const authUser = { email: 'smoke.session@schoppmann.de', password: 'Session123', name: 'Session Tester' };

@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/ui/page-header'
 import { Progress, StatCard } from '@/components/ui/stat-card'
 import { NachtragBadge } from '@/components/features/time/nachtrag-badge'
 import { TimeEntryDialog } from '@/components/features/time/time-entry-dialog'
+import { SpecialItemsSection } from '@/components/features/special-items/special-items'
 
 export default function EmployeeDashboard() {
   const { user } = useAuth()
@@ -258,11 +259,20 @@ export default function EmployeeDashboard() {
         />
         <StatCard
           label="Auszahlung"
-          value={summary ? formatCurrency(summary.paidThisMonth) : ''}
+          value={summary ? formatCurrency(summary.payout) : ''}
           icon={Wallet}
           tone={limitMissing ? 'warning' : 'default'}
           loading={loading}
-          hint={summary ? (limitMissing ? 'vorläufig' : `Grenze ${formatCurrency(summary.minijobLimit)}`) : undefined}
+          hint={
+            summary
+              ? [
+                  limitMissing ? 'vorläufig' : `Grenze ${formatCurrency(summary.minijobLimit)}`,
+                  summary.specialItemsTotal > 0 ? `inkl. ${formatCurrency(summary.specialItemsTotal)} Sonderposten` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+              : undefined
+          }
         >
           {summary && !loading && <Progress value={usagePct} tone={usageTone} label="Ausschöpfung der Minijob-Grenze" />}
         </StatCard>
@@ -295,6 +305,12 @@ export default function EmployeeDashboard() {
           }}
         />
       </div>
+
+      {data && data.specialItems.length > 0 && (
+        <div className="mt-6">
+          <SpecialItemsSection items={data.specialItems} total={data.summary.specialItemsTotal} />
+        </div>
+      )}
 
       <TimeEntryDialog
         entry={dialog}
