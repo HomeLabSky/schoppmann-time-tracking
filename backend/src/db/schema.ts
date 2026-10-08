@@ -150,13 +150,15 @@ export const periodClosures = sqliteTable('PeriodClosures', {
 ]);
 
 /**
- * Sonderposten: privat verauslagter Betrag eines Mitarbeiters (z. B. Einkauf im Baumarkt), vom Admin erfasst und mit
+ * Sonderposten: privat verauslagter Betrag eines Mitarbeiters (z. B. Einkauf im Baumarkt), vom Mitarbeiter selbst erfasst und mit
  * dem Lohn ausgezahlt (zählt gegen die Minijob-Grenze, Rest im Übertrag). Zuordnung zur Periode wie bei Zeiteinträgen über das Datum bzw.
  * `billingDate` (Kaufdatum lag beim Erfassen schon in einer abgeschlossenen Periode).
  */
 export const specialItems = sqliteTable('SpecialItems', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   userId: integer('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  /** Vom Client erzeugte Kennung (App, Offline-Erfassung): Wiederholungen legen nichts doppelt an */
+  clientId: text('clientId', { length: 64 }),
   /** Kaufdatum */
   date: dateOnly('date').notNull(),
   description: text('description', { length: 200 }).notNull(),
@@ -168,6 +170,7 @@ export const specialItems = sqliteTable('SpecialItems', {
   updatedAt: updatedAt()
 }, (t) => [
   index('special_items_user_date').on(t.userId, t.date),
+  uniqueIndex('unique_special_item_client_id').on(t.userId, t.clientId),
   check('special_items_amount_check', sql`${t.amountCents} > 0 AND ${t.amountCents} <= 10000000`),
   check('special_items_date_check', sql`${t.date} GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'`),
   check('special_items_description_check', sql`length(trim(${t.description})) > 0`)

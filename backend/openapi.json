@@ -5317,6 +5317,384 @@
         }
       }
     },
+    "/timetracking/special-items": {
+      "post": {
+        "operationId": "postTimetrackingSpecialItems",
+        "summary": "Sonderposten erfassen (privat verauslagter Betrag)",
+        "description": "Erscheint auf dem Lohnzettel und wird mit dem Lohn ausgezahlt; zählt wie der Verdienst gegen die Minijob-Grenze, der Rest geht in den Übertrag. Kaufdatum: nicht in der Zukunft, höchstens 1 Monat zurück (bzw. bis zur freigegebenen Nacherfassung). Liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen (`billingDate`). Mit `clientId` sicher wiederholbar: Existiert bereits ein Posten mit dieser Kennung, kommt er mit 200 zurück.",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "amount": {
+                    "description": "Betrag in Euro (höchstens 2 Nachkommastellen)",
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  },
+                  "clientId": {
+                    "description": "Vom Client erzeugte Kennung (z. B. UUID) für sichere Wiederholung bei Offline-Erfassung",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{8,64}$"
+                  }
+                },
+                "required": [
+                  "date",
+                  "description",
+                  "amount"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sonderposten erfasst",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten erfasst"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/SpecialItem"
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), VALIDATION_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/timetracking/special-items/{id}": {
+      "put": {
+        "operationId": "putTimetrackingSpecialItemsById",
+        "summary": "Eigenen Sonderposten ändern",
+        "description": "Gleiche Regeln wie beim Anlegen. Gesperrt, sobald die Periode abgeschlossen ist, in der er abgerechnet wird.",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sonderposten geändert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten geändert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/SpecialItem"
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`), VALIDATION_ERROR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SPECIAL_ITEM_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteTimetrackingSpecialItemsById",
+        "summary": "Eigenen Sonderposten löschen",
+        "description": "Gesperrt, sobald die Periode abgeschlossen ist, in der er abgerechnet wird. Bleibt im Änderungsprotokoll erhalten.",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sonderposten gelöscht",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten gelöscht"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SPECIAL_ITEM_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/timesheets/overview": {
       "get": {
         "operationId": "getAdminTimesheetsOverview",
@@ -6092,418 +6470,6 @@
           },
           "409": {
             "description": "PERIOD_NOT_CLOSED, PERIOD_LATER_CLOSED",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/timesheets/{userId}/special-items": {
-      "post": {
-        "operationId": "postAdminTimesheetsByUserIdSpecialItems",
-        "summary": "Sonderposten erfassen (privat verauslagter Betrag)",
-        "description": "Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird mit dem Lohn ausgezahlt. Zählt wie der Verdienst gegen die Minijob-Grenze, der Rest geht in den Übertrag. Zugeordnet nach Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).",
-        "tags": [
-          "Sonderposten"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "date": {
-                    "type": "string",
-                    "format": "date",
-                    "description": "Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen"
-                  },
-                  "description": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "amount": {
-                    "description": "Betrag in Euro (höchstens 2 Nachkommastellen)",
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 100000
-                  }
-                },
-                "required": [
-                  "date",
-                  "description",
-                  "amount"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Sonderposten erfasst",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "success"
-                  ],
-                  "properties": {
-                    "success": {
-                      "const": true
-                    },
-                    "message": {
-                      "type": "string",
-                      "examples": [
-                        "Sonderposten erfasst"
-                      ]
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "item": {
-                          "$ref": "#/components/schemas/SpecialItem"
-                        }
-                      },
-                      "required": [
-                        "item"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Nicht angemeldet oder Sitzung beendet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Keine Berechtigung",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "USER_NOT_FOUND",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "PERIOD_CLOSED",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/timesheets/{userId}/special-items/{itemId}": {
-      "put": {
-        "operationId": "putAdminTimesheetsByUserIdSpecialItemsByItemId",
-        "summary": "Sonderposten ändern",
-        "description": "Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).",
-        "tags": [
-          "Sonderposten"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "itemId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "date": {
-                    "type": "string",
-                    "format": "date"
-                  },
-                  "description": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "amount": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 100000
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Sonderposten geändert",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "success"
-                  ],
-                  "properties": {
-                    "success": {
-                      "const": true
-                    },
-                    "message": {
-                      "type": "string",
-                      "examples": [
-                        "Sonderposten geändert"
-                      ]
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "item": {
-                          "$ref": "#/components/schemas/SpecialItem"
-                        }
-                      },
-                      "required": [
-                        "item"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Nicht angemeldet oder Sitzung beendet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Keine Berechtigung",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SPECIAL_ITEM_NOT_FOUND",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "PERIOD_CLOSED",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "deleteAdminTimesheetsByUserIdSpecialItemsByItemId",
-        "summary": "Sonderposten löschen",
-        "description": "Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).",
-        "tags": [
-          "Sonderposten"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          },
-          {
-            "cookieAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          {
-            "name": "itemId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Sonderposten gelöscht",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "success"
-                  ],
-                  "properties": {
-                    "success": {
-                      "const": true
-                    },
-                    "message": {
-                      "type": "string",
-                      "examples": [
-                        "Sonderposten gelöscht"
-                      ]
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Nicht angemeldet oder Sitzung beendet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Keine Berechtigung",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "SPECIAL_ITEM_NOT_FOUND",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "PERIOD_CLOSED",
             "content": {
               "application/json": {
                 "schema": {
@@ -7609,6 +7575,12 @@
           "userId": {
             "type": "integer"
           },
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "date": {
             "type": "string",
             "description": "Kaufdatum (YYYY-MM-DD)"
@@ -7652,6 +7624,7 @@
         "required": [
           "id",
           "userId",
+          "clientId",
           "date",
           "description",
           "amountCents",

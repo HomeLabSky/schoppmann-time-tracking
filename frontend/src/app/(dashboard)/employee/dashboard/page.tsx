@@ -303,9 +303,13 @@ export default function EmployeeDashboard() {
         />
       </div>
 
-      {data && data.specialItems.length > 0 && (
+      {data && (
         <div className="mt-6">
-          <SpecialItemsSection items={data.specialItems} total={data.summary.specialItemsTotal} />
+          <SpecialItemsSection
+            items={data.specialItems}
+            total={data.summary.specialItemsTotal}
+            editable={closed ? undefined : { periodStart: data.period.startDate, periodEnd: data.period.endDate }}
+          />
         </div>
       )}
 

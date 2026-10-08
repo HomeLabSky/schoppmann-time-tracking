@@ -9,12 +9,10 @@ import { createApiRouter } from '../lib/route';
 import TimeEntryService from '../services/timeEntryService';
 import PeriodService from '../services/periodService';
 import PayslipService from '../services/payslipService';
-import SpecialItemService from '../services/specialItemService';
 import config from '../config';
 import { payslipFilename, renderPayslipsPdf } from '../utils/payslipPdf';
 import { actorOf } from '../middleware/auth';
-import { MonthQuery, MonthlyRecords, PeriodsData, CreateSpecialItemBody, UpdateSpecialItemBody, SpecialItemData } from '../schemas/timeEntry';
-import { integer } from '../schemas/common';
+import { MonthQuery, MonthlyRecords, PeriodsData } from '../schemas/timeEntry';
 import { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData, TimesheetOverviewData } from '../schemas/admin';
 
 const api = createApiRouter('/admin/timesheets', { tags: ['Zeitnachweise'] });
@@ -129,51 +127,6 @@ api.post('/:userId/reopen', {
   const [year, month] = parseMonth(req.valid.body.month);
   const result = await PeriodService.reopenPeriod(req.valid.params.userId, year, month, req.valid.body.reason, actorOf(req));
   return { data: result };
-});
-
-const SpecialItemParams = UserIdParam.extend({ itemId: integer('Sonderposten-ID', { min: 1 }) });
-
-api.post('/:userId/special-items', {
-  summary: 'Sonderposten erfassen (privat verauslagter Betrag)',
-  description: 'Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird mit dem Lohn ' +
-    'ausgezahlt. Zählt wie der Verdienst gegen die Minijob-Grenze, der Rest geht in den Übertrag. Zugeordnet nach Kaufdatum; liegt es in einer ' +
-    'abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).',
-  auth: 'admin',
-  tags: ['Sonderposten'],
-  params: UserIdParam,
-  body: CreateSpecialItemBody,
-  response: SpecialItemData,
-  status: 201,
-  message: 'Sonderposten erfasst',
-  errors: ['USER_NOT_FOUND', 'PERIOD_CLOSED']
-}, async (req) => ({ data: { item: SpecialItemService.create(req.valid.params.userId, req.valid.body, actorOf(req)) } }));
-
-api.put('/:userId/special-items/:itemId', {
-  summary: 'Sonderposten ändern',
-  description: 'Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).',
-  auth: 'admin',
-  tags: ['Sonderposten'],
-  params: SpecialItemParams,
-  body: UpdateSpecialItemBody,
-  response: SpecialItemData,
-  message: 'Sonderposten geändert',
-  errors: ['SPECIAL_ITEM_NOT_FOUND', 'PERIOD_CLOSED']
-}, async (req) => {
-  const { userId, itemId } = req.valid.params;
-  return { data: { item: SpecialItemService.update(userId, itemId, req.valid.body, actorOf(req)) } };
-});
-
-api.delete('/:userId/special-items/:itemId', {
-  summary: 'Sonderposten löschen',
-  description: 'Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).',
-  auth: 'admin',
-  tags: ['Sonderposten'],
-  params: SpecialItemParams,
-  message: 'Sonderposten gelöscht',
-  errors: ['SPECIAL_ITEM_NOT_FOUND', 'PERIOD_CLOSED']
-}, async (req) => {
-  SpecialItemService.delete(req.valid.params.userId, req.valid.params.itemId, actorOf(req));
-  return {};
 });
 
 export default api.router;

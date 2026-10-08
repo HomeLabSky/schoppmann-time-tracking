@@ -410,29 +410,33 @@ async function main(): Promise<void> {
     const editOpen = await api('PUT', `/api/timetracking/${pastEntry.id}`, { token: empToken, body: { startTime: '09:00', endTime: '16:00', breakMinutes: 0 } });
     check('Bearbeiten nach Wiedereröffnung 200', editOpen.status === 200, editOpen.json);
 
-    // Sonderposten (nur Admin)
-    const itemBody = { date: pastEntry.date, description: 'Smoke: Leuchtmittel', amount: 23.9 };
-    const itemForbidden = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: empToken, body: itemBody });
-    check('Sonderposten: Mitarbeiter abgewiesen 403', itemForbidden.status === 403, itemForbidden.json);
-    const itemInvalid = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: adminToken, body: { ...itemBody, amount: 0 } });
+    // Sonderposten: Der Mitarbeiter erfasst seine eigenen
+    const itemBody = { date: `${currentMonthParam}-01`, description: 'Smoke: Leuchtmittel', amount: 23.9 };
+    const itemAdminRoute = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: adminToken, body: itemBody });
+    check('Sonderposten: keine Admin-Route mehr (404)', itemAdminRoute.status === 404, itemAdminRoute.json);
+    const itemInvalid = await api('POST', '/api/v1/timetracking/special-items', { token: empToken, body: { ...itemBody, amount: 0 } });
     check('Sonderposten: Betrag 0 → 400 mit Feld amount', itemInvalid.status === 400 && itemInvalid.json?.fields?.amount, itemInvalid.json);
-    const itemCreated = await api('POST', `/api/v1/admin/timesheets/${empId}/special-items`, { token: adminToken, body: itemBody });
+    const itemCreated = await api('POST', '/api/v1/timetracking/special-items', { token: empToken, body: { ...itemBody, clientId: 'smoke-item-0001' } });
     const itemId = itemCreated.json?.data?.item?.id;
     check('Sonderposten erfasst 201', itemCreated.status === 201 && itemCreated.json.data.item.amountCents === 2390, itemCreated.json);
-    const itemUpdated = await api('PUT', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken, body: { amount: 24.5 } });
+    const itemReplay = await api('POST', '/api/v1/timetracking/special-items', { token: empToken, body: { ...itemBody, clientId: 'smoke-item-0001' } });
+    check('Sonderposten: Wiederholung mit clientId 200, kein Duplikat', itemReplay.status === 200 && itemReplay.json?.data?.item?.id === itemId, itemReplay.json);
+    const itemForeign = await api('PUT', `/api/v1/timetracking/special-items/${itemId}`, { token: adminToken, body: { amount: 1 } });
+    check('Fremder Sonderposten 404 SPECIAL_ITEM_NOT_FOUND', itemForeign.status === 404 && itemForeign.json?.code === 'SPECIAL_ITEM_NOT_FOUND', itemForeign.json);
+    const itemUpdated = await api('PUT', `/api/v1/timetracking/special-items/${itemId}`, { token: empToken, body: { amount: 24.5 } });
     check('Sonderposten geändert 200', itemUpdated.status === 200 && itemUpdated.json?.data?.item?.amount === 24.5, itemUpdated.json);
-    const empMonthItems = await api('GET', `/api/timetracking?month=${prevMonth}`, { token: empToken });
-    const itemSummary = empMonthItems.json?.data?.summary;
+    const sheetItems = await api('GET', `/api/admin/timesheets/${empId}?month=${currentMonthParam}`, { token: adminToken });
+    const itemSummary = sheetItems.json?.data?.summary;
     check(
-      'Mitarbeiter sieht Sonderposten; sie zählen mit dem Verdienst gegen die Grenze',
-      empMonthItems.json?.data?.specialItems?.length === 1 && itemSummary?.specialItemsTotal === 24.5 &&
+      'Admin sieht Sonderposten im Zeitnachweis; sie zählen mit dem Verdienst gegen die Grenze',
+      sheetItems.json?.data?.specialItems?.length === 1 && itemSummary?.specialItemsTotal === 24.5 &&
         Math.abs(itemSummary.actualEarnings - (itemSummary.totalEarnings + itemSummary.carryIn + 24.5)) < 0.001 &&
         itemSummary.payout === itemSummary.paidThisMonth,
       itemSummary
     );
-    const itemDeleted = await api('DELETE', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken });
+    const itemDeleted = await api('DELETE', `/api/v1/timetracking/special-items/${itemId}`, { token: empToken });
     check('Sonderposten gelöscht 200', itemDeleted.status === 200, itemDeleted.json);
-    const itemGone = await api('DELETE', `/api/v1/admin/timesheets/${empId}/special-items/${itemId}`, { token: adminToken });
+    const itemGone = await api('DELETE', `/api/v1/timetracking/special-items/${itemId}`, { token: empToken });
     check('Sonderposten nicht gefunden 404', itemGone.status === 404 && itemGone.json?.code === 'SPECIAL_ITEM_NOT_FOUND', itemGone.json);
 
     // ---- Cookie-Anmeldung & Sitzungen ----

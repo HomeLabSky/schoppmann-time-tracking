@@ -60,6 +60,7 @@ const TimeEntry = z.object({
 const SpecialItem = z.object({
   id: z.number().int(),
   userId: z.number().int(),
+  clientId: z.string().nullable(),
   date: z.string().describe('Kaufdatum (YYYY-MM-DD)'),
   description: z.string(),
   amountCents: z.number().int(),
@@ -80,7 +81,11 @@ const specialItemDescription = z.string({ error: 'Bezeichnung ist erforderlich' 
 const CreateSpecialItemBody = z.object({
   date: isoDate().describe('Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen'),
   description: specialItemDescription,
-  amount: specialItemAmount.describe('Betrag in Euro (höchstens 2 Nachkommastellen)')
+  amount: specialItemAmount.describe('Betrag in Euro (höchstens 2 Nachkommastellen)'),
+  clientId: z.string().trim()
+    .regex(/^[A-Za-z0-9_-]{8,64}$/, 'clientId muss 8–64 Zeichen aus Buchstaben, Ziffern, - und _ haben (z. B. UUID)')
+    .optional()
+    .describe('Vom Client erzeugte Kennung (z. B. UUID) für sichere Wiederholung bei Offline-Erfassung')
 });
 
 const UpdateSpecialItemBody = z.object({

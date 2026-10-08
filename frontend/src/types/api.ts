@@ -85,12 +85,6 @@ export interface Payslip {
   carryOut: number
 }
 
-export interface SpecialItemPayload {
-  date: string
-  description: string
-  amount: number
-}
-
 export interface MinijobSetting {
   id: number
   monthlyLimit: number

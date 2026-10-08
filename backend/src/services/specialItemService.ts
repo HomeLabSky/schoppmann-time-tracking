@@ -5,7 +5,8 @@ import { AppError } from '../lib/errors';
 import * as billing from '../utils/billing';
 import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
-import { assertDateOpen, nextOpenPeriodFor } from './periodGuard';
+import { DateService } from './dateService';
+import { assertDateOpen, assertNoClosedPeriodBetween, nextOpenPeriodFor } from './periodGuard';
 
 /** API-Form eines Sonderpostens (Betrag in Cent und Euro) */
 export interface SpecialItemJSON extends SpecialItemRow {
@@ -16,6 +17,11 @@ export interface SpecialItemInput {
   date: string;
   description: string;
   amount: number;
+}
+
+export interface CreateSpecialItemInput extends SpecialItemInput {
+  /** Vom Client erzeugte Kennung (App, Offline-Erfassung) für sichere Wiederholung */
+  clientId?: string | undefined;
 }
 
 /** Datum, nach dem ein Sonderposten einer Periode zugeordnet wird (wie bei Zeiteinträgen) */
@@ -39,12 +45,28 @@ const findItem = (userId: number, itemId: number): SpecialItemRow => {
   return item;
 };
 
-/** Kaufdatum prüfen; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen. */
+const invalidDate = (message: string) => new AppError('VALIDATION_ERROR', message, { fields: { date: message } });
+
+/**
+ * Kaufdatum prüfen (gleiches Fenster wie bei Zeiteinträgen: nicht in der Zukunft, höchstens einen Monat zurück bzw. bis
+ * zur freigegebenen Nacherfassung). Liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten
+ * offenen – bei Nacherfassung nur in der direkt folgenden.
+ */
 const resolveBillingDate = (userId: number, date: string): string | null => {
-  if (date > todayString()) {
-    throw new AppError('VALIDATION_ERROR', 'Datum darf nicht in der Zukunft liegen', { fields: { date: 'Datum darf nicht in der Zukunft liegen' } });
+  const user = db().select({ nacherfassungAb: users.nacherfassungAb }).from(users).where(eq(users.id, userId)).get();
+  if (!user) throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
+  const today = todayString();
+  if (date > today) throw invalidDate('Datum darf nicht in der Zukunft liegen');
+  const regular = billing.earliestRegularDate(today);
+  const backdateFrom = user.nacherfassungAb && user.nacherfassungAb < regular ? user.nacherfassungAb : null;
+  if (date < (backdateFrom ?? regular)) {
+    throw invalidDate(backdateFrom
+      ? `Datum darf nicht vor dem ${DateService.formatDateForDisplay(backdateFrom)} liegen (Nacherfassung)`
+      : 'Datum darf nicht mehr als einen Monat zurückliegen');
   }
-  return nextOpenPeriodFor(userId, date)?.startDate ?? null;
+  const nachtrag = nextOpenPeriodFor(userId, date);
+  if (nachtrag && date < regular) assertNoClosedPeriodBetween(userId, date, nachtrag);
+  return nachtrag?.startDate ?? null;
 };
 
 /** Abrechnungsdatum des frühesten Sonderpostens vor `before` (für die Periodenliste im Übertrag), sonst undefined */
@@ -56,8 +78,8 @@ export const firstSpecialItemBefore = (userId: number, before: string): string |
 
 /**
  * Sonderposten: privat verauslagte Beträge eines Mitarbeiters, die mit dem Lohn ausgezahlt werden. Sie zählen wie der
- * Verdienst gegen die Minijob-Grenze; was darüber liegt, geht in den Übertrag. Nur Admins erfassen sie; in
- * abgeschlossenen Perioden sind sie gesperrt (Kaufdatum dort → Nachtrag in der nächsten offenen Periode).
+ * Verdienst gegen die Minijob-Grenze; was darüber liegt, geht in den Übertrag. Jeder Mitarbeiter erfasst seine eigenen;
+ * in abgeschlossenen Perioden sind sie gesperrt (Kaufdatum dort → Nachtrag in der nächsten offenen Periode).
  */
 export class SpecialItemService {
   /** Sonderposten, die in der Periode [startDate, endDate] abgerechnet werden (nach Kaufdatum sortiert) */
@@ -68,13 +90,21 @@ export class SpecialItemService {
       .all();
   }
 
-  static create(userId: number, input: SpecialItemInput, actor: Actor): SpecialItemJSON {
+  /**
+   * Legt einen eigenen Sonderposten an. Mit `clientId` sicher wiederholbar: Gibt es schon einen Posten mit dieser
+   * Kennung, wird nichts angelegt, sondern dieser geliefert (`replayed: true`).
+   */
+  static create(userId: number, input: CreateSpecialItemInput, actor: Actor): { item: SpecialItemJSON; replayed: boolean } {
     return transaction(() => {
-      if (!db().select({ id: users.id }).from(users).where(eq(users.id, userId)).get()) {
-        throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
+      if (input.clientId) {
+        const previous = db().select().from(specialItems)
+          .where(and(eq(specialItems.userId, userId), eq(specialItems.clientId, input.clientId)))
+          .get();
+        if (previous) return { item: toSpecialItemJSON(previous), replayed: true };
       }
       const created = db().insert(specialItems).values({
         userId,
+        clientId: input.clientId || null,
         date: input.date,
         description: input.description,
         amountCents: billing.toCents(input.amount),
@@ -89,7 +119,7 @@ export class SpecialItemService {
         targetUserId: userId,
         after: snapshot(created)
       });
-      return toSpecialItemJSON(created);
+      return { item: toSpecialItemJSON(created), replayed: false };
     });
   }
 

@@ -13,10 +13,15 @@ import { PeriodService } from '../src/services/periodService';
 import { SpecialItemService } from '../src/services/specialItemService';
 import { TimeEntryService } from '../src/services/timeEntryService';
 import { UserService } from '../src/services/userService';
+import * as billing from '../src/utils/billing';
+import { todayString } from '../src/utils/clock';
 import { renderPayslipsPdf } from '../src/utils/payslipPdf';
 import { actorOf, addEntry, addLimit, makeUser as createUser, reject } from './helpers';
 
-const makeUser = (patch: Partial<User> = {}) => createUser({ name: 'Sonder Test', stundenlohn: 10, ...patch }, 'sonder');
+// Nacherfassung ab 2024 freigegeben: Die Tests arbeiten mit festen, weit zurückliegenden Daten
+const makeUser = (patch: Partial<User> = {}) =>
+  createUser({ name: 'Sonder Test', stundenlohn: 10, nacherfassungAb: '2024-01-01', ...patch }, 'sonder');
+const createItem = (...args: Parameters<typeof SpecialItemService.create>) => SpecialItemService.create(...args).item;
 const pageCount = (pdf: Buffer): number => (pdf.toString('latin1').match(/\/Type \/Page\b/g) ?? []).length;
 
 let admin: User;
@@ -34,9 +39,9 @@ test.after(() => {
 test('Sonderposten: zählen mit dem Verdienst gegen die Grenze, Rest im Übertrag; im Abschluss eingefroren', async () => {
   const user = await makeUser();
   addEntry(user, '2024-03-04', { start: '08:00', end: '20:00', rateCents: 1000 }); // 12 h → 120 €
-  SpecialItemService.create(user.id, { date: '2024-03-11', description: 'Leuchtmittel Treppenhaus', amount: 23.9 }, actorOf(admin));
-  SpecialItemService.create(user.id, { date: '2024-03-23', description: 'Nachschlüssel', amount: 23.95 }, actorOf(admin));
-  SpecialItemService.create(user.id, { date: '2024-04-02', description: 'Andere Periode', amount: 5 }, actorOf(admin));
+  createItem(user.id, { date: '2024-03-11', description: 'Leuchtmittel Treppenhaus', amount: 23.9 }, actorOf(user));
+  createItem(user.id, { date: '2024-03-23', description: 'Nachschlüssel', amount: 23.95 }, actorOf(user));
+  createItem(user.id, { date: '2024-04-02', description: 'Andere Periode', amount: 5 }, actorOf(user));
 
   const data = TimeEntryService.getMonthlyTimeRecordsSync(user.id, 2024, 3);
   assert.deepEqual(data.specialItems.map((i) => [i.date, i.amount]), [['2024-03-11', 23.9], ['2024-03-23', 23.95]]);
@@ -71,13 +76,13 @@ test('Sonderposten: zählen mit dem Verdienst gegen die Grenze, Rest im Übertra
 test('Sonderposten: in abgeschlossener Periode gesperrt, neues Kaufdatum dort wird Nachtrag in der nächsten offenen', async () => {
   const user = await makeUser();
   addEntry(user, '2024-05-06');
-  const item = SpecialItemService.create(user.id, { date: '2024-05-07', description: 'Schrauben', amount: 4.5 }, actorOf(admin));
+  const item = createItem(user.id, { date: '2024-05-07', description: 'Schrauben', amount: 4.5 }, actorOf(user));
   await PeriodService.closePeriod(user.id, 2024, 5, actorOf(admin));
 
-  assert.throws(() => SpecialItemService.update(user.id, item.id, { amount: 5 }, actorOf(admin)), { code: 'PERIOD_CLOSED' });
-  assert.throws(() => SpecialItemService.delete(user.id, item.id, actorOf(admin)), { code: 'PERIOD_CLOSED' });
+  assert.throws(() => SpecialItemService.update(user.id, item.id, { amount: 5 }, actorOf(user)), { code: 'PERIOD_CLOSED' });
+  assert.throws(() => SpecialItemService.delete(user.id, item.id, actorOf(user)), { code: 'PERIOD_CLOSED' });
 
-  const late = SpecialItemService.create(user.id, { date: '2024-05-20', description: 'Farbe', amount: 12 }, actorOf(admin));
+  const late = createItem(user.id, { date: '2024-05-20', description: 'Farbe', amount: 12 }, actorOf(user));
   assert.equal(late.billingDate, '2024-06-01');
   const june = TimeEntryService.getMonthlyTimeRecordsSync(user.id, 2024, 6);
   assert.deepEqual(june.specialItems.map((i) => i.id), [late.id]);
@@ -92,7 +97,7 @@ test('Sonderposten: in abgeschlossener Periode gesperrt, neues Kaufdatum dort wi
 
 test('Sonderposten: Periode nur mit Sonderposten vor der ersten Arbeitszeit geht in den Übertrag ein', async () => {
   const user = await makeUser();
-  SpecialItemService.create(user.id, { date: '2024-09-10', description: 'Rasenmäher-Reparatur', amount: 130 }, actorOf(admin));
+  createItem(user.id, { date: '2024-09-10', description: 'Rasenmäher-Reparatur', amount: 130 }, actorOf(user));
   addEntry(user, '2024-10-07', { start: '08:00', end: '10:00', rateCents: 1000 }); // 20 €
 
   const october = TimeEntryService.getMonthlyTimeRecordsSync(user.id, 2024, 10);
@@ -102,10 +107,10 @@ test('Sonderposten: Periode nur mit Sonderposten vor der ersten Arbeitszeit geht
 test('Sonderposten: Ändern/Löschen im Protokoll, fremde Posten nicht gefunden, frühere offene Periode blockiert den Abschluss', async () => {
   const user = await makeUser();
   const other = await makeUser();
-  const item = SpecialItemService.create(user.id, { date: '2024-07-03', description: 'Besen', amount: 9.99 }, actorOf(admin));
+  const item = createItem(user.id, { date: '2024-07-03', description: 'Besen', amount: 9.99 }, actorOf(user));
 
-  assert.throws(() => SpecialItemService.update(other.id, item.id, { amount: 1 }, actorOf(admin)), { code: 'SPECIAL_ITEM_NOT_FOUND' });
-  const updated = SpecialItemService.update(user.id, item.id, { description: 'Besen und Schaufel', amount: 14.5 }, actorOf(admin));
+  assert.throws(() => SpecialItemService.update(other.id, item.id, { amount: 1 }, actorOf(user)), { code: 'SPECIAL_ITEM_NOT_FOUND' });
+  const updated = SpecialItemService.update(user.id, item.id, { description: 'Besen und Schaufel', amount: 14.5 }, actorOf(user));
   assert.deepEqual([updated.description, updated.amountCents], ['Besen und Schaufel', 1450]);
 
   // Juli enthält nur einen Sonderposten: August kann erst nach Juli abgeschlossen werden
@@ -114,12 +119,28 @@ test('Sonderposten: Ändern/Löschen im Protokoll, fremde Posten nicht gefunden,
 
   await reject(UserService.deleteUser(user.id, actorOf(admin)), /USER_HAS_DEPENDENCIES.*Sonderposten/);
 
-  SpecialItemService.delete(user.id, item.id, actorOf(admin));
+  SpecialItemService.delete(user.id, item.id, actorOf(user));
   await PeriodService.closePeriod(user.id, 2024, 8, actorOf(admin));
 
   const { entries } = await AuditService.list({ userId: user.id, action: 'special_item' });
   assert.deepEqual(entries.map((e) => e.action).sort(), ['special_item.create', 'special_item.delete', 'special_item.update']);
 
-  assert.throws(() => SpecialItemService.create(user.id, { date: '2999-01-01', description: 'Zukunft', amount: 1 }, actorOf(admin)),
+  assert.throws(() => createItem(user.id, { date: '2999-01-01', description: 'Zukunft', amount: 1 }, actorOf(user)),
     { code: 'VALIDATION_ERROR' });
+});
+
+test('Sonderposten: gleiches Datumsfenster wie Zeiteinträge, mit clientId sicher wiederholbar', async () => {
+  const user = await makeUser({ nacherfassungAb: null });
+  const today = todayString();
+  assert.throws(() => createItem(user.id, { date: billing.addMonths(today, -2), description: 'Zu alt', amount: 1 }, actorOf(user)),
+    (e: { code?: string; fields?: Record<string, string> }) => e.code === 'VALIDATION_ERROR' && /einen Monat/.test(e.fields?.date ?? ''));
+
+  const body = { date: today, description: 'Offline erfasst', amount: 3.5, clientId: 'offline-item-0001' };
+  const first = SpecialItemService.create(user.id, body, actorOf(user));
+  const again = SpecialItemService.create(user.id, body, actorOf(user));
+  assert.equal(first.replayed, false);
+  assert.equal(again.replayed, true);
+  assert.equal(again.item.id, first.item.id);
+  const [year = 0, month = 1] = today.split('-').map(Number);
+  assert.equal(TimeEntryService.getMonthlyTimeRecordsSync(user.id, year, month).specialItems.length, 1);
 });
