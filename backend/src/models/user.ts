@@ -19,6 +19,7 @@ export const toSafeUser = (user: User): SafeUser => {
     ...safe,
     isActive: safe.isActive ?? true,
     stundenlohn: safe.stundenlohn ?? null,
-    lohnzettelEmail: safe.lohnzettelEmail ?? null
+    lohnzettelEmail: safe.lohnzettelEmail ?? null,
+    nacherfassungAb: safe.nacherfassungAb ?? null
   };
 };

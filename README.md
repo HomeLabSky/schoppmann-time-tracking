@@ -67,6 +67,9 @@ Im Admin-Bereich:
   abgeschlossenen Periode kann der Mitarbeiter nichts mehr ändern oder löschen; die Beträge sind festgeschrieben.
   Arbeitszeiten, die danach noch für die Periode erfasst werden, rechnet das System als **Nachtrag** in der nächsten
   offenen Periode ab.
+- **Nacherfassung**: In den Abrechnungsdaten eines Mitarbeiters kann ein Admin „Nacherfassung erlauben ab“ setzen. Dann
+  darf der Mitarbeiter weiter als einen Monat zurück erfassen (z. B. Übernahme aus Excel); die Einträge landen in ihrem
+  eigenen, noch offenen Monat. Danach das Datum wieder leeren und die Monate der Reihe nach abschließen.
 - **Lohnzettel (PDF)**: Für jede abgeschlossene Periode gibt es einen Lohnzettel mit den festgeschriebenen Zahlen
   (Arbeitszeitnachweis, Verdienst, Übertrag, Auszahlung). Admins laden ihn im Zeitnachweis eines Mitarbeiters herunter;
   in der Übersicht erzeugt **Alle Lohnzettel (PDF)** zum Monatsabschluss eine Datei mit allen abgeschlossenen

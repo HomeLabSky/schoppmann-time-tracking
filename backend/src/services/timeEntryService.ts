@@ -281,17 +281,19 @@ export class TimeEntryService {
       // Standardpause nur für den ersten Eintrag des Tages; weitere Einträge: Pause liegt dazwischen
       const firstOfDay = !around.some((e) => e.date === entryData.date);
       const breakMinutes = billing.resolveBreakMinutes(entryData.breakMinutes, firstOfDay ? 30 : 0);
-      assertValid(billing.validateEntryRules(
-        { date: entryData.date, startTime, endTime, breakMinutes },
-        { today: todayString(), checkDateWindow: true }
-      ));
-
-      // Tag in abgeschlossener Periode: Nachtrag, abgerechnet in der nächsten offenen Periode
-      const nachtrag = nextOpenPeriodFor(entryData.userId, entryData.date);
-      assertFitsDay({ userId: entryData.userId, date: entryData.date, startTime, endTime, breakMinutes }, around);
-
       const user = db().select().from(users).where(eq(users.id, entryData.userId)).get();
       if (!user) throw new AppError('USER_NOT_FOUND', 'Benutzer nicht gefunden');
+      const today = todayString();
+      assertValid(billing.validateEntryRules(
+        { date: entryData.date, startTime, endTime, breakMinutes },
+        { today, checkDateWindow: true, backdateFrom: user.nacherfassungAb }
+      ));
+
+      // Nacherfassung (älter als das normale Fenster): nur in offenen Perioden, nie als Nachtrag in einen späteren
+      // Monat verschoben. Sonst gilt: Tag in abgeschlossener Periode → Nachtrag in der nächsten offenen Periode.
+      if (entryData.date < billing.earliestRegularDate(today)) assertDateOpen(entryData.userId, entryData.date);
+      const nachtrag = nextOpenPeriodFor(entryData.userId, entryData.date);
+      assertFitsDay({ userId: entryData.userId, date: entryData.date, startTime, endTime, breakMinutes }, around);
 
       const created = db().insert(timeEntries).values({
         userId: entryData.userId,

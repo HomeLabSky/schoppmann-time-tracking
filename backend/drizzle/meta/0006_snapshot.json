@@ -1,0 +1,935 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "22de1104-9edb-4c99-959b-bd0ca88bda1c",
+  "prevId": "b5c1aeef-6a63-4394-ba31-7f23ddf1a86b",
+  "tables": {
+    "AuditLogs": {
+      "name": "AuditLogs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "actorId": {
+          "name": "actorId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actorEmail": {
+          "name": "actorEmail",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'system'"
+        },
+        "action": {
+          "name": "action",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entityType": {
+          "name": "entityType",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entityId": {
+          "name": "entityId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "targetUserId": {
+          "name": "targetUserId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "before": {
+          "name": "before",
+          "type": "TEXT",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "after": {
+          "name": "after",
+          "type": "TEXT",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "meta": {
+          "name": "meta",
+          "type": "TEXT",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "audit_logs_created_at": {
+          "name": "audit_logs_created_at",
+          "columns": [
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "audit_logs_target_user_id_created_at": {
+          "name": "audit_logs_target_user_id_created_at",
+          "columns": [
+            "targetUserId",
+            "createdAt"
+          ],
+          "isUnique": false
+        },
+        "audit_logs_entity_type_entity_id": {
+          "name": "audit_logs_entity_type_entity_id",
+          "columns": [
+            "entityType",
+            "entityId"
+          ],
+          "isUnique": false
+        },
+        "audit_logs_action": {
+          "name": "audit_logs_action",
+          "columns": [
+            "action"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "LoginThrottles": {
+      "name": "LoginThrottles",
+      "columns": {
+        "email": {
+          "name": "email",
+          "type": "text(255)",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "failures": {
+          "name": "failures",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "lastFailureAt": {
+          "name": "lastFailureAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lockedUntil": {
+          "name": "lockedUntil",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "MinijobSettings": {
+      "name": "MinijobSettings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "monthlyLimit": {
+          "name": "monthlyLimit",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text(500)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "validFrom": {
+          "name": "validFrom",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "validUntil": {
+          "name": "validUntil",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": false
+        },
+        "createdBy": {
+          "name": "createdBy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "minijob_settings_valid_from": {
+          "name": "minijob_settings_valid_from",
+          "columns": [
+            "validFrom"
+          ],
+          "isUnique": false
+        },
+        "minijob_settings_is_active": {
+          "name": "minijob_settings_is_active",
+          "columns": [
+            "isActive"
+          ],
+          "isUnique": false
+        },
+        "minijob_settings_valid_from_valid_until": {
+          "name": "minijob_settings_valid_from_valid_until",
+          "columns": [
+            "validFrom",
+            "validUntil"
+          ],
+          "isUnique": false
+        },
+        "minijob_settings_created_by": {
+          "name": "minijob_settings_created_by",
+          "columns": [
+            "createdBy"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "MinijobSettings_createdBy_Users_id_fk": {
+          "name": "MinijobSettings_createdBy_Users_id_fk",
+          "tableFrom": "MinijobSettings",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "createdBy"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "minijob_settings_limit_check": {
+          "name": "minijob_settings_limit_check",
+          "value": "\"MinijobSettings\".\"monthlyLimit\" BETWEEN 0 AND 999999.99"
+        },
+        "minijob_settings_range_check": {
+          "name": "minijob_settings_range_check",
+          "value": "\"MinijobSettings\".\"validUntil\" IS NULL OR \"MinijobSettings\".\"validUntil\" > \"MinijobSettings\".\"validFrom\""
+        },
+        "minijob_settings_is_active_check": {
+          "name": "minijob_settings_is_active_check",
+          "value": "\"MinijobSettings\".\"isActive\" IN (0, 1)"
+        }
+      }
+    },
+    "PeriodClosures": {
+      "name": "PeriodClosures",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "periodStart": {
+          "name": "periodStart",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "periodEnd": {
+          "name": "periodEnd",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "closedBy": {
+          "name": "closedBy",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "closedAt": {
+          "name": "closedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entryCount": {
+          "name": "entryCount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "totalMinutes": {
+          "name": "totalMinutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "earningsCents": {
+          "name": "earningsCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "limitCents": {
+          "name": "limitCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carryInCents": {
+          "name": "carryInCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "paidCents": {
+          "name": "paidCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "carryOutCents": {
+          "name": "carryOutCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "unique_user_period_start": {
+          "name": "unique_user_period_start",
+          "columns": [
+            "userId",
+            "periodStart"
+          ],
+          "isUnique": true
+        },
+        "period_closures_user_id_period_end": {
+          "name": "period_closures_user_id_period_end",
+          "columns": [
+            "userId",
+            "periodEnd"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "PeriodClosures_userId_Users_id_fk": {
+          "name": "PeriodClosures_userId_Users_id_fk",
+          "tableFrom": "PeriodClosures",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "period_closures_range_check": {
+          "name": "period_closures_range_check",
+          "value": "\"PeriodClosures\".\"periodEnd\" >= \"PeriodClosures\".\"periodStart\""
+        }
+      }
+    },
+    "Sessions": {
+      "name": "Sessions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text(36)",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "refreshHash": {
+          "name": "refreshHash",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "previousHash": {
+          "name": "previousHash",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rotatedAt": {
+          "name": "rotatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "lastUsedAt": {
+          "name": "lastUsedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expiresAt": {
+          "name": "expiresAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "absoluteExpiresAt": {
+          "name": "absoluteExpiresAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revokedAt": {
+          "name": "revokedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "revokedReason": {
+          "name": "revokedReason",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "clientType": {
+          "name": "clientType",
+          "type": "text(8)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'web'"
+        },
+        "deviceName": {
+          "name": "deviceName",
+          "type": "text(100)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ip": {
+          "name": "ip",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "userAgent": {
+          "name": "userAgent",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "sessions_user_id": {
+          "name": "sessions_user_id",
+          "columns": [
+            "userId"
+          ],
+          "isUnique": false
+        },
+        "sessions_revoked_at": {
+          "name": "sessions_revoked_at",
+          "columns": [
+            "revokedAt"
+          ],
+          "isUnique": false
+        },
+        "sessions_absolute_expires_at": {
+          "name": "sessions_absolute_expires_at",
+          "columns": [
+            "absoluteExpiresAt"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "Sessions_userId_Users_id_fk": {
+          "name": "Sessions_userId_Users_id_fk",
+          "tableFrom": "Sessions",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "sessions_client_type_check": {
+          "name": "sessions_client_type_check",
+          "value": "\"Sessions\".\"clientType\" IN ('web', 'app')"
+        }
+      }
+    },
+    "TimeEntries": {
+      "name": "TimeEntries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "userId": {
+          "name": "userId",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "clientId": {
+          "name": "clientId",
+          "type": "text(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "date": {
+          "name": "date",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "startTime": {
+          "name": "startTime",
+          "type": "TIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "endTime": {
+          "name": "endTime",
+          "type": "TIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "breakMinutes": {
+          "name": "breakMinutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 30
+        },
+        "description": {
+          "name": "description",
+          "type": "text(500)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hourlyRateCents": {
+          "name": "hourlyRateCents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "billingDate": {
+          "name": "billingDate",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "time_entries_user_date": {
+          "name": "time_entries_user_date",
+          "columns": [
+            "userId",
+            "date"
+          ],
+          "isUnique": false
+        },
+        "unique_user_client_id": {
+          "name": "unique_user_client_id",
+          "columns": [
+            "userId",
+            "clientId"
+          ],
+          "isUnique": true
+        },
+        "time_entries_date": {
+          "name": "time_entries_date",
+          "columns": [
+            "date"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "TimeEntries_userId_Users_id_fk": {
+          "name": "TimeEntries_userId_Users_id_fk",
+          "tableFrom": "TimeEntries",
+          "tableTo": "Users",
+          "columnsFrom": [
+            "userId"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "time_entries_break_check": {
+          "name": "time_entries_break_check",
+          "value": "\"TimeEntries\".\"breakMinutes\" BETWEEN 0 AND 480"
+        },
+        "time_entries_rate_check": {
+          "name": "time_entries_rate_check",
+          "value": "\"TimeEntries\".\"hourlyRateCents\" IS NULL OR \"TimeEntries\".\"hourlyRateCents\" >= 0"
+        },
+        "time_entries_date_check": {
+          "name": "time_entries_date_check",
+          "value": "\"TimeEntries\".\"date\" GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'"
+        },
+        "time_entries_start_check": {
+          "name": "time_entries_start_check",
+          "value": "\"TimeEntries\".\"startTime\" GLOB '[0-2][0-9]:[0-5][0-9]:[0-5][0-9]'"
+        },
+        "time_entries_end_check": {
+          "name": "time_entries_end_check",
+          "value": "\"TimeEntries\".\"endTime\" GLOB '[0-2][0-9]:[0-5][0-9]:[0-5][0-9]'"
+        },
+        "time_entries_range_check": {
+          "name": "time_entries_range_check",
+          "value": "\"TimeEntries\".\"startTime\" <> \"TimeEntries\".\"endTime\""
+        }
+      }
+    },
+    "Users": {
+      "name": "Users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'mitarbeiter'"
+        },
+        "isActive": {
+          "name": "isActive",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": true
+        },
+        "stundenlohn": {
+          "name": "stundenlohn",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": 12
+        },
+        "abrechnungStart": {
+          "name": "abrechnungStart",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "abrechnungEnde": {
+          "name": "abrechnungEnde",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 31
+        },
+        "lohnzettelEmail": {
+          "name": "lohnzettelEmail",
+          "type": "text(255)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "nacherfassungAb": {
+          "name": "nacherfassungAb",
+          "type": "DATE",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "DATETIME",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "users_email": {
+          "name": "users_email",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        },
+        "users_role": {
+          "name": "users_role",
+          "columns": [
+            "role"
+          ],
+          "isUnique": false
+        },
+        "users_is_active": {
+          "name": "users_is_active",
+          "columns": [
+            "isActive"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_role_check": {
+          "name": "users_role_check",
+          "value": "\"Users\".\"role\" IN ('admin', 'mitarbeiter')"
+        },
+        "users_is_active_check": {
+          "name": "users_is_active_check",
+          "value": "\"Users\".\"isActive\" IN (0, 1)"
+        },
+        "users_stundenlohn_check": {
+          "name": "users_stundenlohn_check",
+          "value": "\"Users\".\"stundenlohn\" IS NULL OR \"Users\".\"stundenlohn\" BETWEEN 0 AND 999"
+        },
+        "users_abrechnung_start_check": {
+          "name": "users_abrechnung_start_check",
+          "value": "\"Users\".\"abrechnungStart\" BETWEEN 1 AND 31"
+        },
+        "users_abrechnung_ende_check": {
+          "name": "users_abrechnung_ende_check",
+          "value": "\"Users\".\"abrechnungEnde\" BETWEEN 1 AND 31"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

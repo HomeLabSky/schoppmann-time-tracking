@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useCreateUser, useUpdateUser, useUpdateUserSettings } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
+import { toLocalDateString } from '@/lib/utils'
 import {
   ROLE_LABELS,
   userCreateSchema,
@@ -171,9 +172,10 @@ export function BillingSettingsDialog({ user, onClose }: { user: User | null; on
   const save = useUpdateUserSettings()
   const form = useForm<UserSettingsInput>({
     resolver: zodResolver(userSettingsSchema),
-    defaultValues: { stundenlohn: 12, abrechnungStart: 1, abrechnungEnde: 31, lohnzettelEmail: '' },
+    defaultValues: { stundenlohn: 12, abrechnungStart: 1, abrechnungEnde: 31, lohnzettelEmail: '', nacherfassungAb: '' },
   })
   const { errors } = form.formState
+  const nacherfassungAb = useWatch({ control: form.control, name: 'nacherfassungAb' })
 
   useEffect(() => {
     if (user) {
@@ -182,6 +184,7 @@ export function BillingSettingsDialog({ user, onClose }: { user: User | null; on
         abrechnungStart: user.abrechnungStart ?? 1,
         abrechnungEnde: user.abrechnungEnde ?? 31,
         lohnzettelEmail: user.lohnzettelEmail ?? user.email,
+        nacherfassungAb: user.nacherfassungAb ?? '',
       })
     }
   }, [user, form])
@@ -192,7 +195,7 @@ export function BillingSettingsDialog({ user, onClose }: { user: User | null; on
       await save.mutateAsync({ id: user.id, data: values })
       onClose()
     } catch (error) {
-      applyServerErrors(error, form.setError, ['stundenlohn', 'abrechnungStart', 'abrechnungEnde', 'lohnzettelEmail'])
+      applyServerErrors(error, form.setError, ['stundenlohn', 'abrechnungStart', 'abrechnungEnde', 'lohnzettelEmail', 'nacherfassungAb'])
     }
   })
 
@@ -226,6 +229,23 @@ export function BillingSettingsDialog({ user, onClose }: { user: User | null; on
           </fieldset>
           <FormField id="bs-payslip" label="E-Mail für Lohnzettel" error={errors.lohnzettelEmail?.message}>
             {(c) => <Input {...c} type="email" {...form.register('lohnzettelEmail')} />}
+          </FormField>
+          <FormField
+            id="bs-backdate"
+            label="Nacherfassung erlauben ab"
+            hint="Normalerweise darf nur einen Monat zurück erfasst werden. Mit einem Datum kann der Mitarbeiter bis dahin nacherfassen, z. B. um Zeiten aus Excel zu übernehmen. Nur in offenen Monaten – danach wieder leeren."
+            error={errors.nacherfassungAb?.message}
+          >
+            {(c) => (
+              <div className="flex items-center gap-2">
+                <Input {...c} type="date" max={toLocalDateString()} className="max-w-48" {...form.register('nacherfassungAb')} />
+                {nacherfassungAb && (
+                  <Button variant="ghost" size="sm" onClick={() => form.setValue('nacherfassungAb', '', { shouldDirty: true })}>
+                    Aufheben
+                  </Button>
+                )}
+              </div>
+            )}
           </FormField>
         </ModalBody>
         <ModalFooter>

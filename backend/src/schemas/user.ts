@@ -1,4 +1,5 @@
-import { z, integer, euro, email, newPassword, personName, role, Pagination, User, timestamp } from './common';
+import { z, integer, euro, email, isoDate, newPassword, personName, role, Pagination, User, timestamp } from './common';
+import { todayString } from '../utils/clock';
 
 const UserListQuery = z.object({
   page: integer('Seite', { min: 1 }).optional(),
@@ -27,7 +28,14 @@ const settingsFields = {
   stundenlohn: euro('Stundenlohn', 999).optional(),
   abrechnungStart: integer('Abrechnungsstart', { min: 1, max: 31 }).optional(),
   abrechnungEnde: integer('Abrechnungsende', { min: 1, max: 31 }).optional(),
-  lohnzettelEmail: z.union([z.literal(''), z.null(), email('Lohnzettel-E-Mail')]).optional()
+  lohnzettelEmail: z.union([z.literal(''), z.null(), email('Lohnzettel-E-Mail')]).optional(),
+  nacherfassungAb: z.union([
+    z.literal(''),
+    z.null(),
+    isoDate('Nacherfassung ab').refine((d) => d <= todayString(), 'Nacherfassung ab darf nicht in der Zukunft liegen')
+  ]).optional()
+    .describe('Nacherfassung freigeben: Zeiten dürfen bis zu diesem Tag zurück erfasst werden (statt nur einen Monat); ' +
+      'leer/null hebt die Freigabe auf. Gilt nur für offene Perioden – Nacherfassungen werden nie zu Nachträgen.')
 };
 
 const UserSettingsBody = z.object(settingsFields);
@@ -36,7 +44,8 @@ const Settings = z.object({
   stundenlohn: z.union([z.number(), z.string()]).nullable(),
   abrechnungStart: z.number().int(),
   abrechnungEnde: z.number().int(),
-  lohnzettelEmail: z.string().nullable()
+  lohnzettelEmail: z.string().nullable(),
+  nacherfassungAb: z.string().nullable().describe('Nacherfassung freigegeben bis zu diesem Tag zurück (YYYY-MM-DD); null = nur einen Monat')
 }).meta({ id: 'WorkSettings', description: 'Arbeitseinstellungen (Lohn und Abrechnungszeitraum legt der Admin fest)' });
 
 const UserListData = z.object({ users: z.array(User), pagination: Pagination });

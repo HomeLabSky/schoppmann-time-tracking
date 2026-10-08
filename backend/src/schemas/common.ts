@@ -104,6 +104,7 @@ const User = z.object({
   abrechnungStart: z.number().int().describe('Erster Tag der Abrechnungsperiode (1–31)'),
   abrechnungEnde: z.number().int().describe('Letzter Tag der Abrechnungsperiode (1–31); kleiner als Start = monatsübergreifend'),
   lohnzettelEmail: z.string().nullable(),
+  nacherfassungAb: z.string().nullable().describe('Nacherfassung freigegeben bis zu diesem Tag zurück (YYYY-MM-DD); null = nur einen Monat'),
   createdAt: timestamp(),
   updatedAt: timestamp()
 }).meta({ id: 'User', description: 'Benutzerkonto (ohne Passwort)' });

@@ -29,6 +29,11 @@ export const users = sqliteTable('Users', {
   abrechnungStart: integer('abrechnungStart').notNull().default(1),
   abrechnungEnde: integer('abrechnungEnde').notNull().default(31),
   lohnzettelEmail: text('lohnzettelEmail', { length: 255 }),
+  /**
+   * Nacherfassung (vom Admin freigegeben): Zeiten dürfen bis zu diesem Tag zurück erfasst werden statt nur einen
+   * Monat, z. B. um bisher in Excel geführte Monate zu übernehmen. NULL = nur das normale Fenster.
+   */
+  nacherfassungAb: dateOnly('nacherfassungAb'),
   createdAt: createdAt(),
   updatedAt: updatedAt()
 }, (t) => [

@@ -38,7 +38,8 @@ const settingsOf = (user: SafeUser) => ({
   stundenlohn: user.stundenlohn ?? 12.0,
   abrechnungStart: user.abrechnungStart || 1,
   abrechnungEnde: user.abrechnungEnde || 31,
-  lohnzettelEmail: user.lohnzettelEmail || user.email
+  lohnzettelEmail: user.lohnzettelEmail || user.email,
+  nacherfassungAb: user.nacherfassungAb ?? null
 });
 
 const limitInfo = (setting: MinijobSetting) => ({
