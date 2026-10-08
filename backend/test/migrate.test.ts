@@ -61,13 +61,18 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   const result = runMigrations();
   assert.equal(result.adopted, true);
   assert.deepEqual(result.applied, [
-    '0001_audit_triggers_and_cleanup', '0002_check_constraints', '0003_multiple_entries_per_day', '0004_time_entry_overlap_triggers'
+    '0001_audit_triggers_and_cleanup', '0002_check_constraints', '0003_multiple_entries_per_day', '0004_time_entry_overlap_triggers',
+    '0005_nachtrag_billing_date'
   ]);
   assert.ok(result.backup && fs.existsSync(result.backup), 'Sicherung vor der Migration');
   assert.ok(result.backup?.startsWith(`${file}.pre-migration-`));
 
-  // Kein Datensatz verloren oder verändert – insbesondere keine Zeiteinträge durch ON DELETE CASCADE beim Neuaufbau
-  assert.deepEqual(snapshot(), before);
+  // Kein Datensatz verloren oder verändert – insbesondere keine Zeiteinträge durch ON DELETE CASCADE beim Neuaufbau.
+  // Neu ist nur die Spalte billingDate (Nachträge), bei übernommenen Einträgen leer.
+  const after = snapshot();
+  assert.ok(after.entries.every((e) => e.billingDate === null));
+  after.entries.forEach((e) => delete e.billingDate);
+  assert.deepEqual(after, before);
 
   // Prüfregeln sind jetzt Teil der Tabellen
   assert.match(tableSql('Users'), /users_role_check/);
@@ -80,7 +85,7 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   assert.throws(() => getSqlite().exec('DELETE FROM AuditLogs'), /unveränderlich/);
   assert.equal(one('PRAGMA foreign_keys').foreign_keys, 1);
   assert.deepEqual(getSqlite().pragma('foreign_key_check'), []);
-  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 5);
+  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 6);
 
   // Die Anwendung liest die übernommenen Daten (Zeitpunkte im alten Textformat) korrekt
   const august = TimeEntryService.getMonthlyTimeRecordsSync(2, 2026, 8);
@@ -165,7 +170,7 @@ test('Neue Datenbank: alle Migrationen, Schema mit Prüfregeln', () => {
   useDatabase();
   const result = runMigrations();
   assert.equal(result.adopted, false);
-  assert.equal(result.applied.length, 5);
+  assert.equal(result.applied.length, 6);
   assert.equal(result.backup, null);
   assert.match(tableSql('TimeEntries'), /time_entries_break_check/);
   // Trigger gehen bei einem Neuaufbau der Tabelle verloren – dieser Test fällt dann auf

@@ -178,3 +178,39 @@ test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', as
   await expect(page.getByText('Periode wieder geöffnet').first()).toBeVisible()
   await expect(page.getByText('Periode abgeschlossen').first()).toBeVisible()
 })
+
+/** Letzter Tag des Vormonats (YYYY-MM-DD, Ortszeit) */
+function lastOfPreviousMonth(): string {
+  const d = new Date()
+  d.setDate(0)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+test('Nachtrag: Arbeitszeit im abgeschlossenen Vormonat wird in der laufenden Periode abgerechnet', async ({ page }) => {
+  await login(page, ADMIN)
+  await page.goto('/admin/timesheets')
+  await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
+  await page.getByRole('button', { name: 'Periode abschließen…' }).click()
+  const closeDialog = page.getByRole('dialog', { name: 'Periode abschließen?' })
+  await closeDialog.getByRole('button', { name: 'Abschließen' }).click()
+  await expect(page.getByText(/^Abgeschlossen am/)).toBeVisible()
+  await logout(page)
+
+  await login(page, EMPLOYEE)
+  await page.getByRole('button', { name: 'Arbeitszeit erfassen' }).first().click()
+  const dialog = page.getByRole('dialog', { name: 'Arbeitszeit erfassen' })
+  await dialog.getByLabel('Datum').fill(lastOfPreviousMonth())
+  await expect(dialog.getByTestId('nachtrag-hint')).toBeVisible()
+  await dialog.getByLabel('Beginn').fill('15:00')
+  await dialog.getByLabel('Ende').fill('17:00')
+  await dialog.getByLabel('Pause (Min.)').fill('0')
+  await dialog.getByLabel('Tätigkeit').fill('E2E Nachtrag')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.getByText('Als Nachtrag erfasst.')).toBeVisible()
+
+  // Erscheint in der laufenden Periode, gekennzeichnet als Nachtrag
+  const row = page.getByRole('row').filter({ hasText: 'E2E Nachtrag' })
+  await expect(row.getByText('Nachtrag', { exact: true })).toBeVisible()
+  await logout(page)
+})

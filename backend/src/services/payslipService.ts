@@ -6,7 +6,7 @@ import { toTimeEntryJSON } from '../models/timeEntry';
 import * as billing from '../utils/billing';
 import type { Payslip } from '../utils/payslipPdf';
 import { DateService } from './dateService';
-import { overlaps } from './periodGuard';
+import { billingDateSql, overlaps } from './periodGuard';
 import { TimeEntryService } from './timeEntryService';
 
 /** Eintrag der Lohnzettel-Liste eines Mitarbeiters (Beträge in Euro) */
@@ -50,8 +50,9 @@ const closureForMonth = (user: User, year: number, month: number): PeriodClosure
 
 const build = (user: User, closure: PeriodClosure): Payslip => {
   // Die Periode ist gesperrt: Die Einträge entsprechen genau den eingefrorenen Summen des Abschlusses
+  // (Zuordnung nach Abrechnungsdatum – Nachträge stehen in der Periode, in der sie abgerechnet wurden)
   const entries = db().select().from(timeEntries)
-    .where(and(eq(timeEntries.userId, user.id), between(timeEntries.date, closure.periodStart, closure.periodEnd)))
+    .where(and(eq(timeEntries.userId, user.id), between(billingDateSql, closure.periodStart, closure.periodEnd)))
     .orderBy(asc(timeEntries.date), asc(timeEntries.startTime))
     .all()
     .map(toTimeEntryJSON);

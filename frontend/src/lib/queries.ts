@@ -3,8 +3,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { adminApi, employeeApi, authApi } from './api'
-import { timeApi, type TimeEntryPayload } from './timetracking'
-import { getErrorMessage } from './utils'
+import { periodContaining, timeApi, type BillingPeriod, type TimeEntryPayload } from './timetracking'
+import { formatDate, getErrorMessage } from './utils'
 import type { AuditQuery } from '@/types/audit'
 import type { NewMinijobSetting, NewUser, EditUser, UserSettings } from '@/types/api'
 
@@ -329,6 +329,7 @@ function useInvalidateMyTime() {
 }
 
 export function useSaveTimeEntry() {
+  const qc = useQueryClient()
   const invalidate = useInvalidateMyTime()
   return useMutation({
     mutationFn: ({ id, data }: { id?: number; data: TimeEntryPayload }) => {
@@ -339,9 +340,19 @@ export function useSaveTimeEntry() {
       }
       return timeApi.create(data)
     },
-    onSuccess: (_r, vars) => {
+    onSuccess: (entry, vars) => {
+      if (!vars.id && entry.billingDate) {
+        const periods = qc.getQueryData<{ periods: BillingPeriod[] }>(queryKeys.myPeriods)?.periods
+        const target = periodContaining(periods, entry.billingDate)
+        toast.success('Als Nachtrag erfasst.', {
+          description: `Der ${formatDate(entry.date)} gehört zu einer abgeschlossenen Periode. Abgerechnet wird der Eintrag ${
+            target ? `im ${target.monthName} ${target.year}` : `in der Periode ab ${formatDate(entry.billingDate)}`
+          }.`,
+        })
+      } else {
+        toast.success(vars.id ? 'Eintrag gespeichert.' : 'Arbeitszeit erfasst.')
+      }
       invalidate()
-      toast.success(vars.id ? 'Eintrag gespeichert.' : 'Arbeitszeit erfasst.')
     },
   })
 }

@@ -22,6 +22,7 @@ import { Modal, ModalBody, ModalFooter } from '@/components/ui/Modal'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatCard } from '@/components/ui/stat-card'
 import { PeriodStatusBadge } from '../period-status'
+import { NachtragBadge } from '../time/nachtrag-badge'
 
 const reopenSchema = z.object({ reason: z.string().trim().min(5, 'Bitte mindestens 5 Zeichen').max(500, 'Höchstens 500 Zeichen') })
 
@@ -50,7 +51,17 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
 
   const columns = useMemo<ColumnDef<TimeRecord, unknown>[]>(
     () => [
-      { id: 'date', accessorFn: (r) => r.date, header: 'Datum', cell: ({ row }) => <span className="tabular">{formatDate(row.original.date)}</span> },
+      {
+        id: 'date',
+        accessorFn: (r) => r.date,
+        header: 'Datum',
+        cell: ({ row }) => (
+          <span className="tabular">
+            {formatDate(row.original.date)}
+            <NachtragBadge entry={row.original} />
+          </span>
+        ),
+      },
       {
         id: 'time',
         accessorFn: (r) => r.startTime,
@@ -191,6 +202,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
               { header: 'Satz (€)', value: (r) => csvNumber(r.hourlyRate ?? 0) },
               { header: 'Verdienst (€)', value: (r) => csvNumber(r.earnings) },
               { header: 'Beschreibung', value: (r) => r.description ?? '' },
+              { header: 'Nachtrag', value: (r) => (r.billingDate ? 'ja' : '') },
             ],
           }}
         />

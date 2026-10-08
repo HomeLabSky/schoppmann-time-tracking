@@ -4,10 +4,10 @@ import { useEffect } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Moon } from 'lucide-react'
-import { useSaveTimeEntry } from '@/lib/queries'
+import { useMyPeriods, useSaveTimeEntry } from '@/lib/queries'
 import { applyServerErrors } from '@/lib/forms'
-import type { TimeRecord } from '@/lib/timetracking'
-import { formatHours, toLocalDateString } from '@/lib/utils'
+import { periodContaining, type TimeRecord } from '@/lib/timetracking'
+import { formatDate, formatHours, toLocalDateString } from '@/lib/utils'
 import { spanMinutes, timeEntrySchema, type TimeEntryInput } from '@/schemas'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,7 @@ interface Props {
 
 export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
   const save = useSaveTimeEntry()
+  const periods = useMyPeriods()
   const editing = entry && entry !== 'new' ? entry : null
   const form = useForm<TimeEntryInput>({
     resolver: zodResolver(timeEntrySchema),
@@ -66,6 +67,10 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
     // defaults nur beim Öffnen übernehmen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry, form])
+
+  // Tag in abgeschlossener Periode: Der Eintrag wird als Nachtrag in der nächsten offenen Periode abgerechnet
+  const datePeriod = !editing && date ? periodContaining(periods.data?.periods, date) : undefined
+  const nachtrag = datePeriod?.isClosed ? datePeriod : undefined
 
   const valid = TIME_PATTERN.test(startTime ?? '') && TIME_PATTERN.test(endTime ?? '') && startTime !== endTime
   const span = valid ? spanMinutes(startTime, endTime) : 0
@@ -105,6 +110,17 @@ export function TimeEntryDialog({ entry, onClose, defaults, records }: Props) {
               />
             )}
           </FormField>
+          {nachtrag && (
+            <Alert variant="info" title="Nachtrag" data-testid="nachtrag-hint">
+              Der {formatDate(date)} gehört zur bereits abgeschlossenen Periode {nachtrag.monthName} {nachtrag.year}. Der Eintrag
+              wird als Nachtrag in der nächsten offenen Periode abgerechnet.
+            </Alert>
+          )}
+          {editing?.billingDate && (
+            <p className="text-sm text-muted-foreground">
+              Nachtrag: Dieser Eintrag wird nicht im Monat des Arbeitstags, sondern in einer späteren Periode abgerechnet.
+            </p>
+          )}
           {sameDay.length > 0 && (
             <p className="text-sm text-muted-foreground" data-testid="same-day-entries">
               An diesem Tag bereits erfasst:{' '}

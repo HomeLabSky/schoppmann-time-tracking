@@ -16,6 +16,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { Select } from '@/components/ui/input'
 import { PageHeader } from '@/components/ui/page-header'
 import { Progress, StatCard } from '@/components/ui/stat-card'
+import { NachtragBadge } from '@/components/features/time/nachtrag-badge'
 import { TimeEntryDialog } from '@/components/features/time/time-entry-dialog'
 
 export default function EmployeeDashboard() {
@@ -76,6 +77,7 @@ export default function EmployeeDashboard() {
         cell: ({ row }) => (
           <span className="tabular">
             {new Date(`${row.original.date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short' })}, {formatDate(row.original.date)}
+            <NachtragBadge entry={row.original} />
           </span>
         ),
       },
@@ -219,7 +221,9 @@ export default function EmployeeDashboard() {
               )
             }
           >
-            Einträge können nicht mehr angelegt, geändert oder gelöscht werden. Für Korrekturen wenden Sie sich bitte an Ihren Administrator.
+            Einträge können hier nicht mehr geändert oder gelöscht werden. Vergessene Arbeitszeiten können Sie in der laufenden
+            Periode trotzdem erfassen – sie werden als Nachtrag in der nächsten offenen Periode abgerechnet. Für Korrekturen
+            wenden Sie sich bitte an Ihren Administrator.
           </Alert>
         )}
         {limitMissing && (

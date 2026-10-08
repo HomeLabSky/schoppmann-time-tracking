@@ -44,6 +44,8 @@ const TimeEntry = z.object({
   breakMinutes: z.number().int(),
   description: z.string().nullable(),
   hourlyRateCents: z.number().int().nullable().describe('Beim Anlegen eingefrorener Stundensatz in Cent'),
+  billingDate: z.string().nullable().describe('Nachtrag: Der Tag lag beim Erfassen in einer abgeschlossenen Periode; ' +
+    'abgerechnet wird der Eintrag in der Periode, die dieses Datum enthält (YYYY-MM-DD). null = Periode des Arbeitstags'),
   hourlyRate: z.number().describe('Eingefrorener Stundensatz in Euro'),
   workMinutes: z.number().int(),
   workTime: z.string().describe('Arbeitszeit als HH:mm'),

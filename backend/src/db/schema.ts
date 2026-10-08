@@ -76,6 +76,11 @@ export const timeEntries = sqliteTable('TimeEntries', {
   description: text('description', { length: 500 }),
   /** Stundensatz in Cent, beim Anlegen eingefroren */
   hourlyRateCents: integer('hourlyRateCents'),
+  /**
+   * Nachtrag: Der Arbeitstag lag beim Erfassen schon in einer abgeschlossenen Periode. Abgerechnet wird der Eintrag
+   * in der Periode, die dieses Datum enthält (Beginn der nächsten offenen Periode). NULL = Periode des Arbeitstags.
+   */
+  billingDate: dateOnly('billingDate'),
   createdAt: createdAt(),
   updatedAt: updatedAt()
 }, (t) => [

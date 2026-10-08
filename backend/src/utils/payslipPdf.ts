@@ -251,7 +251,7 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
     if (y + ROW_HEIGHT > bottom) y = drawTableHead(doc, newPage());
     const overnight = entry.endTime < entry.startTime;
     drawRow(doc, [
-      `${weekday(entry.date)}, ${date(entry.date)}`,
+      `${weekday(entry.date)}, ${date(entry.date)}${entry.billingDate ? ' *' : ''}`,
       entry.startTime,
       overnight ? `${entry.endTime} (+1)` : entry.endTime,
       hours(entry.workMinutes),
@@ -263,7 +263,15 @@ const drawEntries = (doc: Doc, payslip: Payslip, y: number, newPage: () => numbe
   if (y + ROW_HEIGHT + 4 > bottom) y = drawTableHead(doc, newPage());
   hr(doc, y + 1, COLOR.text, 0.75);
   drawRow(doc, ['Summe', '', '', hours(payslip.totals.minutes), euros(payslip.totals.earningsCents)], y + 3, { bold: true });
-  return y + ROW_HEIGHT + 18;
+  y += ROW_HEIGHT + 18;
+
+  if (payslip.entries.some((e) => e.billingDate)) {
+    if (y + 12 > bottom) y = newPage();
+    doc.font(FONT.regular).fontSize(8).fillColor(COLOR.muted);
+    write(doc, '* Nachtrag: Arbeitstag aus einem bereits abgeschlossenen Monat, abgerechnet in diesem Monat.', MARGIN.left, y - 8);
+    y += 10;
+  }
+  return y;
 };
 
 /** Fußzeile mit Seitenzahl "x von y" je Lohnzettel (nach dem Zeichnen aller Seiten) */

@@ -6,7 +6,7 @@ import * as billing from '../utils/billing';
 import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService } from './dateService';
-import { overlaps } from './periodGuard';
+import { billingDateSql, overlaps } from './periodGuard';
 import { TimeEntryService } from './timeEntryService';
 
 const MIN_REASON_LENGTH = 5;
@@ -100,7 +100,7 @@ export class PeriodService {
       for (const earlier of periods.slice(0, -1)) {
         if (closures.some((c) => overlaps(earlier.startDate, earlier.endDate, c.periodStart, c.periodEnd))) continue;
         const entries = db().select({ n: count() }).from(timeEntries)
-          .where(and(eq(timeEntries.userId, userId), between(timeEntries.date, earlier.startDate, earlier.endDate)))
+          .where(and(eq(timeEntries.userId, userId), between(billingDateSql, earlier.startDate, earlier.endDate)))
           .get()?.n ?? 0;
         if (entries > 0) {
           throw new AppError('PERIOD_PREVIOUS_OPEN',

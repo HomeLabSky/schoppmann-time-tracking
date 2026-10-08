@@ -188,7 +188,7 @@ test('Abschluss: laufende Periode kann nicht abgeschlossen werden', async () => 
   await reject(PeriodService.closePeriod(user.id, y, m, adminActor), /PERIOD_NOT_ENDED/);
 });
 
-test('Abschluss: sperrt Anlegen, Ändern und Löschen in der Periode, andere Perioden bleiben frei', async () => {
+test('Abschluss: sperrt Ändern und Löschen in der Periode, andere Perioden bleiben frei', async () => {
   const user = await makeUser();
   const prev = previousMonth();
   const entry = addEntry(user, prev.first);
@@ -199,7 +199,9 @@ test('Abschluss: sperrt Anlegen, Ändern und Löschen in der Periode, andere Per
   assert.equal(closure.entryCount, 1);
   assert.equal(closure.earningsCents, 8000);
 
-  await reject(TimeEntryService.createTimeEntry({ userId: user.id, date: prev.last, startTime: '09:00', endTime: '10:00', breakMinutes: 0 }, actorOf(user)), /PERIOD_CLOSED/);
+  // Neue Einträge für den Monat werden zum Nachtrag (test/nachtrag.test.ts); der Abschluss bleibt unverändert
+  const late = await TimeEntryService.createTimeEntry({ userId: user.id, date: prev.last, startTime: '09:00', endTime: '10:00', breakMinutes: 0 }, actorOf(user));
+  assert.ok(late.billingDate && late.billingDate > prev.last);
   await reject(TimeEntryService.updateTimeEntry(entry.id, { startTime: '08:00', endTime: '12:00' }, user.id, actorOf(user)), /PERIOD_CLOSED/);
   await reject(TimeEntryService.deleteTimeEntry(entry.id, user.id, actorOf(user)), /PERIOD_CLOSED/);
   assert.equal(db().select().from(timeEntries).where(eq(timeEntries.id, entry.id)).get()?.startTime, '09:00:00', 'Eintrag unverändert');
