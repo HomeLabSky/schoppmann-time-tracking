@@ -61,7 +61,9 @@ const EnvSchema = z.object({
   ALLOWED_EMAIL_DOMAINS: list(),
 
   RATE_LIMIT_WINDOW_MS: int(15 * 60 * 1000, { min: 1000 }),
-  RATE_LIMIT_MAX_REQUESTS: int(100, { min: 1 }),
+  // Alle Anfragen je IP im Zeitfenster. Die Oberfläche stellt pro Klick mehrere Anfragen (Speichern + Neuladen) –
+  // 100 waren beim zügigen Erfassen nach ~25 Einträgen erschöpft. Anmeldung bleibt eigens streng begrenzt.
+  RATE_LIMIT_MAX_REQUESTS: int(1000, { min: 1 }),
   RATE_LIMIT_LOGIN_MAX: int(5, { min: 1 }),
 
   // Lohnzettel: Firmenanschrift im Kopf (kommagetrennte Zeilen, leer = nur Logo)

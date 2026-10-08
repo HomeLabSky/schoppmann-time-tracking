@@ -224,3 +224,10 @@ test('OpenAPI: backend/openapi.json ist aktuell (sonst: npm run openapi)', () =>
   const expected = JSON.stringify(buildOpenApiDocument({ version: API_VERSION }), null, 2) + '\n';
   assert.equal(fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n'), expected);
 });
+
+test('Rate-Limit: Standard reicht für zügiges Arbeiten (1000 je 15 min), Anmeldung bleibt streng (5)', () => {
+  // Die Oberfläche stellt pro Klick mehrere Anfragen; 100 waren beim Erfassen nach ~25 Einträgen erschöpft
+  assert.equal(config.rateLimit.general, 1000);
+  assert.equal(config.rateLimit.windowMs, 15 * 60 * 1000);
+  assert.equal(config.rateLimit.login, 5);
+});
