@@ -7,6 +7,7 @@ import * as billing from '../utils/billing';
 import type { Payslip } from '../utils/payslipPdf';
 import { DateService } from './dateService';
 import { billingDateSql, overlaps } from './periodGuard';
+import { SpecialItemService } from './specialItemService';
 import { TimeEntryService } from './timeEntryService';
 
 /** Eintrag der Lohnzettel-Liste eines Mitarbeiters (Beträge in Euro) */
@@ -19,6 +20,8 @@ export interface PayslipListItem {
   totalHours: number;
   earnings: number;
   paid: number;
+  specialItems: number;
+  payout: number;
   carryOut: number;
 }
 
@@ -62,6 +65,8 @@ const build = (user: User, closure: PeriodClosure): Payslip => {
     period: { startDate: closure.periodStart, endDate: closure.periodEnd, label: periodLabel(closure.periodEnd) },
     closedAt: closure.closedAt,
     entries,
+    specialItems: SpecialItemService.listForPeriod(user.id, closure.periodStart, closure.periodEnd)
+      .map((item) => ({ date: item.date, description: item.description, amountCents: item.amountCents, billingDate: item.billingDate })),
     totals: {
       minutes: closure.totalMinutes,
       entryCount: closure.entryCount,
@@ -70,7 +75,8 @@ const build = (user: User, closure: PeriodClosure): Payslip => {
       carryInCents: closure.carryInCents,
       limitCents: closure.limitCents,
       paidCents: closure.paidCents,
-      carryOutCents: closure.carryOutCents
+      carryOutCents: closure.carryOutCents,
+      specialItemsCents: closure.specialItemsCents
     }
   };
 };
@@ -95,6 +101,8 @@ export class PayslipService {
         totalHours: Math.round((c.totalMinutes / 60) * 100) / 100,
         earnings: billing.toEuros(c.earningsCents),
         paid: billing.toEuros(c.paidCents),
+        specialItems: billing.toEuros(c.specialItemsCents),
+        payout: billing.toEuros(c.paidCents + c.specialItemsCents),
         carryOut: billing.toEuros(c.carryOutCents)
       }));
   }

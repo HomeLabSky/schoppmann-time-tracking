@@ -33,6 +33,9 @@
       "name": "Lohnzettel"
     },
     {
+      "name": "Sonderposten"
+    },
+    {
       "name": "Änderungsprotokoll"
     },
     {
@@ -4824,7 +4827,15 @@
                               },
                               "paidThisMonth": {
                                 "type": "number",
-                                "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+                                "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+                              },
+                              "specialItemsTotal": {
+                                "type": "number",
+                                "description": "Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)"
+                              },
+                              "payout": {
+                                "type": "number",
+                                "description": "Gesamtauszahlung: Lohn + Sonderposten"
                               },
                               "minijobLimit": {
                                 "type": "number"
@@ -4863,6 +4874,8 @@
                               "carryIn",
                               "carryOut",
                               "paidThisMonth",
+                              "specialItemsTotal",
+                              "payout",
                               "minijobLimit",
                               "hourlyRate",
                               "exceedsLimit",
@@ -6090,6 +6103,418 @@
         }
       }
     },
+    "/admin/timesheets/{userId}/special-items": {
+      "post": {
+        "operationId": "postAdminTimesheetsByUserIdSpecialItems",
+        "summary": "Sonderposten erfassen (Erstattung zusätzlich zum Lohn)",
+        "description": "Privat verauslagter Betrag des Mitarbeiters; erscheint auf dem Lohnzettel und wird zusätzlich zum Lohn ausgezahlt (zählt nicht gegen die Minijob-Grenze, kein Übertrag). Zugeordnet nach Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen Periode (`billingDate`).",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Kaufdatum; liegt es in einer abgeschlossenen Periode, wird der Posten Nachtrag in der nächsten offenen"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "amount": {
+                    "description": "Betrag in Euro (höchstens 2 Nachkommastellen)",
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                },
+                "required": [
+                  "date",
+                  "description",
+                  "amount"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sonderposten erfasst",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten erfasst"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/SpecialItem"
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "USER_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/timesheets/{userId}/special-items/{itemId}": {
+      "put": {
+        "operationId": "putAdminTimesheetsByUserIdSpecialItemsByItemId",
+        "summary": "Sonderposten ändern",
+        "description": "Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "amount": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sonderposten geändert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten geändert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "item": {
+                          "$ref": "#/components/schemas/SpecialItem"
+                        }
+                      },
+                      "required": [
+                        "item"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SPECIAL_ITEM_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteAdminTimesheetsByUserIdSpecialItemsByItemId",
+        "summary": "Sonderposten löschen",
+        "description": "Nur solange die Periode, in der er abgerechnet wird, offen ist (sonst PERIOD_CLOSED).",
+        "tags": [
+          "Sonderposten"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sonderposten gelöscht",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Sonderposten gelöscht"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SPECIAL_ITEM_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PERIOD_CLOSED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/audit": {
       "get": {
         "operationId": "getAdminAudit",
@@ -6620,7 +7045,8 @@
               "PERIOD_OVERLAP",
               "MINIJOB_LIMIT_MISSING",
               "REASON_REQUIRED",
-              "PAYSLIP_NOT_FOUND"
+              "PAYSLIP_NOT_FOUND",
+              "SPECIAL_ITEM_NOT_FOUND"
             ],
             "description": "Maschinenlesbarer Fehlercode (stabil)"
           },
@@ -6764,6 +7190,13 @@
               "$ref": "#/components/schemas/TimeEntry"
             }
           },
+          "specialItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SpecialItem"
+            },
+            "description": "Sonderposten, die in dieser Periode erstattet werden"
+          },
           "summary": {
             "$ref": "#/components/schemas/PeriodSummary"
           },
@@ -6856,6 +7289,7 @@
         },
         "required": [
           "records",
+          "specialItems",
           "summary",
           "period",
           "closure"
@@ -6915,7 +7349,15 @@
           },
           "paid": {
             "type": "number",
-            "description": "Auszahlung in Euro"
+            "description": "Lohn-Auszahlung in Euro (höchstens die Grenze)"
+          },
+          "specialItems": {
+            "type": "number",
+            "description": "Erstattete Sonderposten in Euro"
+          },
+          "payout": {
+            "type": "number",
+            "description": "Gesamtauszahlung in Euro: Lohn + Sonderposten"
           },
           "carryOut": {
             "type": "number",
@@ -6931,6 +7373,8 @@
           "totalHours",
           "earnings",
           "paid",
+          "specialItems",
+          "payout",
           "carryOut"
         ],
         "description": "Lohnzettel einer abgeschlossenen Periode (Beträge festgeschrieben)"
@@ -6985,6 +7429,10 @@
           "carryOutCents": {
             "type": "integer"
           },
+          "specialItemsCents": {
+            "type": "integer",
+            "description": "Summe der Sonderposten (Erstattung zusätzlich zum Lohn)"
+          },
           "createdAt": {
             "type": "string",
             "description": "Zeitpunkt (ISO 8601)"
@@ -7008,6 +7456,7 @@
           "carryInCents",
           "paidCents",
           "carryOutCents",
+          "specialItemsCents",
           "createdAt",
           "updatedAt"
         ],
@@ -7036,7 +7485,15 @@
           },
           "paidThisMonth": {
             "type": "number",
-            "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+            "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+          },
+          "specialItemsTotal": {
+            "type": "number",
+            "description": "Summe der Sonderposten in Euro (Erstattung zusätzlich zum Lohn)"
+          },
+          "payout": {
+            "type": "number",
+            "description": "Gesamtauszahlung: Lohn + Sonderposten"
           },
           "minijobLimit": {
             "type": "number"
@@ -7066,6 +7523,8 @@
           "carryIn",
           "carryOut",
           "paidThisMonth",
+          "specialItemsTotal",
+          "payout",
           "minijobLimit",
           "hourlyRate",
           "exceedsLimit",
@@ -7140,6 +7599,69 @@
           "current"
         ],
         "description": "Laufende Sitzung (angemeldeter Browser oder App)"
+      },
+      "SpecialItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "integer"
+          },
+          "date": {
+            "type": "string",
+            "description": "Kaufdatum (YYYY-MM-DD)"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "integer"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Betrag in Euro"
+          },
+          "billingDate": {
+            "description": "Nachtrag: Kaufdatum lag beim Erfassen in einer abgeschlossenen Periode; abgerechnet in der Periode, die dieses Datum enthält. null = Periode des Kaufdatums",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          },
+          "updatedAt": {
+            "type": "string",
+            "description": "Zeitpunkt (ISO 8601)"
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "date",
+          "description",
+          "amountCents",
+          "amount",
+          "billingDate",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "Sonderposten: privat verauslagter Betrag, wird zusätzlich zum Lohn erstattet"
       },
       "TimeEntry": {
         "type": "object",
@@ -7289,7 +7811,15 @@
           },
           "paidThisMonth": {
             "type": "number",
-            "description": "Auszahlung dieser Periode (höchstens die Grenze)"
+            "description": "Lohn-Auszahlung dieser Periode (höchstens die Grenze)"
+          },
+          "specialItemsTotal": {
+            "type": "number",
+            "description": "Summe der Sonderposten in Euro"
+          },
+          "payout": {
+            "type": "number",
+            "description": "Gesamtauszahlung: Lohn + Sonderposten"
           },
           "carryOut": {
             "type": "number",
@@ -7307,7 +7837,7 @@
           },
           "billable": {
             "type": "boolean",
-            "description": "Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen"
+            "description": "Etwas abzurechnen (Einträge, Sonderposten oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen"
           },
           "status": {
             "type": "string",
@@ -7342,6 +7872,8 @@
           "totalHours",
           "totalEarnings",
           "paidThisMonth",
+          "specialItemsTotal",
+          "payout",
           "carryOut",
           "minijobLimit",
           "minijobLimitMissing",

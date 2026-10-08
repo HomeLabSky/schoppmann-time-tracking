@@ -9,7 +9,9 @@ const PayslipListItem = z.object({
   closedAt: timestamp(),
   totalHours: z.number(),
   earnings: z.number().describe('Verdienst der Periode in Euro'),
-  paid: z.number().describe('Auszahlung in Euro'),
+  paid: z.number().describe('Lohn-Auszahlung in Euro (höchstens die Grenze)'),
+  specialItems: z.number().describe('Erstattete Sonderposten in Euro'),
+  payout: z.number().describe('Gesamtauszahlung in Euro: Lohn + Sonderposten'),
   carryOut: z.number().describe('Übertrag in die nächste Periode in Euro')
 }).meta({ id: 'PayslipListItem', description: 'Lohnzettel einer abgeschlossenen Periode (Beträge festgeschrieben)' });
 

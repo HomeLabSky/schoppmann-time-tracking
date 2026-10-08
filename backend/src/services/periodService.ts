@@ -7,6 +7,7 @@ import { todayString } from '../utils/clock';
 import { AuditService, type Actor } from './auditService';
 import { DateService } from './dateService';
 import { billingDateSql, overlaps } from './periodGuard';
+import { SpecialItemService } from './specialItemService';
 import { TimeEntryService } from './timeEntryService';
 
 const MIN_REASON_LENGTH = 5;
@@ -24,11 +25,13 @@ export interface TimesheetOverviewRow {
   totalHours: number;
   totalEarnings: number;
   paidThisMonth: number;
+  specialItemsTotal: number;
+  payout: number;
   carryOut: number;
   minijobLimit: number;
   minijobLimitMissing: boolean;
   exceedsLimit: boolean;
-  /** Etwas abzurechnen: Einträge oder Übertrag aus Vorperioden (oder bereits abgeschlossen) */
+  /** Etwas abzurechnen: Einträge, Sonderposten oder Übertrag aus Vorperioden (oder bereits abgeschlossen) */
   billable: boolean;
   /** open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen */
   status: 'open' | 'ready' | 'closed';
@@ -48,7 +51,8 @@ const closureSnapshot = (closure: PeriodClosure) => ({
   limit: billing.toEuros(closure.limitCents),
   carryIn: billing.toEuros(closure.carryInCents),
   paid: billing.toEuros(closure.paidCents),
-  carryOut: billing.toEuros(closure.carryOutCents)
+  carryOut: billing.toEuros(closure.carryOutCents),
+  specialItems: billing.toEuros(closure.specialItemsCents)
 });
 
 /** Zielperiode des Mitarbeiters für einen Referenzmonat (nach seinen aktuellen Einstellungen). */
@@ -71,7 +75,7 @@ const closuresOf = (userId: number): PeriodClosure[] =>
  * - abschließen, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss, z. B. für den
  *   Steuerberater); Arbeitszeiten für die restlichen Tage werden dann Nachträge in der nächsten offenen Periode;
  * - nur, wenn frühere Perioden mit Einträgen bereits abgeschlossen sind (der Übertrag baut aufeinander auf);
- * - nur mit etwas abzurechnen (Einträge oder Übertrag) – leere Lohnzettel entstehen nicht;
+ * - nur mit etwas abzurechnen (Einträge, Sonderposten oder Übertrag) – leere Lohnzettel entstehen nicht;
  * - wieder öffnen nur mit Begründung und nur die jüngste abgeschlossene Periode;
  * - beides steht im Änderungsprotokoll, Zahlen werden beim Abschluss eingefroren.
  */
@@ -113,12 +117,23 @@ export class PeriodService {
           );
         }
       }
+      // Auch Sonderposten früherer Perioden müssen abgerechnet sein (Perioden ohne Zeiteinträge fehlen oben)
+      const openItemDate = SpecialItemService.firstOpenBefore(userId, target.startDate,
+        (date) => closures.some((c) => c.periodStart <= date && c.periodEnd >= date));
+      if (openItemDate) {
+        // Monatsübergreifende Perioden (22.–21.): Tage vor dem Starttag gehören zur Periode des Vormonats
+        let earlier = DateService.createBillingPeriod(startDay, endDay, openItemDate);
+        if (openItemDate < earlier.startDate) earlier = DateService.createBillingPeriod(startDay, endDay, billing.addMonths(openItemDate, -1));
+        throw new AppError('PERIOD_PREVIOUS_OPEN',
+          `Bitte zuerst die frühere Periode ${displayRange(earlier.startDate, earlier.endDate)} abschließen (enthält Sonderposten)`
+        );
+      }
 
       const data = TimeEntryService.getMonthlyTimeRecordsSync(userId, year, month);
       const s = data.summary;
-      if (s.entryCount === 0 && s.carryIn === 0) {
+      if (s.entryCount === 0 && s.carryIn === 0 && data.specialItems.length === 0) {
         throw new AppError('PERIOD_EMPTY',
-          `In der Periode ${displayRange(target.startDate, target.endDate)} gibt es weder Einträge noch einen Übertrag – ` +
+          `In der Periode ${displayRange(target.startDate, target.endDate)} gibt es weder Einträge noch Sonderposten noch einen Übertrag – ` +
           'es gibt nichts abzuschließen'
         );
       }
@@ -141,7 +156,8 @@ export class PeriodService {
         limitCents: billing.toCents(s.minijobLimit),
         carryInCents: billing.toCents(s.carryIn),
         paidCents: billing.toCents(s.paidThisMonth),
-        carryOutCents: billing.toCents(s.carryOut)
+        carryOutCents: billing.toCents(s.carryOut),
+        specialItemsCents: billing.toCents(s.specialItemsTotal)
       }).returning().get();
 
       AuditService.record({
@@ -224,12 +240,14 @@ export class PeriodService {
         totalHours: s.totalHours,
         totalEarnings: s.totalEarnings,
         paidThisMonth: s.paidThisMonth,
+        specialItemsTotal: s.specialItemsTotal,
+        payout: s.payout,
         carryOut: s.carryOut,
         minijobLimit: s.minijobLimit,
         // Abgeschlossene Perioden rechnen mit der eingefrorenen Grenze – dort fehlt nichts
         minijobLimitMissing: !closed && s.minijobLimitMissing,
         exceedsLimit: s.exceedsLimit,
-        billable: closed || s.entryCount > 0 || s.carryIn > 0,
+        billable: closed || s.entryCount > 0 || s.carryIn > 0 || data.specialItems.length > 0,
         status: closed ? 'closed' : today > data.period.endDate ? 'ready' : 'open',
         closedAt: data.closure ? data.closure.closedAt : null
       });

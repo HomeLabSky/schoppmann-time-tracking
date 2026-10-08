@@ -50,6 +50,13 @@
       "when": 1791450721079,
       "tag": "0006_nacherfassung",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791466102381,
+      "tag": "0007_sonderposten",
+      "breakpoints": true
     }
   ]
 }

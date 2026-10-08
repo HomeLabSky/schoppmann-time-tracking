@@ -8,11 +8,13 @@ import type {
   Payslip,
   RegisterData,
   SessionInfo,
+  SpecialItemPayload,
   User,
   UserSettings,
 } from '@/types/api'
 import type { AuditEntry, AuditQuery, BackupStatus, Pagination, Timesheet, TimesheetOverviewRow, TimesheetPeriod } from '@/types/audit'
 
+import type { SpecialItem } from './timetracking'
 import { API_BASE_URL } from './config'
 import { saveBlob } from './download'
 
@@ -278,6 +280,16 @@ export const adminApi = {
 
   reopenPeriod: (userId: number, month: string, reason: string) =>
     apiClient.post<Message>(`/api/admin/timesheets/${userId}/reopen`, { month, reason }),
+
+  // Sonderposten (Erstattung zusätzlich zum Lohn)
+  createSpecialItem: (userId: number, data: SpecialItemPayload) =>
+    apiClient.post<Envelope<{ item: SpecialItem }>>(`/api/admin/timesheets/${userId}/special-items`, data),
+
+  updateSpecialItem: (userId: number, itemId: number, data: SpecialItemPayload) =>
+    apiClient.put<Envelope<{ item: SpecialItem }>>(`/api/admin/timesheets/${userId}/special-items/${itemId}`, data),
+
+  deleteSpecialItem: (userId: number, itemId: number) =>
+    apiClient.delete<Message>(`/api/admin/timesheets/${userId}/special-items/${itemId}`),
 
   // Lohnzettel (nur abgeschlossene Perioden)
   downloadPayslip: (userId: number, month: string) =>

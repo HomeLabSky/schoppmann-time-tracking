@@ -62,6 +62,7 @@ Pfade relativ zu `/api/v1` (gleichwertig: `/api`).
 | Benutzerverwaltung | `routes/admin.ts` (`/admin`) | `userService.ts` | `Users` |
 | Minijob-Grenzen | `routes/minijob.ts` (`/admin/minijob`) | `minijobService.ts` | `MinijobSettings` |
 | Zeitnachweise & Monatsabschluss | `routes/timesheets.ts` (`/admin/timesheets`) | `periodService.ts`, `periodGuard.ts` | `PeriodClosures` |
+| Sonderposten (Erstattung zusätzlich zum Lohn) | `routes/timesheets.ts` (`/admin/timesheets/:userId/special-items`) | `specialItemService.ts` | `SpecialItems` |
 | Lohnzettel (PDF) | `routes/employee.ts` (`/employee/payslips`), `routes/timesheets.ts` (`/admin/timesheets/…/payslip(s)`) | `payslipService.ts`, `utils/payslipPdf.ts` | `PeriodClosures`, `TimeEntries` |
 | Änderungsprotokoll (nur lesend) | `routes/audit.ts` (`/admin/audit`) | `auditService.ts` | `AuditLogs` |
 | Systemstatus | `routes/system.ts` (`/admin/system`) | `utils/backupStatus.ts` | – |

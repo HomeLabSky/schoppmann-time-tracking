@@ -35,10 +35,17 @@ export default function EmployeePayslipsPage() {
       { id: 'earnings', accessorFn: (p) => p.earnings, header: 'Verdienst', meta: { className: 'text-right tabular' }, cell: ({ row }) => formatCurrency(row.original.earnings) },
       {
         id: 'paid',
-        accessorFn: (p) => p.paid,
+        accessorFn: (p) => p.payout,
         header: 'Auszahlung',
         meta: { className: 'text-right tabular' },
-        cell: ({ row }) => <span className="font-medium">{formatCurrency(row.original.paid)}</span>,
+        cell: ({ row }) => (
+          <div>
+            <span className="font-medium">{formatCurrency(row.original.payout)}</span>
+            {row.original.specialItems > 0 && (
+              <p className="text-xs font-normal text-muted-foreground">inkl. {formatCurrency(row.original.specialItems)} Sonderposten</p>
+            )}
+          </div>
+        ),
       },
       {
         id: 'carry',

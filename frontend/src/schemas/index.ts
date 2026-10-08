@@ -100,6 +100,20 @@ export const minijobSettingSchema = z
   .refine((v) => !v.validUntil || v.validUntil > v.validFrom, { path: ['validUntil'], message: 'Muss nach dem Startdatum liegen' })
 export type MinijobSettingInput = z.infer<typeof minijobSettingSchema>
 
+/** Sonderposten (Backend: schemas/timeEntry.ts CreateSpecialItemBody) */
+export const specialItemSchema = z.object({
+  date: z
+    .string()
+    .min(1, 'Datum ist erforderlich')
+    .refine((v) => v <= toLocalDateString(), 'Datum darf nicht in der Zukunft liegen'),
+  description: z.string().trim().min(1, 'Bezeichnung ist erforderlich').max(200, 'Höchstens 200 Zeichen'),
+  amount: numberSchema
+    .positive('Muss größer als 0 sein')
+    .max(100000, 'Höchstens 100.000 €')
+    .refine((v) => Math.abs(Math.round(v * 100) - v * 100) < 1e-6, 'Höchstens 2 Nachkommastellen'),
+})
+export type SpecialItemInput = z.infer<typeof specialItemSchema>
+
 /** Fachregeln für Zeiteinträge (Backend: utils/billing.js RULES). */
 export const ENTRY_RULES = { MIN_WORK_MINUTES: 15, MAX_SPAN_MINUTES: 12 * 60, MAX_BREAK_MINUTES: 480 }
 

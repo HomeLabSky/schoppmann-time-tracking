@@ -27,6 +27,7 @@ const PeriodClosure = z.object({
   carryInCents: z.number().int(),
   paidCents: z.number().int(),
   carryOutCents: z.number().int(),
+  specialItemsCents: z.number().int().describe('Summe der Sonderposten (Erstattung zusätzlich zum Lohn)'),
   createdAt: timestamp(),
   updatedAt: timestamp()
 }).meta({ id: 'PeriodClosure', description: 'Monatsabschluss mit eingefrorenen Zahlen (Beträge in Cent)' });
@@ -45,12 +46,14 @@ const TimesheetOverviewRow = z.object({
   workDays: z.number().int().describe('Anzahl Tage mit Einträgen'),
   totalHours: z.number(),
   totalEarnings: z.number().describe('Verdienst der Periode in Euro'),
-  paidThisMonth: z.number().describe('Auszahlung dieser Periode (höchstens die Grenze)'),
+  paidThisMonth: z.number().describe('Lohn-Auszahlung dieser Periode (höchstens die Grenze)'),
+  specialItemsTotal: z.number().describe('Summe der Sonderposten in Euro'),
+  payout: z.number().describe('Gesamtauszahlung: Lohn + Sonderposten'),
   carryOut: z.number().describe('Übertrag in die nächste Periode'),
   minijobLimit: z.number(),
   minijobLimitMissing: z.boolean().describe('Offene Periode ohne gültige Minijob-Grenze (Abschluss gesperrt)'),
   exceedsLimit: z.boolean(),
-  billable: z.boolean().describe('Etwas abzurechnen (Einträge oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen'),
+  billable: z.boolean().describe('Etwas abzurechnen (Einträge, Sonderposten oder Übertrag) oder bereits abgeschlossen; sonst gibt es nichts abzuschließen'),
   status: z.enum(['open', 'ready', 'closed']).describe('open: läuft noch · ready: beendet, abschließbar · closed: abgeschlossen'),
   closedAt: timestamp().nullable()
 }).meta({ id: 'TimesheetOverviewRow', description: 'Kennzahlen eines Mitarbeiters in seiner Abrechnungsperiode' });

@@ -76,8 +76,19 @@ export interface Payslip {
   closedAt: string
   totalHours: number
   earnings: number
+  /** Lohn-Auszahlung (höchstens die Grenze) */
   paid: number
+  /** Erstattete Sonderposten */
+  specialItems: number
+  /** Gesamtauszahlung: Lohn + Sonderposten */
+  payout: number
   carryOut: number
+}
+
+export interface SpecialItemPayload {
+  date: string
+  description: string
+  amount: number
 }
 
 export interface MinijobSetting {

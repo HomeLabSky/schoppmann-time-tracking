@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { and, count, desc, eq, like, or, sql, type SQL } from 'drizzle-orm';
 import config from '../config';
 import { db, transaction } from '../db/client';
-import { minijobSettings, periodClosures, timeEntries, users, type Role, type User } from '../db/schema';
+import { minijobSettings, periodClosures, specialItems, timeEntries, users, type Role, type User } from '../db/schema';
 import { AppError } from '../lib/errors';
 import { hashPassword, toSafeUser, verifyPassword, type SafeUser } from '../models/user';
 import { AuditService, type Actor } from './auditService';
@@ -383,7 +383,7 @@ export class UserService {
   }
 
   /**
-   * Löscht ein Konto (Admin). Verhindert Selbstlöschung sowie die Löschung von Konten mit Zeiteinträgen,
+   * Löscht ein Konto (Admin). Verhindert Selbstlöschung sowie die Löschung von Konten mit Zeiteinträgen, Sonderposten,
    * Monatsabschlüssen oder erstellten Minijob-Einstellungen – Arbeitszeitnachweise müssen erhalten bleiben;
    * solche Konten werden deaktiviert.
    * @throws AppError CANNOT_DELETE_SELF, USER_NOT_FOUND, USER_HAS_DEPENDENCIES
@@ -396,9 +396,11 @@ export class UserService {
 
     const entryCount = db().select({ n: count() }).from(timeEntries).where(eq(timeEntries.userId, userId)).get()?.n ?? 0;
     const closureCount = db().select({ n: count() }).from(periodClosures).where(eq(periodClosures.userId, userId)).get()?.n ?? 0;
-    if (entryCount > 0 || closureCount > 0) {
+    const itemCount = db().select({ n: count() }).from(specialItems).where(eq(specialItems.userId, userId)).get()?.n ?? 0;
+    if (entryCount > 0 || closureCount > 0 || itemCount > 0) {
       throw new AppError('USER_HAS_DEPENDENCIES',
         `Benutzer kann nicht gelöscht werden - es existieren ${entryCount} Zeiteintrag/-einträge` +
+        `${itemCount > 0 ? `, ${itemCount} Sonderposten` : ''}` +
         `${closureCount > 0 ? ` und ${closureCount} Monatsabschluss/-abschlüsse` : ''}. ` +
         'Arbeitszeitnachweise müssen erhalten bleiben; bitte das Konto stattdessen deaktivieren.'
       );

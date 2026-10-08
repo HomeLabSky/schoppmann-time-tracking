@@ -186,6 +186,38 @@ test('Admin: Vormonat in den Zeitnachweisen abschließen und wieder öffnen', as
   await expect(page.getByText('Periode abgeschlossen').first()).toBeVisible()
 })
 
+test('Sonderposten: Admin erfasst eine Auslage, sie erhöht die Auszahlung und lässt sich bearbeiten', async ({ page }) => {
+  await login(page, ADMIN)
+  await page.goto('/admin/timesheets')
+  await page.getByRole('button', { name: 'Emil Mitarbeiter' }).click()
+  await expect(page.getByText('Keine Sonderposten in dieser Periode.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Sonderposten erfassen' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Sonderposten erfassen' })
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog.getByText('Bezeichnung ist erforderlich')).toBeVisible()
+  await dialog.getByLabel('Bezeichnung').fill('E2E Leuchtmittel')
+  await dialog.getByLabel('Betrag (€)').fill('23.90')
+  await dialog.getByRole('button', { name: 'Erfassen' }).click()
+  await expect(dialog).toBeHidden()
+
+  const row = page.getByRole('row').filter({ hasText: 'E2E Leuchtmittel' })
+  await expect(row).toContainText('23,90')
+  await expect(page.getByText(/inkl\. 23,90\s€ Sonderposten/)).toBeVisible()
+
+  await row.getByRole('button', { name: 'Aktionen für E2E Leuchtmittel' }).click()
+  await page.getByRole('menuitem', { name: 'Bearbeiten' }).click()
+  const edit = page.getByRole('dialog', { name: 'Sonderposten bearbeiten' })
+  await edit.getByLabel('Betrag (€)').fill('24.50')
+  await edit.getByRole('button', { name: 'Speichern' }).click()
+  await expect(edit).toBeHidden()
+  await expect(page.getByText(/inkl\. 24,50\s€ Sonderposten/)).toBeVisible()
+
+  await page.goto('/admin/audit')
+  await expect(page.getByText('Sonderposten geändert').first()).toBeVisible()
+  await logout(page)
+})
+
 /** Letzter Tag des Vormonats (YYYY-MM-DD, Ortszeit) */
 function lastOfPreviousMonth(): string {
   const d = new Date()

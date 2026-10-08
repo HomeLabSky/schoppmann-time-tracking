@@ -139,12 +139,38 @@ export const periodClosures = sqliteTable('PeriodClosures', {
   carryInCents: integer('carryInCents').notNull().default(0),
   paidCents: integer('paidCents').notNull().default(0),
   carryOutCents: integer('carryOutCents').notNull().default(0),
+  /** Summe der Sonderposten (Erstattung zusätzlich zum Lohn, zählt nicht gegen die Grenze) */
+  specialItemsCents: integer('specialItemsCents').notNull().default(0),
   createdAt: createdAt(),
   updatedAt: updatedAt()
 }, (t) => [
   uniqueIndex('unique_user_period_start').on(t.userId, t.periodStart),
   index('period_closures_user_id_period_end').on(t.userId, t.periodEnd),
   check('period_closures_range_check', sql`${t.periodEnd} >= ${t.periodStart}`)
+]);
+
+/**
+ * Sonderposten: privat verauslagter Betrag eines Mitarbeiters (z. B. Einkauf im Baumarkt), vom Admin erfasst und mit
+ * dem Lohnzettel zusätzlich zum Lohn erstattet. Zuordnung zur Periode wie bei Zeiteinträgen über das Datum bzw.
+ * `billingDate` (Kaufdatum lag beim Erfassen schon in einer abgeschlossenen Periode).
+ */
+export const specialItems = sqliteTable('SpecialItems', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  userId: integer('userId').notNull().references(() => users.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
+  /** Kaufdatum */
+  date: dateOnly('date').notNull(),
+  description: text('description', { length: 200 }).notNull(),
+  amountCents: integer('amountCents').notNull(),
+  /** Nachtrag: abgerechnet in der Periode, die dieses Datum enthält. NULL = Periode des Kaufdatums */
+  billingDate: dateOnly('billingDate'),
+  createdBy: integer('createdBy'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (t) => [
+  index('special_items_user_date').on(t.userId, t.date),
+  check('special_items_amount_check', sql`${t.amountCents} > 0 AND ${t.amountCents} <= 10000000`),
+  check('special_items_date_check', sql`${t.date} GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'`),
+  check('special_items_description_check', sql`length(trim(${t.description})) > 0`)
 ]);
 
 /** Anmelde-Sitzung (Web oder App); gespeichert wird nur ein HMAC-Prüfwert des Erneuerungs-Tokens */
@@ -188,4 +214,5 @@ export type MinijobSetting = typeof minijobSettings.$inferSelect;
 export type TimeEntryRow = typeof timeEntries.$inferSelect;
 export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type PeriodClosure = typeof periodClosures.$inferSelect;
+export type SpecialItemRow = typeof specialItems.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
