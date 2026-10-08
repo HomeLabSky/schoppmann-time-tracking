@@ -26,7 +26,8 @@ const parseMonth = (month: string): [number, number] => {
 api.get('/overview', {
   summary: 'Monatsübersicht aller Mitarbeiter',
   description: 'Je Mitarbeiter Stunden, Beträge und Status in dessen eigener Abrechnungsperiode zum Referenzmonat. ' +
-    'Deaktivierte Konten erscheinen nur mit Einträgen in der Periode.',
+    'Deaktivierte Konten erscheinen nur mit Einträgen in der Periode. `billable: false` = weder Einträge noch Übertrag, ' +
+    'nichts abzuschließen (die Oberfläche blendet solche Zeilen aus).',
   auth: 'admin',
   query: MonthQuery,
   response: TimesheetOverviewData,
@@ -98,14 +99,15 @@ api.post('/:userId/close', {
   summary: 'Periode abschließen (Zahlen werden eingefroren)',
   description: 'Möglich, sobald die Periode begonnen hat – auch vor ihrem Ende (vorzeitiger Abschluss; spätere Einträge ' +
     'für die Periode werden Nachträge in der nächsten offenen Periode). Frühere Perioden mit Einträgen müssen ' +
-    'abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein.',
+    'abgeschlossen sein; eine Minijob-Grenze muss hinterlegt sein. Ohne Einträge und ohne Übertrag gibt es nichts ' +
+    'abzuschließen (PERIOD_EMPTY).',
   auth: 'admin',
   params: UserIdParam,
   body: ClosePeriodBody,
   response: ClosureData,
   status: 201,
   message: 'Periode erfolgreich abgeschlossen',
-  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_STARTED', 'PERIOD_ALREADY_CLOSED', 'PERIOD_OVERLAP', 'PERIOD_PREVIOUS_OPEN', 'MINIJOB_LIMIT_MISSING']
+  errors: ['USER_NOT_FOUND', 'PERIOD_NOT_STARTED', 'PERIOD_EMPTY', 'PERIOD_ALREADY_CLOSED', 'PERIOD_OVERLAP', 'PERIOD_PREVIOUS_OPEN', 'MINIJOB_LIMIT_MISSING']
 }, async (req) => {
   const [year, month] = parseMonth(req.valid.body.month);
   const closure = await PeriodService.closePeriod(req.valid.params.userId, year, month, actorOf(req));

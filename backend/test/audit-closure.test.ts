@@ -381,6 +381,26 @@ test('Übersicht: Status läuft / bereit / abgeschlossen je Mitarbeiter, mit Sum
   const current = overviewRow(y, m, user.id);
   assert.equal(current?.status, 'open', 'laufende Periode');
   assert.equal(current?.entryCount, 0, 'Mitarbeiter ohne Einträge erscheinen trotzdem');
+  assert.equal(current?.billable, false, '… aber ohne etwas abzurechnen');
+  assert.equal(closed?.billable, true);
+});
+
+test('Abschluss: leere Periode (keine Einträge, kein Übertrag) wird abgelehnt, mit Übertrag ist sie abschließbar', async () => {
+  const empty = await makeUser();
+  assert.equal(overviewRow(2024, 3, empty.id)?.billable, false);
+  await reject(PeriodService.closePeriod(empty.id, 2024, 3, adminActor), /PERIOD_EMPTY/);
+  assert.equal(countWhere(periodClosures, empty.id), 0, 'kein leerer Lohnzettel');
+
+  // 160 € bei Grenze 100 € → 60 € Übertrag in den April ohne eigene Einträge
+  const carry = await makeUser();
+  addEntry(carry, '2024-03-04');
+  addEntry(carry, '2024-03-05');
+  await PeriodService.closePeriod(carry.id, 2024, 3, adminActor);
+  const april = overviewRow(2024, 4, carry.id);
+  assert.equal(april?.entryCount, 0);
+  assert.equal(april?.billable, true, 'Übertrag muss noch ausgezahlt werden');
+  const closure = await PeriodService.closePeriod(carry.id, 2024, 4, adminActor);
+  assert.equal(closure.paidCents, 6000);
 });
 
 test('Übersicht: nur Mitarbeiter; deaktivierte Konten nur mit Einträgen; sortiert nach Name', async () => {

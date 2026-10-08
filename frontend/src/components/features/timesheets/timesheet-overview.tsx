@@ -23,24 +23,28 @@ const statusLabel = (r: TimesheetOverviewRow) =>
 export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (userId: number) => void }) {
   const overview = useTimesheetOverview(month)
   const [filter, setFilter] = useState<StatusFilter>('all')
+  const [showEmpty, setShowEmpty] = useState(false)
   const download = useDownload()
-  const rows = useMemo(() => overview.data ?? [], [overview.data])
+  // Mitarbeiter ohne Stunden und ohne Übertrag haben nichts abzurechnen (z. B. noch nicht eingestellt) – ausgeblendet
+  const allRows = useMemo(() => overview.data ?? [], [overview.data])
+  const rows = useMemo(() => allRows.filter((r) => r.billable), [allRows])
+  const hiddenCount = allRows.length - rows.length
 
   const data = useMemo(
     () =>
-      rows.filter((r) => {
+      (showEmpty ? allRows : rows).filter((r) => {
         if (filter === 'all') return true
         if (filter === 'attention') return r.minijobLimitMissing || r.exceedsLimit
         return r.status === filter
       }),
-    [rows, filter]
+    [rows, allRows, showEmpty, filter]
   )
 
   const totals = useMemo(
     () => ({
       hours: rows.reduce((s, r) => s + r.totalHours, 0),
       payout: rows.reduce((s, r) => s + r.paidThisMonth, 0),
-      ready: rows.filter((r) => r.status === 'ready' && r.entryCount > 0).length,
+      ready: rows.filter((r) => r.status === 'ready').length,
       closed: rows.filter((r) => r.status === 'closed').length,
     }),
     [rows]
@@ -106,7 +110,9 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
         id: 'status',
         accessorFn: (r) => statusLabel(r),
         header: 'Status',
-        cell: ({ row }) => <PeriodStatusBadge status={row.original.status} limitMissing={row.original.minijobLimitMissing} />,
+        cell: ({ row }) => (
+          <PeriodStatusBadge status={row.original.status} limitMissing={row.original.minijobLimitMissing} empty={!row.original.billable} />
+        ),
       },
     ],
     [onOpen]
@@ -136,7 +142,7 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
         initialSorting={[{ id: 'name', desc: false }]}
         searchPlaceholder="Mitarbeiter suchen…"
         searchText={(r) => `${r.name} ${r.email}`}
-        empty={{ title: 'Keine Mitarbeiter', description: 'Für diesen Monat gibt es keine Mitarbeiter mit Abrechnung.' }}
+        empty={{ title: 'Keine Mitarbeiter', description: 'Für diesen Monat gibt es keine Mitarbeiter mit Stunden oder Übertrag.' }}
         toolbar={
           <>
             <Select aria-label="Nach Status filtern" value={filter} onChange={(e) => setFilter(e.target.value as StatusFilter)} className="w-auto">
@@ -180,6 +186,15 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
           ],
         }}
       />
+      {hiddenCount > 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="hidden-empty">
+          {hiddenCount === 1 ? '1 Mitarbeiter' : `${hiddenCount} Mitarbeiter`} ohne Stunden in dieser Periode{' '}
+          {showEmpty ? 'werden angezeigt' : 'ausgeblendet'} – es gibt nichts abzuschließen.{' '}
+          <Button variant="link" size="sm" className="h-auto p-0 text-sm" onClick={() => setShowEmpty((v) => !v)}>
+            {showEmpty ? 'Ausblenden' : 'Einblenden'}
+          </Button>
+        </p>
+      )}
     </div>
   )
 }

@@ -1,14 +1,22 @@
-import { AlertTriangle, CheckCircle2, CircleDashed, Lock } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, CircleDashed, Lock, MinusCircle } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export type PeriodStatus = 'open' | 'ready' | 'closed'
 
 /** Status einer Abrechnungsperiode – Farbe plus Text und Symbol (nie nur Farbe). */
-export function PeriodStatusBadge({ status, limitMissing }: { status: PeriodStatus; limitMissing?: boolean }) {
+export function PeriodStatusBadge({ status, limitMissing, empty }: { status: PeriodStatus; limitMissing?: boolean; empty?: boolean }) {
   if (status === 'closed') {
     return (
       <Badge variant="solid">
         <Lock aria-hidden="true" /> Abgeschlossen
+      </Badge>
+    )
+  }
+  // Weder Stunden noch Übertrag: nichts abzuschließen
+  if (empty) {
+    return (
+      <Badge variant="neutral">
+        <MinusCircle aria-hidden="true" /> Keine Stunden
       </Badge>
     )
   }

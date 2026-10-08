@@ -50,6 +50,8 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
   const started = data ? data.period.startDate <= today : false
   const limitMissing = !closed && !!summary?.minijobLimitMissing
   const status = closed ? 'closed' : ended ? 'ready' : 'open'
+  // Weder Stunden noch Übertrag: nichts abzuschließen (kein leerer Lohnzettel)
+  const empty = !closed && !!summary && summary.entryCount === 0 && summary.carryIn === 0
 
   const columns = useMemo<ColumnDef<TimeRecord, unknown>[]>(
     () => [
@@ -103,7 +105,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
               </option>
             ))}
           </Select>
-          {data && <PeriodStatusBadge status={status} limitMissing={limitMissing} />}
+          {data && <PeriodStatusBadge status={status} limitMissing={limitMissing} empty={empty} />}
           {data && (
             <span className="tabular text-sm text-muted-foreground">
               {formatDate(data.period.startDate)} – {formatDate(data.period.endDate)}
@@ -126,8 +128,16 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
           ) : (
             <Button
               onClick={() => setDialog('close')}
-              disabled={!started || limitMissing}
-              title={limitMissing ? 'Erst eine Minijob-Grenze hinterlegen' : !started ? `Die Periode beginnt erst am ${formatDate(data.period.startDate)}` : undefined}
+              disabled={!started || limitMissing || empty}
+              title={
+                empty
+                  ? 'Keine Stunden und kein Übertrag – nichts abzuschließen'
+                  : limitMissing
+                    ? 'Erst eine Minijob-Grenze hinterlegen'
+                    : !started
+                      ? `Die Periode beginnt erst am ${formatDate(data.period.startDate)}`
+                      : undefined
+              }
             >
               <Lock aria-hidden="true" /> Periode abschließen…
             </Button>
@@ -158,7 +168,7 @@ export function TimesheetDetail({ userId, month, onBack, onSelectUser }: Props) 
           Für diese Periode (oder eine frühere offene Periode im Übertrag) gibt es keine gültige Grenze. Der Abschluss ist gesperrt.
         </Alert>
       )}
-      {!closed && !ended && data && (
+      {!closed && !ended && !empty && data && (
         <Alert variant="info" title="Periode läuft noch">
           {started
             ? `Die Periode endet am ${formatDate(data.period.endDate)}. Sie können sie schon vorher abschließen; Arbeitszeiten für die restlichen Tage werden dann als Nachtrag in der nächsten Periode abgerechnet.`
