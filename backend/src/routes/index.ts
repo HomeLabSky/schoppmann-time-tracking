@@ -21,6 +21,7 @@ import timeTrackingRoutes from './timetracking';
 import timesheetRoutes from './timesheets';
 import auditRoutes from './audit';
 import systemRoutes from './system';
+import settingsRoutes from './settings';
 
 const API_VERSION = '2.1.0';
 
@@ -62,6 +63,7 @@ router.use('/admin/minijob', adminAPI, minijobRoutes);
 router.use('/admin/timesheets', adminAPI, timesheetRoutes);
 router.use('/admin/audit', adminAPI, auditRoutes);
 router.use('/admin/system', adminAPI, systemRoutes);
+router.use('/admin/settings', adminAPI, settingsRoutes);
 
 router.use(notFound('ENDPOINT_NOT_FOUND'));
 

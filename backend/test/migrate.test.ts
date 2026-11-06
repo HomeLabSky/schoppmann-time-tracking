@@ -62,7 +62,7 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   assert.equal(result.adopted, true);
   assert.deepEqual(result.applied, [
     '0001_audit_triggers_and_cleanup', '0002_check_constraints', '0003_multiple_entries_per_day', '0004_time_entry_overlap_triggers',
-    '0005_nachtrag_billing_date', '0006_nacherfassung', '0007_sonderposten', '0008_sonderposten_client_id'
+    '0005_nachtrag_billing_date', '0006_nacherfassung', '0007_sonderposten', '0008_sonderposten_client_id', '0009_payroll_mail'
   ]);
   assert.ok(result.backup && fs.existsSync(result.backup), 'Sicherung vor der Migration');
   assert.ok(result.backup?.startsWith(`${file}.pre-migration-`));
@@ -87,7 +87,7 @@ test('Übernahme: Sequelize-Datenbank wird ohne Datenverlust übernommen, Prüfr
   assert.throws(() => getSqlite().exec('DELETE FROM AuditLogs'), /unveränderlich/);
   assert.equal(one('PRAGMA foreign_keys').foreign_keys, 1);
   assert.deepEqual(getSqlite().pragma('foreign_key_check'), []);
-  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 9);
+  assert.equal(one('SELECT COUNT(*) AS n FROM __drizzle_migrations').n, 10);
 
   // Die Anwendung liest die übernommenen Daten (Zeitpunkte im alten Textformat) korrekt
   const august = TimeEntryService.getMonthlyTimeRecordsSync(2, 2026, 8);
@@ -143,7 +143,7 @@ test('Übernahme: sehr alte Datenbank (Phase 0) bekommt fehlende Spalten, Tabell
   assert.equal(entry.hourlyRateCents, 1350, 'Stundensatz aus dem damaligen Stundenlohn eingefroren');
   assert.equal(entry.startTime, '09:00:00', 'altes Zeitformat vereinheitlicht');
   assert.equal(entry.clientId, null);
-  for (const table of ['MinijobSettings', 'AuditLogs', 'PeriodClosures', 'Sessions', 'LoginThrottles']) {
+  for (const table of ['MinijobSettings', 'AuditLogs', 'PeriodClosures', 'Sessions', 'LoginThrottles', 'PayrollMailSettings']) {
     assert.ok(tableSql(table), `Tabelle ${table} angelegt`);
   }
   assert.match(tableSql('Sessions'), /clientType/);
@@ -172,7 +172,7 @@ test('Neue Datenbank: alle Migrationen, Schema mit Prüfregeln', () => {
   useDatabase();
   const result = runMigrations();
   assert.equal(result.adopted, false);
-  assert.equal(result.applied.length, 9);
+  assert.equal(result.applied.length, 10);
   assert.match(tableSql('SpecialItems'), /special_items_amount_check/);
   assert.equal(result.backup, null);
   assert.match(tableSql('TimeEntries'), /time_entries_break_check/);

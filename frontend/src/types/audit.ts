@@ -75,6 +75,31 @@ export interface AuditQuery {
   to?: string
 }
 
+/** Versand der Lohnabrechnung per E-Mail: Empfänger und Text (Platzhalter {monat}, {anzahl}) */
+export interface PayrollMailSettings {
+  recipient: string
+  subject: string
+  body: string
+  updatedAt: string | null
+}
+
+export interface PayrollMailInfo {
+  settings: PayrollMailSettings
+  /** Mailserver auf dem Server eingerichtet (SMTP_*) */
+  smtpConfigured: boolean
+  sender: string
+}
+
+export interface PayrollMailStatus {
+  month: string
+  configured: boolean
+  recipient: string
+  openCount: number
+  closedCount: number
+  ready: boolean
+  lastSent: { sentAt: string; recipient: string; count: number; actorEmail: string } | null
+}
+
 export interface BackupStatus {
   state: 'ok' | 'warning' | 'error' | 'unknown'
   message: string

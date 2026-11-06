@@ -64,6 +64,13 @@
       "when": 1791468471078,
       "tag": "0008_sonderposten_client_id",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1793995577653,
+      "tag": "0009_payroll_mail",
+      "breakpoints": true
     }
   ]
 }

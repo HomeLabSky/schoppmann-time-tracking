@@ -32,6 +32,8 @@ export const ACTION_LABELS: Record<string, string> = {
   'minijob_setting.update': 'Minijob-Grenze geändert',
   'minijob_setting.delete': 'Minijob-Grenze gelöscht',
   'minijob_setting.recalculate': 'Minijob-Zeiträume neu berechnet',
+  'payslips.mail': 'Lohnabrechnung per E-Mail gesendet',
+  'payroll_mail.update': 'Versand-Einstellungen geändert',
 }
 
 export const ACTION_FILTERS = [
@@ -42,6 +44,7 @@ export const ACTION_FILTERS = [
   { value: 'user', label: 'Benutzer' },
   { value: 'auth', label: 'Anmeldungen' },
   { value: 'minijob_setting', label: 'Minijob-Grenzen' },
+  { value: 'payslips.mail', label: 'Lohnabrechnung versendet' },
 ]
 
 export const FIELD_LABELS: Record<string, string> = {
@@ -75,6 +78,9 @@ export const FIELD_LABELS: Record<string, string> = {
   specialItems: 'Sonderposten',
   billingDate: 'Abgerechnet ab',
   reason: 'Grund',
+  recipient: 'Empfänger',
+  subject: 'Betreff',
+  body: 'Text',
   ip: 'IP-Adresse',
   revokedCount: 'Beendete Sitzungen',
   client: 'Zugang',

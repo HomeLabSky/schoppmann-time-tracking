@@ -29,6 +29,14 @@ services:
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
       ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
       PAYSLIP_COMPANY_ADDRESS: ${PAYSLIP_COMPANY_ADDRESS:-}
+      # Mailserver für den Versand der Lohnabrechnung (leer = aus)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS_REJECT_UNAUTHORIZED: ${SMTP_TLS_REJECT_UNAUTHORIZED:-true}
     volumes:
       - db-data:/data
       # nur lesend: Statusdatei und Wiederherstellung (npm run db:restore) aus dem Backend-Container

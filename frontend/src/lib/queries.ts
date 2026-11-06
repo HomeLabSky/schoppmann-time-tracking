@@ -22,6 +22,8 @@ export const queryKeys = {
   timesheetOverview: (month: string) => ['timesheets', 'overview', month] as const,
   audit: (params: AuditQuery) => ['audit', params] as const,
   backup: ['system', 'backup'] as const,
+  payrollMail: ['settings', 'payroll-mail'] as const,
+  payrollMailStatus: (month: string) => ['timesheets', 'payroll-mail', month] as const,
   myPeriods: ['me', 'periods'] as const,
   myMonth: (month: string) => ['me', 'month', month] as const,
   myMonthAll: ['me', 'month'] as const,
@@ -279,6 +281,43 @@ export function useReopenPeriod() {
     onSuccess: () => {
       invalidate()
       toast.success('Periode wieder geöffnet.')
+    },
+  })
+}
+
+// ---------- Lohnabrechnung per E-Mail ----------
+
+export function usePayrollMailStatus(month: string) {
+  return useQuery({
+    queryKey: queryKeys.payrollMailStatus(month),
+    queryFn: () => adminApi.getPayrollMailStatus(month).then((r) => r.data),
+  })
+}
+
+export function useSendPayrollMail() {
+  const invalidate = useInvalidateTimesheets()
+  return useMutation({
+    mutationFn: (month: string) => adminApi.sendPayrollMail(month).then((r) => r.data),
+    onSuccess: (result) => {
+      invalidate()
+      toast.success(`Lohnabrechnung an ${result.recipient} gesendet (${result.count} Lohnzettel).`)
+    },
+    onError: notifyError('E-Mail konnte nicht gesendet werden'),
+  })
+}
+
+export function usePayrollMailSettings() {
+  return useQuery({ queryKey: queryKeys.payrollMail, queryFn: () => adminApi.getPayrollMailSettings().then((r) => r.data) })
+}
+
+export function useSavePayrollMailSettings() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (data: { recipient: string; subject: string; body: string }) => adminApi.updatePayrollMailSettings(data).then((r) => r.data),
+    onSuccess: (info) => {
+      qc.setQueryData(queryKeys.payrollMail, info)
+      qc.invalidateQueries({ queryKey: ['timesheets', 'payroll-mail'] })
+      toast.success('Einstellungen für den Versand gespeichert.')
     },
   })
 }
