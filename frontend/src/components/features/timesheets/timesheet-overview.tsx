@@ -2,14 +2,16 @@
 
 import { useMemo, useState } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
-import { FileDown } from 'lucide-react'
+import Link from 'next/link'
+import { FileDown, Mail } from 'lucide-react'
 import { adminApi } from '@/lib/api'
-import { useDownload, useTimesheetOverview } from '@/lib/queries'
+import { useDownload, usePayrollMailStatus, useSendPayrollMail, useTimesheetOverview } from '@/lib/queries'
 import { csvNumber } from '@/lib/csv'
-import { formatCurrency, formatDate, formatHours, getErrorMessage } from '@/lib/utils'
+import { formatCurrency, formatDate, formatDateTime, formatHours, getErrorMessage } from '@/lib/utils'
 import type { TimesheetOverviewRow } from '@/types/audit'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { useConfirm } from '@/components/ui/ConfirmDialog'
 import { DataTable } from '@/components/ui/data-table'
 import { Select } from '@/components/ui/input'
 import { StatCard } from '@/components/ui/stat-card'
@@ -25,6 +27,9 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
   const [filter, setFilter] = useState<StatusFilter>('all')
   const [showEmpty, setShowEmpty] = useState(false)
   const download = useDownload()
+  const mailStatus = usePayrollMailStatus(month)
+  const sendMail = useSendPayrollMail()
+  const [confirm, confirmDialog] = useConfirm()
   // Mitarbeiter ohne Stunden und ohne Übertrag haben nichts abzurechnen (z. B. noch nicht eingestellt) – ausgeblendet
   const allRows = useMemo(() => overview.data ?? [], [overview.data])
   const rows = useMemo(() => allRows.filter((r) => r.billable), [allRows])
@@ -49,6 +54,37 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
     }),
     [rows]
   )
+
+  const mail = mailStatus.data
+  const mailBlocked = !mail
+    ? 'Versandstand wird geladen…'
+    : !mail.configured
+      ? 'Versand nicht eingerichtet – Empfänger unter Einstellungen hinterlegen (Mailserver: SMTP_* auf dem Server)'
+      : mail.closedCount === 0
+        ? 'Noch keine Periode abgeschlossen'
+        : mail.openCount > 0
+          ? `Erst senden, wenn alle Perioden abgeschlossen sind (${mail.openCount} offen)`
+          : null
+
+  const onSendMail = async () => {
+    if (!mail || mailBlocked) return
+    const ok = await confirm({
+      title: 'Lohnabrechnung senden?',
+      message: (
+        <>
+          {mail.closedCount === 1 ? 'Der Lohnzettel' : `Alle ${mail.closedCount} Lohnzettel`} für {formatMonth(month)}{' '}
+          {mail.closedCount === 1 ? 'geht' : 'gehen'} als PDF an <strong>{mail.recipient}</strong>.
+          {mail.lastSent && (
+            <span className="mt-2 block text-warning">
+              Bereits gesendet am {formatDateTime(mail.lastSent.sentAt)} an {mail.lastSent.recipient}.
+            </span>
+          )}
+        </>
+      ),
+      confirmLabel: mail.lastSent ? 'Erneut senden' : 'Senden',
+    })
+    if (ok) sendMail.mutate(month)
+  }
 
   const columns = useMemo<ColumnDef<TimesheetOverviewRow, unknown>[]>(
     () => [
@@ -173,6 +209,16 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
             >
               <FileDown aria-hidden="true" /> Alle Lohnzettel (PDF)
             </Button>
+            {/* Monatsabschluss: dieselbe PDF per E-Mail an die Buchhaltung – erst, wenn alle Perioden abgeschlossen sind */}
+            <Button
+              variant={mail?.ready && mail.configured && !mail.lastSent ? 'default' : 'outline'}
+              disabled={mailBlocked !== null}
+              loading={sendMail.isPending}
+              title={mailBlocked ?? `PDF mit ${mail?.closedCount} Lohnzetteln an ${mail?.recipient} senden`}
+              onClick={onSendMail}
+            >
+              <Mail aria-hidden="true" /> An Buchhaltung senden
+            </Button>
           </>
         }
         csv={{
@@ -194,6 +240,24 @@ export function TimesheetOverview({ month, onOpen }: { month: string; onOpen: (u
           ],
         }}
       />
+      {mail?.lastSent ? (
+        <p className="text-sm text-muted-foreground" data-testid="payroll-mail-sent">
+          Lohnabrechnung {formatMonth(month)} gesendet am {formatDateTime(mail.lastSent.sentAt)} an {mail.lastSent.recipient} (
+          {mail.lastSent.count} Lohnzettel).
+        </p>
+      ) : (
+        mail &&
+        !mail.configured && (
+          <p className="text-sm text-muted-foreground">
+            Lohnabrechnung per E-Mail an die Buchhaltung:{' '}
+            <Link href="/admin/settings" className="text-primary hover:underline">
+              Empfänger in den Einstellungen hinterlegen
+            </Link>
+            .
+          </p>
+        )
+      )}
+      {confirmDialog}
       {hiddenCount > 0 && (
         <p className="text-sm text-muted-foreground" data-testid="hidden-empty">
           {hiddenCount === 1 ? '1 Mitarbeiter' : `${hiddenCount} Mitarbeiter`} ohne Stunden in dieser Periode{' '}

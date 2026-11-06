@@ -9,10 +9,12 @@ import { createApiRouter } from '../lib/route';
 import TimeEntryService from '../services/timeEntryService';
 import PeriodService from '../services/periodService';
 import PayslipService from '../services/payslipService';
+import PayrollMailService from '../services/payrollMailService';
 import config from '../config';
 import { payslipFilename, renderPayslipsPdf } from '../utils/payslipPdf';
 import { actorOf } from '../middleware/auth';
 import { MonthQuery, MonthlyRecords, PeriodsData } from '../schemas/timeEntry';
+import { PayrollMailBody, PayrollMailResultData, PayrollMailStatusData } from '../schemas/payrollMail';
 import { UserIdParam, ClosePeriodBody, ReopenPeriodBody, ClosureData, ReopenData, TimesheetOverviewData } from '../schemas/admin';
 
 const api = createApiRouter('/admin/timesheets', { tags: ['Zeitnachweise'] });
@@ -53,6 +55,29 @@ api.get('/payslips', {
   const body = await renderPayslipsPdf(payslips, { companyAddress: config.payslip.companyAddress });
   return { file: { body, filename: payslipFilename(req.valid.query.month), contentType: 'application/pdf' } };
 });
+
+api.get('/payslips/mail', {
+  summary: 'Monatsabschluss: Versandstand der Lohnabrechnung per E-Mail',
+  description: 'Bereit, sobald alle Perioden mit etwas abzurechnen abgeschlossen sind; dazu der letzte Versand für den Monat.',
+  auth: 'admin',
+  tags: ['Lohnzettel'],
+  query: MonthQuery,
+  response: PayrollMailStatusData,
+  message: 'Versandstand geladen'
+}, (req) => ({ data: PayrollMailService.status(req.valid.query.month) }));
+
+api.post('/payslips/mail', {
+  summary: 'Monatsabschluss: alle Lohnzettel per E-Mail an die Buchhaltung senden',
+  description: 'Sendet dieselbe PDF wie GET /payslips an den in den Einstellungen hinterlegten Empfänger (Betreff und Text dort). ' +
+    'Nur wenn alle Perioden abgeschlossen sind (sonst 409 PAYROLL_PERIODS_OPEN). Mailserver oder Empfänger fehlen → 409 ' +
+    'MAIL_NOT_CONFIGURED; Mailserver lehnt ab → 502 MAIL_SEND_FAILED. Jeder Versand steht im Änderungsprotokoll.',
+  auth: 'admin',
+  tags: ['Lohnzettel'],
+  body: PayrollMailBody,
+  response: PayrollMailResultData,
+  message: 'Lohnabrechnung gesendet',
+  errors: ['MAIL_NOT_CONFIGURED', 'PAYROLL_PERIODS_OPEN', 'PAYSLIP_NOT_FOUND', 'MAIL_SEND_FAILED']
+}, async (req) => ({ data: await PayrollMailService.send(req.valid.body.month, actorOf(req)) }));
 
 api.get('/:userId/payslip', {
   summary: 'Lohnzettel eines Mitarbeiters als PDF',

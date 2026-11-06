@@ -5891,6 +5891,242 @@
         }
       }
     },
+    "/admin/timesheets/payslips/mail": {
+      "get": {
+        "operationId": "getAdminTimesheetsPayslipsMail",
+        "summary": "Monatsabschluss: Versandstand der Lohnabrechnung per E-Mail",
+        "description": "Bereit, sobald alle Perioden mit etwas abzurechnen abgeschlossen sind; dazu der letzte Versand für den Monat.",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "month",
+            "in": "query",
+            "required": true,
+            "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)",
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Versandstand geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Versandstand geladen"
+                      ]
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/PayrollMailStatus"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postAdminTimesheetsPayslipsMail",
+        "summary": "Monatsabschluss: alle Lohnzettel per E-Mail an die Buchhaltung senden",
+        "description": "Sendet dieselbe PDF wie GET /payslips an den in den Einstellungen hinterlegten Empfänger (Betreff und Text dort). Nur wenn alle Perioden abgeschlossen sind (sonst 409 PAYROLL_PERIODS_OPEN). Mailserver oder Empfänger fehlen → 409 MAIL_NOT_CONFIGURED; Mailserver lehnt ab → 502 MAIL_SEND_FAILED. Jeder Versand steht im Änderungsprotokoll.",
+        "tags": [
+          "Lohnzettel"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "month": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                    "description": "Referenzmonat der Abrechnungsperiode (YYYY-MM)"
+                  }
+                },
+                "required": [
+                  "month"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lohnabrechnung gesendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Lohnabrechnung gesendet"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "month": {
+                          "type": "string"
+                        },
+                        "recipient": {
+                          "type": "string"
+                        },
+                        "count": {
+                          "type": "integer",
+                          "description": "Anzahl Lohnzettel in der PDF"
+                        },
+                        "sentAt": {
+                          "type": "string",
+                          "description": "Zeitpunkt (ISO 8601)"
+                        }
+                      },
+                      "required": [
+                        "month",
+                        "recipient",
+                        "count",
+                        "sentAt"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "PAYSLIP_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "MAIL_NOT_CONFIGURED, PAYROLL_PERIODS_OPEN",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "MAIL_SEND_FAILED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/timesheets/{userId}/payslip": {
       "get": {
         "operationId": "getAdminTimesheetsByUserIdPayslip",
@@ -6714,6 +6950,217 @@
           }
         }
       }
+    },
+    "/admin/settings/payroll-mail": {
+      "get": {
+        "operationId": "getAdminSettingsPayrollMail",
+        "summary": "Versand der Lohnabrechnung: Empfänger, Text und Mailserver-Status",
+        "tags": [
+          "Einstellungen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Einstellungen geladen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Einstellungen geladen"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "$ref": "#/components/schemas/PayrollMailSettings"
+                        },
+                        "smtpConfigured": {
+                          "type": "boolean",
+                          "description": "Mailserver in der Umgebung des Servers eingerichtet (SMTP_HOST, SMTP_FROM)"
+                        },
+                        "sender": {
+                          "type": "string",
+                          "description": "Absenderadresse (leer = nicht eingerichtet)"
+                        }
+                      },
+                      "required": [
+                        "settings",
+                        "smtpConfigured",
+                        "sender"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putAdminSettingsPayrollMail",
+        "summary": "Versand der Lohnabrechnung: Empfänger und Text speichern",
+        "description": "Platzhalter in Betreff und Text: {monat} (z. B. „Oktober 2026“) und {anzahl} (Zahl der Lohnzettel). Leerer Empfänger schaltet den Versand aus.",
+        "tags": [
+          "Einstellungen"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "cookieAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "recipient": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Empfänger der Lohnabrechnung (leer = Versand aus)"
+                  },
+                  "subject": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Betreff; {monat} und {anzahl} werden ersetzt"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 5000,
+                    "description": "Text der E-Mail; {monat} und {anzahl} werden ersetzt"
+                  }
+                },
+                "required": [
+                  "recipient",
+                  "subject",
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Einstellungen gespeichert",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "success"
+                  ],
+                  "properties": {
+                    "success": {
+                      "const": true
+                    },
+                    "message": {
+                      "type": "string",
+                      "examples": [
+                        "Einstellungen gespeichert"
+                      ]
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "settings": {
+                          "$ref": "#/components/schemas/PayrollMailSettings"
+                        },
+                        "smtpConfigured": {
+                          "type": "boolean",
+                          "description": "Mailserver in der Umgebung des Servers eingerichtet (SMTP_HOST, SMTP_FROM)"
+                        },
+                        "sender": {
+                          "type": "string",
+                          "description": "Absenderadresse (leer = nicht eingerichtet)"
+                        }
+                      },
+                      "required": [
+                        "settings",
+                        "smtpConfigured",
+                        "sender"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Eingabefehler (VALIDATION_ERROR, mit `fields`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Nicht angemeldet oder Sitzung beendet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Keine Berechtigung",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7012,6 +7459,9 @@
               "MINIJOB_LIMIT_MISSING",
               "REASON_REQUIRED",
               "PAYSLIP_NOT_FOUND",
+              "MAIL_NOT_CONFIGURED",
+              "PAYROLL_PERIODS_OPEN",
+              "MAIL_SEND_FAILED",
               "SPECIAL_ITEM_NOT_FOUND"
             ],
             "description": "Maschinenlesbarer Fehlercode (stabil)"
@@ -7283,6 +7733,106 @@
           "limit",
           "total",
           "totalPages"
+        ]
+      },
+      "PayrollMailSettings": {
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "Zeitpunkt (ISO 8601)"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "recipient",
+          "subject",
+          "body",
+          "updatedAt"
+        ],
+        "description": "Empfänger und Text für den Versand der Lohnabrechnung"
+      },
+      "PayrollMailStatus": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Mailserver und Empfänger eingerichtet"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "openCount": {
+            "type": "integer",
+            "description": "Mitarbeiter mit noch offener Periode"
+          },
+          "closedCount": {
+            "type": "integer",
+            "description": "Abgeschlossene Perioden (= Lohnzettel in der PDF)"
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "Alle Perioden abgeschlossen, mindestens eine vorhanden"
+          },
+          "lastSent": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "sentAt": {
+                    "type": "string",
+                    "description": "Zeitpunkt (ISO 8601)"
+                  },
+                  "recipient": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  },
+                  "actorEmail": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "sentAt",
+                  "recipient",
+                  "count",
+                  "actorEmail"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Letzter Versand für diesen Monat"
+          }
+        },
+        "required": [
+          "month",
+          "configured",
+          "recipient",
+          "openCount",
+          "closedCount",
+          "ready",
+          "lastSent"
         ]
       },
       "PayslipListItem": {

@@ -176,6 +176,22 @@ export const specialItems = sqliteTable('SpecialItems', {
   check('special_items_description_check', sql`length(trim(${t.description})) > 0`)
 ]);
 
+/**
+ * Versand der Lohnabrechnung per E-Mail (z. B. an die Buchhaltung): Empfänger und Text, vom Admin in den Einstellungen gepflegt.
+ * Genau eine Zeile (id = 1). Die Zugangsdaten zum Mailserver stehen nicht hier, sondern in der Umgebung (SMTP_*).
+ */
+export const payrollMailSettings = sqliteTable('PayrollMailSettings', {
+  id: integer('id').primaryKey(),
+  recipient: text('recipient', { length: 255 }).notNull().default(''),
+  subject: text('subject', { length: 200 }).notNull(),
+  body: text('body', { length: 5000 }).notNull(),
+  updatedBy: integer('updatedBy'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (t) => [
+  check('payroll_mail_settings_singleton_check', sql`${t.id} = 1`)
+]);
+
 /** Anmelde-Sitzung (Web oder App); gespeichert wird nur ein HMAC-Prüfwert des Erneuerungs-Tokens */
 export const sessions = sqliteTable('Sessions', {
   id: text('id', { length: 36 }).primaryKey(),
@@ -219,3 +235,4 @@ export type AuditLogRow = typeof auditLogs.$inferSelect;
 export type PeriodClosure = typeof periodClosures.$inferSelect;
 export type SpecialItemRow = typeof specialItems.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
+export type PayrollMailSettingsRow = typeof payrollMailSettings.$inferSelect;

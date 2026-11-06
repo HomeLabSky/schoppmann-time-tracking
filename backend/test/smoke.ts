@@ -23,6 +23,7 @@ import { timeEntries, users as usersTable } from '../src/db/schema';
 import { routes } from '../src/lib/openapi';
 import { respondedRoutes } from '../src/lib/route';
 import { hashPassword } from '../src/models/user';
+import { setMailTransportForTests } from '../src/services/payrollMailService';
 
 const ADMIN_EMAIL = 'smoke.admin@schoppmann.de';
 const ADMIN_PASSWORD = 'SmokeAdmin1x';
@@ -400,6 +401,31 @@ async function main(): Promise<void> {
     check('Admin: Lohnzettel offener Periode 404 PAYSLIP_NOT_FOUND', openPayslip.status === 404 && openPayslip.json?.code === 'PAYSLIP_NOT_FOUND', openPayslip.json);
     const empAllPayslips = await api('GET', `/api/admin/timesheets/payslips?month=${prevMonth}`, { token: empToken });
     check('Mitarbeiter: Sammel-PDF verboten 403', empAllPayslips.status === 403, empAllPayslips.json);
+
+    // Lohnabrechnung per E-Mail (Versandweg ersetzt – kein Mailserver im Test)
+    const mailed: { to: string; attachments: unknown[] }[] = [];
+    const mailInfo = await api('GET', '/api/admin/settings/payroll-mail', { token: adminToken });
+    check('Mail-Einstellungen: ohne Mailserver nicht eingerichtet', mailInfo.status === 200 && mailInfo.json?.data?.smtpConfigured === false, mailInfo.json);
+    const badRecipient = await api('PUT', '/api/admin/settings/payroll-mail', { token: adminToken, body: { recipient: 'keine-adresse', subject: 'x', body: 'y' } });
+    check('Mail-Einstellungen: ungültiger Empfänger 400', badRecipient.status === 400 && badRecipient.json?.fields?.recipient, badRecipient.json);
+    const savedMail = await api('PUT', '/api/admin/settings/payroll-mail', {
+      token: adminToken, body: { recipient: 'buchhaltung@schoppmann.de', subject: 'Lohnabrechnung {monat}', body: 'Hallo,\nanbei die Abrechnung für {monat}.' }
+    });
+    check('Mail-Einstellungen gespeichert 200', savedMail.status === 200 && savedMail.json?.data?.settings?.recipient === 'buchhaltung@schoppmann.de', savedMail.json);
+    const empMailSettings = await api('GET', '/api/admin/settings/payroll-mail', { token: empToken });
+    check('Mitarbeiter: Mail-Einstellungen verboten 403', empMailSettings.status === 403, empMailSettings.status);
+    const noServer = await api('POST', '/api/admin/timesheets/payslips/mail', { token: adminToken, body: { month: prevMonth } });
+    check('Versand ohne Mailserver 409 MAIL_NOT_CONFIGURED', noServer.status === 409 && noServer.json?.code === 'MAIL_NOT_CONFIGURED', noServer.json);
+    setMailTransportForTests({ sendMail: async (mail: { to: string; attachments: unknown[] }) => { mailed.push(mail); return {}; } } as never);
+    const mailStatus = await api('GET', `/api/admin/timesheets/payslips/mail?month=${prevMonth}`, { token: adminToken });
+    check('Versandstand geladen 200', mailStatus.status === 200 && mailStatus.json?.data?.configured === true, mailStatus.json);
+    const mailSend = await api('POST', '/api/admin/timesheets/payslips/mail', { token: adminToken, body: { month: prevMonth } });
+    if (mailStatus.json?.data?.ready) {
+      check('Lohnabrechnung gesendet 200 mit PDF', mailSend.status === 200 && mailed.length === 1 && mailed[0]?.to === 'buchhaltung@schoppmann.de', mailSend.json);
+    } else {
+      check('Versand mit offener Periode 409 PAYROLL_PERIODS_OPEN', mailSend.status === 409 && mailSend.json?.code === 'PAYROLL_PERIODS_OPEN', mailSend.json);
+    }
+    setMailTransportForTests(null);
 
     const noReason = await api('POST', `/api/admin/timesheets/${empId}/reopen`, { token: adminToken, body: { month: prevMonth } });
     check('Wiedereröffnen ohne Begründung 400', noReason.status === 400, noReason.json);

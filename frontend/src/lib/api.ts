@@ -11,7 +11,7 @@ import type {
   User,
   UserSettings,
 } from '@/types/api'
-import type { AuditEntry, AuditQuery, BackupStatus, Pagination, Timesheet, TimesheetOverviewRow, TimesheetPeriod } from '@/types/audit'
+import type { AuditEntry, AuditQuery, BackupStatus, Pagination, PayrollMailInfo, PayrollMailSettings, PayrollMailStatus, Timesheet, TimesheetOverviewRow, TimesheetPeriod } from '@/types/audit'
 
 import { API_BASE_URL } from './config'
 import { saveBlob } from './download'
@@ -286,6 +286,20 @@ export const adminApi = {
   /** Monatsabschluss: alle abgeschlossenen Lohnzettel des Monats in einer PDF (einer je Seite) */
   downloadAllPayslips: (month: string) =>
     apiClient.download(`/api/admin/timesheets/payslips?month=${month}`, `Lohnzettel_${month}_alle.pdf`),
+
+  /** Versandstand der Lohnabrechnung per E-Mail (alle Perioden abgeschlossen? zuletzt gesendet?) */
+  getPayrollMailStatus: (month: string) =>
+    apiClient.get<Envelope<PayrollMailStatus>>(`/api/admin/timesheets/payslips/mail?month=${month}`),
+
+  /** Sammel-PDF an den in den Einstellungen hinterlegten Empfänger senden */
+  sendPayrollMail: (month: string) =>
+    apiClient.post<Envelope<{ month: string; recipient: string; count: number; sentAt: string }>>('/api/admin/timesheets/payslips/mail', { month }),
+
+  // Einstellungen
+  getPayrollMailSettings: () => apiClient.get<Envelope<PayrollMailInfo>>('/api/admin/settings/payroll-mail'),
+
+  updatePayrollMailSettings: (data: Omit<PayrollMailSettings, 'updatedAt'>) =>
+    apiClient.put<Envelope<PayrollMailInfo>>('/api/admin/settings/payroll-mail', data),
 
   // System
   getBackupStatus: () => apiClient.get<Envelope<BackupStatus>>('/api/admin/system/backup'),

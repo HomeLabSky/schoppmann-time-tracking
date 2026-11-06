@@ -83,6 +83,10 @@ Im Admin-Bereich:
   Lohnzetteln des Monats (jeder ab einer neuen Seite). Mitarbeiter finden ihre Lohnzettel unter *Lohnzettel* (auch
   rückwirkend) und direkt in der Zeiterfassung einer abgeschlossenen Periode. Wird eine Periode wieder geöffnet,
   verschwindet ihr Lohnzettel bis zum erneuten Abschluss. Firmenanschrift im Kopf: `PAYSLIP_COMPANY_ADDRESS`.
+- **Lohnabrechnung per E-Mail**: Sind alle Perioden des Monats abgeschlossen, schickt *An Buchhaltung senden* (unter
+  *Zeitnachweise*) die Sammel-PDF an die in den *Einstellungen* hinterlegte Adresse – Betreff und Text dort, mit den
+  Platzhaltern `{monat}` und `{anzahl}`. Antworten gehen an den sendenden Admin; jeder Versand steht im Protokoll.
+  Mailserver (z. B. Exchange): `SMTP_*` in der `.env` (siehe `.env.example`).
 - **Protokoll** (*Protokoll*): zeigt, wer wann was geändert hat (Zeiteinträge, Abschlüsse, Benutzer, Minijob-Grenzen) –
   unveränderlich und ohne Passwörter.
 

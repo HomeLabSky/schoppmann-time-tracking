@@ -69,6 +69,17 @@ const EnvSchema = z.object({
   // Lohnzettel: Firmenanschrift im Kopf (kommagetrennte Zeilen, leer = nur Logo)
   PAYSLIP_COMPANY_ADDRESS: list(),
 
+  // Mailserver für den Versand der Lohnabrechnung (z. B. Exchange). Leer = Versand aus.
+  SMTP_HOST: optionalText(''),
+  SMTP_PORT: int(25, { min: 1 }),
+  // true = TLS ab Verbindungsbeginn (Port 465); sonst STARTTLS, sobald der Server es anbietet (Port 25/587)
+  SMTP_SECURE: bool(false),
+  SMTP_USER: optionalText(''),
+  SMTP_PASSWORD: optionalText(''),
+  SMTP_FROM: optionalText(''),
+  // Zertifikat des Mailservers prüfen (bei interner Zertifizierungsstelle ggf. false oder NODE_EXTRA_CA_CERTS setzen)
+  SMTP_TLS_REJECT_UNAUTHORIZED: bool(true),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional()
 });
 
@@ -142,6 +153,17 @@ const config = {
 
   payslip: {
     companyAddress: env.PAYSLIP_COMPANY_ADDRESS
+  },
+
+  // Mailserver (Versand der Lohnabrechnung). Ohne Host ist der Versand aus; Absender ist SMTP_FROM, sonst SMTP_USER.
+  smtp: {
+    host: env.SMTP_HOST,
+    port: env.SMTP_PORT,
+    secure: env.SMTP_SECURE,
+    user: env.SMTP_USER,
+    password: env.SMTP_PASSWORD,
+    from: env.SMTP_FROM || env.SMTP_USER,
+    rejectUnauthorized: env.SMTP_TLS_REJECT_UNAUTHORIZED
   },
 
   rateLimit: {

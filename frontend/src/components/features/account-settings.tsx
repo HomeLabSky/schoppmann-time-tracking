@@ -42,7 +42,7 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
 }
 
 /** Einstellungen des eigenen Kontos – für Mitarbeiter mit Abrechnungsdaten, für Admins nur Konto und Passwort. */
-export function AccountSettings({ showBilling }: { showBilling: boolean }) {
+export function AccountSettings({ showBilling, children }: { showBilling: boolean; children?: React.ReactNode }) {
   const { user } = useAuth()
   const settings = useMySettings(showBilling)
 
@@ -65,6 +65,8 @@ export function AccountSettings({ showBilling }: { showBilling: boolean }) {
         </Card>
 
         {showBilling && <BillingCard loading={settings.isLoading} settings={settings.data} />}
+
+        {children}
 
         <PasswordCard />
 
